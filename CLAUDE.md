@@ -218,8 +218,8 @@ Tabs or sections:
 **Build order:**
 1. ✅ Foundation — Chat 1 complete
 2. ✅ Commissioner screen — Chat 2 complete
-3. Leaderboard — Chat 3
-4. Polish — Chat 4
+3. ✅ Leaderboard — Chat 3 complete
+4. ✅ Polish — Chat 4 complete
 
 **Chat 1 built:**
 - `src/supabase.js`, `src/state.js`, `src/auth.js`
@@ -244,14 +244,26 @@ Tabs or sections:
 - `src/main.js` — wired `initCommissioner()` on both commissioner nav links; `hdr-user-comm` rendered in header; `draw-uploaded` event refreshes header after upload
 - `index.html` — commissioner screen replaced with two-tab layout (Draw Management / Lock Managing); CSS added for `.comm-*`, `.drop-zone`, `.lock-*`, `.match-edit-row`
 
+**Chat 3 built:**
+- `src/leaderboard.js` — full implementation: `loadAllProfiles()`, `loadDrawStatsForAllUsers()`, `loadViewerPicks()`, `renderLeaderboard()`
+  - Per-slam view: MS + WS sections, Score / Draw Acc / Match Acc / Draw Health columns, sortable
+  - All-time view: Draws played / Avg score / Draw Acc / Match Acc per player
+  - Viewer mode: clicking a player name loads their picks into the active draw and switches to bracket screen with viewer banner
+  - Stats cache (`statsCache` Map keyed by drawDbId) invalidated on each `renderLeaderboard()` call
+- `src/main.js` — wired `renderLeaderboard()` on all leaderboard nav links; viewer back button: clears `state.viewingUser`, calls `reloadActiveDraw()`, returns to leaderboard
+- `index.html` — full `.lb-*` CSS: toolbar, toggle, table, sortable headers, player links, self-row highlight
+
+**Chat 4 built:**
+- `src/stats.js` — lock countdown pill appended after health pill; shows "picks lock in Xh/Xm" or "backup picks lock in Xh/Xm"; pulses accent color when affected picks are unfilled
+- `src/bracket.js` — `placeCard()` adds `needs-backup-pick` class for cards in upcoming backup lock range with no pick/winner; `renderBracket()` renders informative empty state when no draws exist
+- `src/main.js` — API sync toggle wired (shows toast "not yet connected", resets to off); `setInterval` refreshes `renderStats()` every 60s when bracket screen is active
+- `src/state.js` — `apiSyncEnabled: false` field added
+- `index.html` — API sync button in bracket `#hdr-right`; CSS for `.needs-backup-pick`, `.countdown-urgent` pulse, `.btn-sync-active`, `.bracket-empty`, `.sync-toast`; mobile fixes (commissioner nav hidden ≤480px, stats-strip scrollable)
+
 **Not yet built:**
-- Leaderboard (Chat 3) — `src/leaderboard.js` is a stub
-- Lock countdown on stats bar (Chat 4)
-- Backup pick glow (Chat 4)
-- API sync (Chat 4)
 - Push/email notifications (not planned for v1)
-- Mobile-optimized layout (designed for desktop/tablet)
 - Automated tests
+- Real API sync integration (toggle placeholder exists)
 
 **Known conventions established:**
 - `state.draws[i].draw` = `'MS'` or `'WS'` (draw_type from DB)
@@ -260,3 +272,10 @@ Tabs or sections:
 - `handlePickClick(ri, mi, p, { renderStats, renderBracket })` — callbacks passed in to avoid circular imports
 - `applyWinner(d, ri, mi, winnerName, { renderStats, renderBracket })` — same pattern
 - No localStorage anywhere — all state is Supabase or in-memory
+- `renderLeaderboard()` clears `statsCache` on every call to ensure fresh data
+- Viewer open is initiated inside `leaderboard.js` (`openViewer(prof, draw)`), not main.js
+- Viewer close (back button) is in `main.js`: clears `state.viewingUser`, calls `reloadActiveDraw()`, calls `renderLeaderboard()`
+- `lb-row` grid is `1fr 90px 90px 90px 100px` (5 columns) — applies to both slam and all-time tables
+- `state.apiSyncEnabled` — in-memory only, not persisted; API sync toggle resets to off on click (no real integration yet)
+- Lock countdown in `renderStats()` scans `state.lockSchedules` for nearest upcoming unlocked row; shows sub-hour as minutes
+- `needs-backup-pick` glow is suppressed in viewer mode (`isReadOnly`)

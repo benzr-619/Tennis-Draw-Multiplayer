@@ -140,6 +140,42 @@ export function renderStats() {
   attachTip(healthPill, 'Draw Health', "How much of your draw's scoring potential is still alive? The lower it gets, the more busted your bracket.")
   strip.appendChild(healthPill)
 
+  // ── LOCK COUNTDOWN ──
+  const upcoming = state.lockSchedules
+    .filter(ls => !ls.locked_at && ls.scheduled_at && new Date(ls.scheduled_at) > new Date())
+    .sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at))[0]
+
+  if (upcoming) {
+    const msLeft = new Date(upcoming.scheduled_at) - Date.now()
+    const hoursLeft = Math.round(msLeft / 3600000)
+    const label = upcoming.lock_type === 'original_picks' ? 'picks lock' : 'backup picks lock'
+    const displayTime = hoursLeft < 1
+      ? Math.max(1, Math.round(msLeft / 60000)) + 'm'
+      : hoursLeft + 'h'
+
+    // Check whether all affected picks in the upcoming lock range are filled
+    let allFilled = true
+    if (upcoming.lock_type === 'backup_picks') {
+      const rounds = d.rounds
+      const ri = upcoming.round_index
+      if (ri != null && rounds[ri]) {
+        rounds[ri].matches.forEach((m, mi) => {
+          const inRange = (upcoming.match_index_start == null || mi >= upcoming.match_index_start) &&
+                          (upcoming.match_index_end == null || mi <= upcoming.match_index_end)
+          if (inRange && !m.pick && !m.winner) allFilled = false
+        })
+      }
+    }
+
+    const countdownPill = document.createElement('div')
+    countdownPill.className = 'stat-pill countdown-pill'
+    countdownPill.style.borderRight = 'none'
+    countdownPill.innerHTML = `
+      <span class="slbl">${label}</span>
+      <span class="sval countdown-val${!allFilled ? ' countdown-urgent' : ''}">${displayTime}</span>`
+    strip.appendChild(countdownPill)
+  }
+
   const bar = document.getElementById('stat-desc-bar')
   if (bar) bar.classList.remove('visible')
 }

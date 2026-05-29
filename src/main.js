@@ -6,6 +6,7 @@ import { renderBracket, closeModal, confirmEditPlayer } from './bracket.js'
 import { renderStats, resetStatsFilter } from './stats.js'
 import { buildPrintHTML } from './print.js'
 import { initCommissioner } from './commissioner.js'
+import { renderLeaderboard } from './leaderboard.js'
 
 // ── INIT ──
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
@@ -320,16 +321,57 @@ $('logout-btn-comm').addEventListener('click', doLogout)
 
 // ── NAV LINKS ──
 $('nav-bracket').addEventListener('click', () => showBracketScreen())
-$('nav-leaderboard').addEventListener('click', () => showScreen('screen-leaderboard'))
+$('nav-leaderboard').addEventListener('click', () => { showScreen('screen-leaderboard'); renderLeaderboard() })
 $('nav-commissioner').addEventListener('click', () => {
   if (state.currentUser?.is_commissioner) { initCommissioner(); showScreen('screen-commissioner') }
 })
 $('nav-bracket-from-lb').addEventListener('click', () => showBracketScreen())
-$('nav-leaderboard-from-comm').addEventListener('click', () => showScreen('screen-leaderboard'))
+$('nav-leaderboard-from-comm').addEventListener('click', () => { showScreen('screen-leaderboard'); renderLeaderboard() })
 $('nav-bracket-from-comm').addEventListener('click', () => showBracketScreen())
 $('nav-commissioner-from-lb').addEventListener('click', () => {
   if (state.currentUser?.is_commissioner) { initCommissioner(); showScreen('screen-commissioner') }
 })
+
+// ── VIEWER BACK ──
+$('viewer-back-btn').addEventListener('click', async () => {
+  state.viewingUser = null
+  // Restore own picks for the active draw
+  await reloadActiveDraw()
+  // Hide viewer banner
+  const banner = $('viewer-banner')
+  if (banner) banner.style.display = 'none'
+  renderStats()
+  renderBracket()
+  // Return to leaderboard
+  showScreen('screen-leaderboard')
+  renderLeaderboard()
+})
+
+// ── API SYNC TOGGLE ──
+$('api-sync-btn').addEventListener('click', () => {
+  state.apiSyncEnabled = !state.apiSyncEnabled
+  $('api-sync-label').textContent = state.apiSyncEnabled ? 'Sync on' : 'Sync off'
+  $('api-sync-btn').classList.toggle('btn-sync-active', state.apiSyncEnabled)
+  if (state.apiSyncEnabled) {
+    const toast = document.createElement('div')
+    toast.className = 'sync-toast'
+    toast.textContent = 'API sync not yet connected'
+    document.body.appendChild(toast)
+    setTimeout(() => toast.classList.add('visible'), 10)
+    setTimeout(() => { toast.classList.remove('visible'); setTimeout(() => toast.remove(), 300) }, 3000)
+    // Reset back to off since there's no real integration yet
+    state.apiSyncEnabled = false
+    $('api-sync-label').textContent = 'Sync off'
+    $('api-sync-btn').classList.remove('btn-sync-active')
+  }
+})
+
+// ── COUNTDOWN REFRESH ──
+setInterval(() => {
+  if ($('screen-bracket').classList.contains('active')) {
+    renderStats()
+  }
+}, 60000)
 
 // ── DRAW UPLOADED (from commissioner) ──
 window.addEventListener('draw-uploaded', () => {

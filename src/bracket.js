@@ -13,7 +13,15 @@ export function renderBracket() {
   if (!body) return
   body.innerHTML = ''
   const d = activeDraw()
-  if (!d || !d.rounds || !d.rounds.length) return
+  if (!d || !d.rounds || !d.rounds.length) {
+    body.innerHTML = `
+      <div class="bracket-empty">
+        <div class="bracket-empty-icon">🎾</div>
+        <div class="bracket-empty-title">No draw uploaded yet.</div>
+        <div class="bracket-empty-sub">The commissioner will upload the draw when it's available.</div>
+      </div>`
+    return
+  }
   const rounds = d.rounds
   const r1 = rounds[0].matches
   const total = r1.length, half = Math.ceil(total / 2), q = Math.ceil(half / 2)
@@ -263,6 +271,24 @@ export function placeCard(d, m, ri, mi, x, y, wrap) {
 
     acts.appendChild(bOk); acts.appendChild(bBad); footer.appendChild(acts)
     card.appendChild(footer)
+  }
+
+  // ── BACKUP PICK GLOW ──
+  // If this match falls in an upcoming (not yet triggered) backup lock range
+  // and has no pick and no result yet, glow purple to prompt the player.
+  if (!isReadOnly) {
+    const upcomingBackupLock = state.lockSchedules.find(ls =>
+      ls.lock_type === 'backup_picks' &&
+      !ls.locked_at &&
+      ls.scheduled_at &&
+      new Date(ls.scheduled_at) > Date.now() &&
+      ls.round_index === ri &&
+      (ls.match_index_start == null || mi >= ls.match_index_start) &&
+      (ls.match_index_end == null || mi <= ls.match_index_end)
+    )
+    if (upcomingBackupLock && !m.pick && !m.winner) {
+      card.classList.add('needs-backup-pick')
+    }
   }
 
   wrap.appendChild(card)
