@@ -1,0 +1,1986 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Slam Bracket</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Slam Bracket">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="manifest" href="manifest.json">
+<meta name="mobile-web-app-capable" content="yes">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f5f4f0;--surface:#fff;--surface2:#f0eeea;--surface3:#e8e5df;
+  --border:#ddd9d0;--border2:#c8c4bb;--text:#1a1916;--text2:#6b6760;--text3:#a09c94;
+  --accent:#1a1916;--accent-dim:#e8e5df;--accent-text:#fff;
+  --green:#2d7a3a;--green-bg:#edf7ee;--green-border:#a8d4ae;
+  --red:#c0392b;--red-bg:#fdf0ee;--red-border:#f0b8b2;
+  --blue:#1a5fb4;--blue-bg:#edf2fb;--blue-border:#b0ccf0;
+  --purple:#6b3fa0;--purple-bg:#f3edfb;--purple-border:#c8a8e8;
+  --mono:'DM Mono',monospace;--sans:'DM Sans',sans-serif;--serif:'Playfair Display',serif;
+}
+body.theme-RG{--bg:#f8f2ee;--surface:#fff;--surface2:#f5ede6;--border:#e0cfc4;--border2:#c8b09e;--accent:#8b2615;--accent-dim:#fdf0ec;--accent-text:#fff}
+body.theme-WIM{--bg:#f2f6f3;--surface:#fff;--surface2:#eaf3ec;--border:#cce0ce;--border2:#a8c8ac;--accent:#1a5c2a;--accent-dim:#eaf3ec;--accent-text:#fff}
+body.theme-AO{--bg:#f0f4f9;--surface:#fff;--surface2:#e8f0f8;--border:#c4d8ee;--border2:#9cbcdf;--accent:#1048a0;--accent-dim:#e8f0f8;--accent-text:#fff}
+body.theme-USO{--bg:#f0f4f9;--surface:#fff;--surface2:#e8f0f8;--border:#c4d8ee;--border2:#9cbcdf;--accent:#1048a0;--accent-dim:#e8f0f8;--accent-text:#fff}
+
+body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;font-size:14px}
+.screen{display:none;height:100vh;overflow:hidden}
+.screen.active{display:flex;flex-direction:column}
+
+/* ── UPLOAD ── */
+#screen-upload{align-items:center;justify-content:center;padding:2rem;overflow-y:auto;height:auto;min-height:100vh}
+.upload-container{width:100%;max-width:480px}
+.wordmark{font-family:var(--mono);font-size:10px;letter-spacing:0.22em;text-transform:uppercase;color:var(--text3);margin-bottom:3rem}
+.upload-heading{font-family:var(--serif);font-size:40px;font-weight:400;line-height:1.15;margin-bottom:0.5rem}
+.upload-heading em{font-style:italic;color:var(--accent)}
+.upload-sub{color:var(--text2);font-size:13px;margin-bottom:2rem;line-height:1.7}
+.drop-zone{border:1.5px dashed var(--border2);border-radius:10px;padding:2.25rem 2rem;text-align:center;cursor:pointer;transition:all 0.2s;background:var(--surface);margin-bottom:1rem;position:relative}
+.drop-zone:hover,.drop-zone.drag-over{border-color:var(--accent);background:var(--accent-dim)}
+.drop-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.drop-icon{font-size:26px;margin-bottom:8px;opacity:0.25}
+.drop-label{font-size:14px;color:var(--text2);margin-bottom:3px}
+.drop-hint{font-size:11px;color:var(--text3);font-family:var(--mono)}
+.file-loaded{font-family:var(--mono);font-size:11px;color:var(--green);margin-bottom:10px;display:none}
+.slam-meta{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:1rem}
+.slam-meta select,.slam-meta input{background:var(--surface);border:1px solid var(--border2);color:var(--text);padding:9px 11px;border-radius:7px;font-family:var(--sans);font-size:13px;width:100%;outline:none;transition:border-color 0.15s}
+.slam-meta select:focus,.slam-meta input:focus{border-color:var(--accent)}
+.btn-primary{width:100%;padding:11px;background:var(--accent);color:var(--accent-text);border:none;border-radius:8px;font-family:var(--sans);font-size:14px;font-weight:600;cursor:pointer;transition:opacity 0.15s}
+.btn-primary:hover{opacity:0.85}
+.btn-primary:disabled{opacity:0.3;cursor:not-allowed}
+.btn-secondary{background:var(--surface);border:1px solid var(--border2);color:var(--text);padding:7px 13px;border-radius:6px;font-family:var(--sans);font-size:13px;cursor:pointer;transition:all 0.15s}
+.btn-secondary:hover{border-color:var(--accent);background:var(--accent-dim)}
+.btn-lock-on{background:var(--red-bg)!important;border-color:var(--red-border)!important;color:var(--red)!important}
+/* lock toggle switch */
+.lock-switch{display:flex;align-items:center;gap:7px;cursor:pointer;flex-shrink:0;user-select:none}
+.lock-switch-track{width:36px;height:20px;border-radius:10px;background:var(--border2);position:relative;transition:background 0.2s;flex-shrink:0}
+.lock-switch-track.on{background:var(--accent)}
+.lock-switch-knob{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.2);transition:transform 0.2s}
+.lock-switch-track.on .lock-switch-knob{transform:translateX(16px)}
+.parse-status{margin-top:.75rem;padding:10px 12px;background:var(--surface2);border-radius:7px;border:1px solid var(--border);font-family:var(--mono);font-size:11px;color:var(--text2);display:none;line-height:1.9;white-space:pre-wrap}
+.divider{height:1px;background:var(--border);margin:18px 0}
+.existing-draws{margin-bottom:1.5rem}
+.existing-draws-label{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.15em;color:var(--text3);margin-bottom:8px}
+.draw-pill{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:7px;margin-bottom:6px;cursor:pointer;transition:all 0.15s}
+.draw-pill:hover{border-color:var(--accent);background:var(--accent-dim)}
+.draw-pill-name{flex:1;font-size:13px;font-weight:500}
+.draw-pill-meta{font-family:var(--mono);font-size:10px;color:var(--text3)}
+.draw-pill-del{font-size:12px;color:var(--text3);padding:2px 6px;border-radius:4px;border:none;background:none;cursor:pointer;line-height:1}
+.draw-pill-del:hover{color:var(--red);background:var(--red-bg)}
+
+/* ── EDIT SCREEN ── */
+#screen-edit{flex-direction:column;background:var(--bg);height:100vh}
+.edit-header{background:var(--surface);border-bottom:1px solid var(--border);padding:13px 22px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-shrink:0}
+.edit-title{font-size:12px;font-family:var(--mono);color:var(--text2)}
+.edit-title strong{color:var(--accent);font-weight:500}
+.edit-actions{display:flex;gap:8px}
+.edit-body{flex:1;overflow-y:auto;padding:22px}
+.edit-section-label{font-size:10px;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.15em;color:var(--text3);margin-bottom:10px}
+.match-edit-row{display:grid;grid-template-columns:28px 46px 1fr 20px 1fr 46px;gap:5px;align-items:center;margin-bottom:5px}
+.match-num{font-family:var(--mono);font-size:10px;color:var(--text3);text-align:right;padding-right:2px}
+.match-edit-row input{background:var(--surface);border:1px solid var(--border);color:var(--text);padding:6px 9px;border-radius:5px;font-family:var(--sans);font-size:12px;outline:none;width:100%}
+.match-edit-row input:focus{border-color:var(--accent)}
+.seed-input{font-family:var(--mono);font-size:11px;text-align:center;color:var(--accent)!important}
+.edit-vs{font-family:var(--mono);font-size:9px;color:var(--text3);text-align:center}
+.add-match-btn{background:none;border:1.5px dashed var(--border2);color:var(--text3);padding:6px 13px;border-radius:5px;font-family:var(--mono);font-size:10px;cursor:pointer;margin-top:4px}
+.add-match-btn:hover{border-color:var(--accent);color:var(--text2)}
+
+/* ── BRACKET ── */
+#screen-bracket{flex-direction:column;background:var(--bg)}
+
+/* ── HEADER ROW 1 ── */
+.hdr-row1{background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;flex-shrink:0;height:48px;padding:0 16px;gap:10px;position:relative;z-index:20;overflow:visible}
+.hdr-left{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.slam-dropdown-btn{display:flex;align-items:center;gap:6px;background:none;border:1px solid var(--border2);border-radius:6px;padding:5px 10px;font-family:var(--serif);font-size:14px;font-weight:600;color:var(--accent);cursor:pointer;white-space:nowrap;transition:all 0.15s}
+.slam-dropdown-btn:hover{background:var(--accent-dim)}
+.slam-dropdown-btn .chevron{font-size:9px;color:var(--text3);transition:transform 0.15s}
+.slam-dropdown-btn.open .chevron{transform:rotate(180deg)}
+.slam-dropdown-menu{position:absolute;top:calc(100% + 4px);left:16px;background:var(--surface);border:1px solid var(--border2);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.12);min-width:200px;z-index:100;overflow:hidden;display:none}
+.slam-dropdown-menu.open{display:block}
+.slam-dropdown-item{display:flex;align-items:center;justify-content:space-between;padding:9px 14px;font-family:var(--sans);font-size:13px;cursor:pointer;gap:12px;transition:background 0.1s}
+.slam-dropdown-item:hover{background:var(--surface2)}
+.slam-dropdown-item.active{color:var(--accent);font-weight:500}
+.slam-dropdown-item-del{font-size:12px;color:var(--text3);padding:1px 5px;border-radius:3px;border:none;background:none;cursor:pointer}
+.slam-dropdown-item-del:hover{color:var(--red);background:var(--red-bg)}
+/* segmented control */
+.seg-control{display:flex;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:2px;gap:2px;flex-shrink:0}
+.seg-btn{padding:4px 12px;border:none;border-radius:4px;background:none;font-family:var(--mono);font-size:11px;color:var(--text2);cursor:pointer;transition:all 0.15s;white-space:nowrap}
+.seg-btn:hover:not(:disabled){background:var(--surface);color:var(--text)}
+.seg-btn.active{background:var(--surface);color:var(--accent);font-weight:500;box-shadow:0 1px 3px rgba(0,0,0,0.1)}
+.seg-btn:disabled{opacity:0.35;cursor:not-allowed}
+/* seg button responsive text — data-short used below 720px */
+.seg-btn .seg-full{display:inline}
+.seg-btn .seg-short{display:none}
+/* search — narrows continuously before cascade fires */
+.hdr-center{flex:1;display:flex;align-items:center;justify-content:center;padding:0 8px;min-width:0;overflow:visible}
+.search-wrap{position:relative;display:flex;align-items:center;width:clamp(36px,calc(100vw - 600px),9999px)}
+.search-icon-btn{background:none;border:1px solid var(--border2);border-radius:6px;padding:5px 9px;cursor:pointer;color:var(--text3);font-size:14px;transition:all 0.15s;flex-shrink:0}
+.search-icon-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-dim)}
+.search-input-wrap{position:relative;flex:1;display:flex;align-items:center}
+.search-input{width:100%;min-width:36px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;padding:5px 10px 5px 30px;font-family:var(--sans);font-size:13px;color:var(--text);outline:none;transition:border-color 0.15s}
+.search-input:focus{border-color:var(--accent)}
+.search-input-icon{position:absolute;left:9px;font-size:12px;color:var(--text3);pointer-events:none}
+.search-clear{position:absolute;right:8px;background:none;border:none;cursor:pointer;color:var(--text3);font-size:14px;padding:0;line-height:1;display:none}
+.search-clear.visible{display:block}
+.search-results{position:absolute;top:calc(100% + 6px);left:50%;transform:translateX(-50%);min-width:320px;width:max-content;max-width:480px;background:var(--surface);border:1px solid var(--border2);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.12);z-index:100;max-height:360px;overflow-y:auto;display:none}
+.search-results.open{display:block}
+.search-group-label{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text3);padding:8px 12px 4px;border-top:1px solid var(--border)}
+.search-group-label:first-child{border-top:none}
+.search-result-item{display:flex;align-items:center;gap:8px;padding:7px 12px;cursor:pointer;transition:background 0.1s}
+.search-result-item:hover{background:var(--surface2)}
+.search-result-item.kbd-focus{background:var(--accent-dim);outline:none}
+.search-result-round{font-family:var(--mono);font-size:9px;color:var(--text3);min-width:24px;flex-shrink:0}
+.search-result-name{font-size:12px;font-weight:500;flex:1}
+.search-result-vs{font-size:11px;color:var(--text2)}
+.search-no-results{padding:16px 12px;font-size:12px;color:var(--text3);text-align:center}
+/* right actions */
+.hdr-right{display:flex;align-items:center;gap:6px;flex-shrink:0}
+/* lock label — hidden below 900px */
+.lock-switch-label{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);transition:color 0.2s;white-space:nowrap}
+.lock-switch.on .lock-switch-label{color:var(--accent)}
+/* action button responsive text */
+.btn-full{display:inline}
+.btn-short{display:none}
+
+/* ── RESPONSIVE CASCADE ── */
+/* Stage 1: below 600px — hide lock label (search fully narrow by now) */
+@media(max-width:600px){
+  .lock-switch-label{display:none}
+}
+/* Stage 2: below 720px — seg M/W, Print→P, Save→S */
+@media(max-width:720px){
+  .seg-btn{padding:4px 8px}
+  .seg-btn .seg-full{display:none}
+  .seg-btn .seg-short{display:inline}
+  .btn-full{display:none}
+  .btn-short{display:inline}
+  .hdr-right{gap:4px}
+}
+/* Stage 3: below 580px — + Draw → + */
+@media(max-width:580px){
+  .btn-plus-full{display:none}
+  .btn-plus-short{display:inline}
+}
+
+/* ── HEADER ROW 2 (stats) ── */
+.hdr-row2{background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:stretch;flex-shrink:0;height:44px;overflow:visible;position:relative;z-index:10}
+.stats-strip{display:flex;align-items:stretch;gap:0}
+/* stat pills: top-anchored so all labels sit at same height */
+.stat-pill{display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;padding:7px 16px 0;border-right:1px solid var(--border);height:100%;flex-shrink:0;position:relative;cursor:default;transition:background 0.1s;box-sizing:border-box}
+.stat-pill:hover{background:var(--surface2)}
+.stat-divider{width:1px;background:var(--border2);align-self:stretch;margin:8px 4px;flex-shrink:0}
+.slbl{color:var(--accent);font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.1em;white-space:nowrap;line-height:1;margin-bottom:3px}
+.sval{font-family:var(--mono);font-size:17px;font-weight:500;line-height:1}
+.vg{color:var(--green)}.vr{color:var(--red)}
+/* score pill — single row */
+.score-pill-row{display:flex;align-items:baseline;gap:6px;white-space:nowrap}
+.score-main{font-family:var(--mono);font-size:17px;font-weight:500;color:var(--text);line-height:1}
+.score-eq{font-family:var(--mono);font-size:11px;color:var(--text3);line-height:1}
+.score-base{font-family:var(--mono);font-size:13px;color:var(--text2);line-height:1}
+.score-lbl{font-family:var(--mono);font-size:9px;color:var(--text3);line-height:1}
+.score-plus{font-family:var(--mono);font-size:11px;color:var(--text3);line-height:1}
+.score-chalk-sep{font-family:var(--mono);font-size:11px;color:var(--border2);margin:0 2px;line-height:1}
+.score-chalk-num{font-family:var(--mono);font-size:13px;font-weight:500;color:var(--text2);line-height:1}
+.score-chalk-lbl{font-family:var(--mono);font-size:9px;color:var(--text3);line-height:1}
+/* health bar */
+.health-val-row{display:flex;align-items:center;gap:7px}
+.health-bar-track{width:44px;height:5px;border-radius:3px;background:var(--surface3);overflow:hidden;flex-shrink:0}
+.health-bar-fill{height:100%;border-radius:3px;transition:width 0.3s,background 0.3s}
+.health-pct{font-family:var(--mono);font-size:17px;font-weight:500;white-space:nowrap;line-height:1}
+/* stat description bar — overlays below hdr-row2 */
+.stat-desc-bar{position:absolute;top:100%;left:0;right:0;background:var(--surface);border-bottom:1px solid var(--border);padding:0 22px;max-height:0;overflow:hidden;display:flex;align-items:center;gap:10px;transition:max-height 0.15s,padding 0.15s}
+.stat-desc-bar.visible{max-height:200px;padding:6px 22px}
+/* round labels bar — sticky header row below stats */
+.round-labels-bar{background:var(--bg);border-bottom:1px solid var(--border);flex-shrink:0;overflow:hidden;height:26px;display:flex;align-items:center;z-index:8}
+.round-labels-inner{display:flex;align-items:center;padding-left:24px;min-width:max-content;will-change:transform}
+.stat-desc-label{font-family:var(--mono);font-size:10px;font-weight:500;color:var(--accent);text-transform:uppercase;letter-spacing:0.08em;white-space:nowrap;flex-shrink:0}
+.stat-desc-text{font-family:var(--sans);font-size:11px;color:var(--text2);white-space:normal;overflow:hidden}
+
+/* ── BRACKET BODY ── */
+.bracket-body{flex:1;overflow:auto;padding:24px;background:var(--bg)}
+.bracket-svg-wrap{position:relative;display:inline-block}
+.bracket-svg-wrap svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visible}
+
+/* ── MATCH CARD ── */
+.mc{position:absolute;background:var(--surface);border:1px solid var(--border);border-radius:6px;width:180px;display:flex;flex-direction:column;transition:border-color 0.12s}
+.mc.st-correct{border-color:var(--green-border)}
+.mc.st-wrong{border-color:var(--red-border)}
+.mc.st-needs-repick{border-color:#e8900a;border-width:2px}
+
+/* player row */
+.pr{display:flex;align-items:center;gap:5px;padding:4px 7px;cursor:pointer;transition:background 0.1s;border-bottom:1px solid var(--border);min-height:26px;user-select:none}
+.pr:last-of-type{border-bottom:none}
+.pr.no-pick{cursor:default}
+.pr:hover:not(.no-pick):not(.locked){background:var(--surface2)}
+/* original pick states */
+.pr.s-orig{background:var(--blue-bg)}
+.pr.s-orig-inactive{background:var(--blue-bg);opacity:0.45}
+.pr.s-orig-ok{background:var(--green-bg)}
+.pr.s-orig-wrong{background:var(--red-bg)}
+/* backup pick states — always purple, won or lost */
+.pr.s-backup{background:var(--purple-bg)}
+.pr.s-backup-wrong{background:var(--purple-bg)}
+/* eliminated */
+.pr.s-elim{opacity:0.28;cursor:default}
+.pr.s-orig-wrong .pr-name{text-decoration:line-through;opacity:0.5}
+.pr.s-backup-wrong .pr-name{text-decoration:line-through;opacity:0.5}
+
+.pr-seed{font-family:var(--mono);font-size:9px;color:var(--text3);min-width:16px;text-align:center;flex-shrink:0}
+.pr-name{flex:1;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+.pr-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0;background:transparent;border:1px solid var(--border2)}
+.pr-star{background:none;border:none;cursor:pointer;font-size:13px;flex-shrink:0;padding:0 3px;line-height:1;color:var(--border2);transition:color 0.12s}
+.pr-star:hover{color:#c9a227}
+.pr-star.is-high{color:#c9a227}
+
+/* seed/name colors by state */
+.pr.s-orig .pr-seed,.pr.s-orig .pr-name{color:var(--blue)}
+.pr.s-orig .pr-name{font-weight:600}
+.pr.s-orig-inactive .pr-seed,.pr.s-orig-inactive .pr-name{color:var(--blue)}
+.pr.s-orig-inactive .pr-name{font-weight:400}
+.pr.s-orig-inactive .pr-dot{background:var(--blue);border-color:var(--blue)}
+.pr.s-orig-ok .pr-seed,.pr.s-orig-ok .pr-name{color:var(--green)}
+.pr.s-orig-ok .pr-name{font-weight:600}
+.pr.s-orig-wrong .pr-name{color:var(--red)}
+.pr.s-backup .pr-seed,.pr.s-backup .pr-name{color:var(--purple)}
+.pr.s-backup .pr-name{font-weight:600}
+.pr.s-backup-wrong .pr-seed,.pr.s-backup-wrong .pr-name{color:var(--purple)}
+.pr.s-backup-wrong .pr-name{font-weight:600}
+
+/* dot colors */
+.pr.s-orig .pr-dot{background:var(--blue);border-color:var(--blue)}
+.pr.s-orig-ok .pr-dot{background:var(--green);border-color:var(--green)}
+.pr.s-orig-wrong .pr-dot{background:var(--red);border-color:var(--red)}
+.pr.s-backup .pr-dot{background:var(--purple);border-color:var(--purple)}
+.pr.s-backup-wrong .pr-dot{background:var(--purple);border-color:var(--purple)}
+
+.pr-edit-btn{display:none;position:absolute;right:30px;top:50%;transform:translateY(-50%);background:var(--surface2);border:1px solid var(--border);color:var(--text3);padding:1px 5px;border-radius:3px;font-size:9px;cursor:pointer;line-height:1.4;z-index:2}
+.pr:hover .pr-edit-btn{display:block}
+.pr-edit-btn:hover{color:var(--accent);border-color:var(--accent)}
+
+/* card footer */
+.mc-footer{display:flex;border-top:1px solid var(--border);background:var(--surface2);border-radius:0 0 5px 5px;overflow:hidden}
+.mc-score{flex:1}
+.mc-score input{background:transparent;border:none;outline:none;font-family:var(--mono);font-size:9px;color:var(--text2);width:100%;padding:3px 7px}
+.mc-score input::placeholder{color:var(--text3)}
+.mc-acts{display:flex;border-left:1px solid var(--border)}
+.mc-btn{padding:3px 8px;background:none;border:none;cursor:pointer;font-size:10px;color:var(--text3);border-right:1px solid var(--border);line-height:1;transition:all 0.1s}
+.mc-btn:last-child{border-right:none}
+.mc-btn:hover{background:var(--surface3);color:var(--text)}
+.mc-btn.is-ok{color:var(--green);background:var(--green-bg);font-weight:700}
+.mc-btn.is-bad{color:var(--red);background:var(--red-bg);font-weight:700}
+
+/* champion */
+.champ-box{position:absolute;background:var(--surface);border:1.5px solid var(--accent);border-radius:8px;padding:10px 14px;text-align:center;min-width:130px}
+.champ-label{font-family:var(--mono);font-size:9px;color:var(--accent);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:5px}
+.champ-name{font-family:var(--serif);font-size:13px;color:var(--text)}
+
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:var(--surface2)}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+#epm-seed:focus,#epm-name:focus{border-color:var(--accent)!important;outline:none}
+
+@media print{body{display:none!important}}
+</style>
+</head>
+<body>
+
+<!-- UPLOAD -->
+<div id="screen-upload" class="screen active">
+  <div class="upload-container">
+    <div class="wordmark">Slam Bracket</div>
+    <h1 class="upload-heading">Upload your<br><em>draw PDF.</em></h1>
+    <p class="upload-sub">TNNS Live format. Each draw becomes a tab — upload men's and women's separately and switch between them instantly.</p>
+    <div class="existing-draws" id="existing-draws" style="display:none">
+      <div class="existing-draws-label">Current draws</div>
+      <div id="draw-pills"></div>
+    </div>
+    <div class="drop-zone" id="drop-zone">
+      <input type="file" accept=".pdf" id="pdf-input">
+      <div class="drop-icon">⎘</div>
+      <div class="drop-label">Drop PDF here or click to browse</div>
+      <div class="drop-hint">TNNS Live grand slam draw</div>
+    </div>
+    <div class="file-loaded" id="file-loaded"></div>
+    <div class="slam-meta">
+      <select id="slam-select"><option value="">Select slam…</option><option value="AO">Australian Open</option><option value="RG">Roland Garros</option><option value="WIM">Wimbledon</option><option value="USO">US Open</option></select>
+      <select id="draw-select"><option value="">Draw type…</option><option value="MS">Men's Singles</option><option value="WS">Women's Singles</option></select>
+      <input type="number" id="year-input" placeholder="Year (e.g. 2026)" min="2000" max="2099">
+    </div>
+    <button class="btn-primary" id="parse-btn" disabled>Parse draw</button>
+    <div class="parse-status" id="parse-status"></div>
+    <div class="divider"></div>
+    <div style="display:flex;gap:8px;justify-content:center">
+      <button class="btn-secondary" id="go-bracket-btn" style="display:none">View bracket →</button>
+      <button class="btn-secondary" id="load-saved-btn">Load saved file</button>
+    </div>
+    <input type="file" id="load-json-input" accept=".json" style="display:none">
+  </div>
+</div>
+
+<!-- EDIT -->
+<div id="screen-edit" class="screen">
+  <div class="edit-header">
+    <div class="edit-title">Review parsed draw — <strong id="edit-title-label"></strong></div>
+    <div class="edit-actions">
+      <button class="btn-secondary" id="add-match-btn">+ Add match</button>
+      <button class="btn-primary" id="confirm-draw-btn" style="width:auto;padding:8px 18px;font-size:13px">Confirm & start picking →</button>
+    </div>
+  </div>
+  <div class="edit-body">
+    <div class="edit-section-label">Round 1 — edit any names or seeds before confirming</div>
+    <div id="edit-matches-container"></div>
+    <button class="add-match-btn" id="add-match-btn-b">+ add match</button>
+  </div>
+</div>
+
+<!-- BRACKET -->
+<div id="screen-bracket" class="screen">
+  <!-- ROW 1: nav + search + actions -->
+  <div class="hdr-row1" id="hdr-row1">
+    <div class="hdr-left">
+      <button class="slam-dropdown-btn" id="slam-dropdown-btn">
+        <span id="slam-dropdown-label">—</span>
+        <span class="chevron">▾</span>
+      </button>
+      <div class="slam-dropdown-menu" id="slam-dropdown-menu"></div>
+      <div class="seg-control" id="seg-control"></div>
+    </div>
+    <div class="hdr-center">
+      <div class="search-wrap" id="search-wrap">
+        <div class="search-input-wrap">
+          <span class="search-input-icon">🔍</span>
+          <input class="search-input" id="search-input" type="text" placeholder="Search players…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+          <button class="search-clear" id="search-clear">×</button>
+        </div>
+        <div class="search-results" id="search-results"></div>
+      </div>
+    </div>
+    <div class="hdr-right">
+      <div class="lock-switch" id="lock-switch">
+        <div class="lock-switch-track" id="lock-track"><div class="lock-switch-knob"></div></div>
+        <span class="lock-switch-label" id="lock-label">Unlocked</span>
+      </div>
+      <button class="btn-secondary" id="print-btn"><span class="btn-full">Print</span><span class="btn-short">P</span></button>
+      <div style="position:relative;display:flex;align-items:center">
+        <button class="btn-secondary" id="save-btn"><span class="btn-full">Save</span><span class="btn-short">S</span></button>
+        <span id="storage-warn" title="" style="display:none;position:absolute;top:-4px;right:-4px;background:var(--red);color:#fff;border-radius:50%;width:14px;height:14px;font-size:9px;align-items:center;justify-content:center;cursor:default;z-index:5">⚠</span>
+      </div>
+      <button class="btn-secondary" id="add-draw-btn"><span class="btn-full btn-plus-full">+ Draw</span><span class="btn-short btn-plus-short">+</span></button>
+    </div>
+  </div>
+  <!-- ROW 2: stats + overlaying tooltip -->
+  <div class="hdr-row2">
+    <div class="stats-strip" id="stats-strip"></div>
+    <div class="stat-desc-bar" id="stat-desc-bar">
+      <span class="stat-desc-label" id="stat-desc-label"></span>
+      <span class="stat-desc-text" id="stat-desc-text"></span>
+    </div>
+  </div>
+  <div class="round-labels-bar" id="round-labels-bar">
+    <div class="round-labels-inner" id="round-labels-inner"></div>
+  </div>
+  <div class="bracket-body" id="bracket-body"></div>
+</div>
+
+<!-- PLAYER EDIT MODAL -->
+<div id="edit-player-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:200;align-items:center;justify-content:center">
+  <div style="background:var(--surface);border:1px solid var(--border2);border-radius:12px;padding:22px;width:340px;max-width:92vw;box-shadow:0 8px 32px rgba(0,0,0,0.15)">
+    <div style="font-family:var(--serif);font-size:17px;font-weight:400;margin-bottom:6px" id="epm-title">Edit player</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:16px;line-height:1.6" id="epm-subtitle">Update name and seed. Picks for this player will be cleared.</div>
+    <div style="display:flex;gap:8px;margin-bottom:12px" id="epm-inputs">
+      <input id="epm-seed" type="text" maxlength="3" placeholder="Seed / Q / WC" style="width:80px;flex-shrink:0;background:var(--surface2);border:1px solid var(--border2);color:var(--text);padding:8px 10px;border-radius:6px;font-family:var(--mono);font-size:12px;outline:none">
+      <input id="epm-name" type="text" placeholder="Player name" style="flex:1;background:var(--surface2);border:1px solid var(--border2);color:var(--text);padding:8px 10px;border-radius:6px;font-family:var(--sans);font-size:13px;outline:none">
+    </div>
+    <div id="epm-btn-area" style="display:flex;gap:8px">
+      <button id="epm-confirm" style="flex:1;padding:9px;background:var(--accent);color:var(--accent-text);border:none;border-radius:7px;font-family:var(--sans);font-size:13px;font-weight:600;cursor:pointer">Update player</button>
+      <button id="epm-cancel" style="padding:9px 16px;background:var(--surface2);border:1px solid var(--border2);color:var(--text);border-radius:7px;font-family:var(--sans);font-size:13px;cursor:pointer">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+const SLAM_CONFIG={AO:{name:'Australian Open',surface:'Hard'},RG:{name:'Roland Garros',surface:'Clay'},WIM:{name:'Wimbledon',surface:'Grass'},USO:{name:'US Open',surface:'Hard'}};
+
+// ── STATE ──
+// draw = { slam, draw, year, locked, rounds }
+// match = { p1:{name,seed}, p2:{name,seed}, pick, originalPick, winner, result, score }
+//   pick        = current live pick (mutable always pre-lock, backup post-lock)
+//   originalPick = snapshotted at lock time, never changes
+//   result      = 'correct'|'wrong'|null — whether originalPick matched winner
+let state={draws:[],activeTab:0};
+let pdfFile=null,pendingDraw=null;
+
+function $(id){return document.getElementById(id)}
+function showScreen(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));$(id).classList.add('active')}
+function activeDraw(){return state.draws[state.activeTab]||null}
+function applyTheme(slam){document.body.className=slam?'theme-'+slam:''}
+function drawLabel(d){const cfg=SLAM_CONFIG[d.slam]||{};return(cfg.name||d.slam)+' '+d.year+' '+d.draw;}
+function drawShortLabel(d){return d.slam+' '+d.year+' '+d.draw;}
+
+// ── MATCH HELPERS ──
+// Is this pick a backup? (locked mode, pick differs from originalPick)
+function isBackupPick(m){
+  return !!m.originalPick&&m.pick&&m.pick!==m.originalPick;
+}
+// Is this pick an original pending pick? (pick set, no result yet, not backup)
+function isOrigPick(m){
+  return m.pick&&!m.winner&&!isBackupPick(m);
+}
+
+// ── SCORING ──
+// Round config: base points = round(1.78^(r-1)), r=1..7
+const ROUND_CONFIG = Array.from({length:7},(_,i)=>({base:Math.round(Math.pow(1.78,i))}));
+
+// Returns numeric seed for scoring: 1-32 = seeded, 33 = unseeded/Q/WC/LL
+function numericSeed(seedStr){
+  const n=parseInt(seedStr);
+  return(n>=1&&n<=32)?n:33;
+}
+
+// Upset bonus = winner seed − loser seed (floor 0)
+// Unseeded vs unseeded: flat 0.5
+function calcUpsetBonus(winnerSeedStr, loserSeedStr){
+  const ws=numericSeed(winnerSeedStr);
+  const ls=numericSeed(loserSeedStr);
+  if(ws===33 && ls===33) return 0.5; // unseeded vs unseeded
+  return Math.max(0, ws - ls);
+}
+
+// Calculate score for one correct original pick
+function calcMatchScore(m,ri){
+  const cfg=ROUND_CONFIG[ri]||ROUND_CONFIG[0];
+  const loser=m.winner===m.p1.name?m.p2:m.p1;
+  const winner=m.winner===m.p1.name?m.p1:m.p2;
+  const skillBonus=calcUpsetBonus(winner.seed, loser.seed);
+  return{base:cfg.base, skill:skillBonus};
+}
+
+function calcStatsAsOf(d, upToRi=null){
+  const isLive=upToRi===null;
+  const filterRi=isLive?Infinity:upToRi;
+  let filled=0,total=0,cOrig=0,wOrig=0,cBackup=0,wBackup=0,baseScore=0,skillBonus=0;
+  let cDrawOrig=0,wDrawOrig=0; // original pick result for ALL confirmed matches (incl. backup)
+  let maxHealthPts=0,reachableHealthPts=0;
+
+  // Build eliminated set from rounds 0..filterRi for snapshot integrity
+  const eliminated=new Set();
+  if(!isLive){
+    d.rounds.forEach((r,ri)=>{
+      if(ri>filterRi)return;
+      r.matches.forEach(m=>{
+        if(!m.winner)return;
+        const loser=m.p1.name===m.winner?m.p2.name:m.p1.name;
+        if(loser)eliminated.add(loser);
+      });
+    });
+  }
+
+  d.rounds.forEach((r,ri)=>r.matches.forEach(m=>{
+    if(!m.p1.name&&!m.p2.name)return;
+    total++;
+    if(m.pick)filled++;
+
+    if(ri<=filterRi&&m.winner){
+      // Confirmed match in window — scoring/accuracy
+      const backup=isBackupPick(m);
+      // Draw accuracy always tracks original pick result, backup or not
+      if(m.result==='correct')cDrawOrig++;
+      else if(m.result==='wrong')wDrawOrig++;
+      if(!backup){
+        if(m.result==='correct'){
+          cOrig++;
+          const sc=calcMatchScore(m,ri);
+          baseScore+=sc.base;
+          skillBonus+=sc.skill;
+        } else if(m.result==='wrong'){
+          wOrig++;
+        }
+      } else {
+        if(m.pick===m.winner)cBackup++;
+        else wBackup++;
+      }
+    }
+
+    // ── DRAW HEALTH (unified, fixed denominator) ──
+    // Denominator: all rounds with an original pick.
+    // Numerator: pts already won + pts still winnable.
+    // Drains as picks are eliminated; advances in filter = more eliminations counted.
+    if(m.originalPick){
+      const pts=ROUND_CONFIG[ri]?ROUND_CONFIG[ri].base:0;
+      maxHealthPts+=pts;
+      if(isLive){
+        // Live: won matches count; unplayed matches count if pick isn't eliminated
+        if(m.winner){
+          if(m.winner===m.originalPick)reachableHealthPts+=pts;
+          // else: pick lost this match — zero contribution
+        } else {
+          // Unplayed: check if original pick player is still alive in this slot
+          const pickSlot=m.originalPick===m.p1.name?m.p1:m.originalPick===m.p2.name?m.p2:null;
+          if(pickSlot&&!pickSlot.elim)reachableHealthPts+=pts;
+        }
+      } else {
+        // Snapshot (after Ri): confirmed in-window wins count; everything after
+        // window counts if pick survived through filterRi
+        if(ri<=filterRi&&m.winner){
+          if(m.winner===m.originalPick)reachableHealthPts+=pts;
+          // else: pick lost in-window — zero contribution
+        } else {
+          // Unplayed in-window OR any round after window: attainable if not yet eliminated
+          if(!eliminated.has(m.originalPick))reachableHealthPts+=pts;
+        }
+      }
+    }
+  }));
+
+  return{filled,total,cOrig,wOrig,cDrawOrig,wDrawOrig,cBackup,wBackup,baseScore,skillBonus,maxHealthPts,reachableHealthPts};
+}
+
+// Keep calcStats as a convenience wrapper
+function calcStats(d){return calcStatsAsOf(d,null);}
+
+
+let statsRoundFilter=null; // null = live, number = round index
+
+function renderStats(){
+  const strip=$('stats-strip');if(!strip)return;
+  const d=activeDraw();
+  strip.innerHTML='';
+  if(!d)return;
+
+  const s=calcStatsAsOf(d,statsRoundFilter);
+  const locked=d.locked;
+
+  function attachTip(el,label,tip){
+    el.addEventListener('mouseenter',()=>{
+      const bar=$('stat-desc-bar'),lbl=$('stat-desc-label'),txt=$('stat-desc-text');
+      lbl.textContent=label;txt.textContent=tip;bar.classList.add('visible');
+    });
+    el.addEventListener('mouseleave',()=>$('stat-desc-bar').classList.remove('visible'));
+  }
+
+  function simplePill(label,val,valCls,tip){
+    const p=document.createElement('div');p.className='stat-pill';
+    p.innerHTML=`<span class="slbl">${label}</span><span class="sval${valCls?' '+valCls:''}">${val}</span>`;
+    if(tip)attachTip(p,label,tip);
+    strip.appendChild(p);
+  }
+
+  if(!locked){
+    const pct=s.total>0?Math.round(s.filled/s.total*100):0;
+    simplePill('picks filled',s.filled+' / '+s.total,'');
+    simplePill('complete',pct+'%','');
+    return;
+  }
+
+  // ── ROUND FILTER SELECTOR ──
+  const selWrap=document.createElement('div');
+  selWrap.style.cssText='display:flex;align-items:center;gap:3px;padding:0 10px 0 14px;border-right:1px solid var(--border);height:100%;flex-shrink:0';
+  const availableRounds=[{label:'All Results',ri:null}];
+  d.rounds.forEach((r,ri)=>{if(r.matches.every(m=>m.winner))availableRounds.push({label:r.label,ri});});
+  availableRounds.forEach(({label,ri})=>{
+    const isActive=statsRoundFilter===ri;
+    const displayLabel=ri===null?(isActive?'All Results':'All'):(isActive?'After '+label:label);
+    const btn=document.createElement('button');
+    btn.style.cssText='font-family:var(--mono);font-size:9px;padding:2px 6px;border-radius:3px;border:1px solid '
+      +(isActive?'var(--accent)':'var(--border2)')
+      +';background:'+(isActive?'var(--accent)':'none')
+      +';color:'+(isActive?'var(--accent-text)':'var(--text2)')
+      +';cursor:pointer;white-space:nowrap;transition:all 0.12s';
+    btn.textContent=displayLabel;
+    btn.addEventListener('click',()=>{statsRoundFilter=ri;renderStats();});
+    selWrap.appendChild(btn);
+  });
+  strip.appendChild(selWrap);
+
+  // ── SCORE PILL ──
+  const chalk=calcChalkScore(d);
+  const totalScore=Math.round(s.baseScore+s.skillBonus);
+  const chalkDiff=chalk.chalkTotal>0?(s.baseScore+s.skillBonus-chalk.chalkTotal):null;
+  const chalkHTML=chalkDiff!==null
+    ?`<span class="score-chalk-num">${chalkDiff>=0?'+':''}${Math.round(chalkDiff)}</span><span class="score-chalk-lbl"> vs chalk</span>`
+    :'';
+
+  const scorePill=document.createElement('div');scorePill.className='stat-pill';
+  scorePill.innerHTML=`
+    <span class="slbl">Score</span>
+    <div class="score-pill-row">
+      <span class="score-main">${totalScore}</span>
+      <span class="score-eq">=</span>
+      <span class="score-base">${s.baseScore}</span><span class="score-lbl"> base</span>
+      <span class="score-plus">+</span>
+      <span class="score-base">${Math.round(s.skillBonus)}</span><span class="score-lbl"> upset</span>
+      ${chalkHTML?`<span class="score-chalk-sep">|</span>${chalkHTML}`:''}
+    </div>`;
+  attachTip(scorePill,'Score','Base points for each correct original pick: 1, 2, 3, 6, 10, 18, 32 (R1→F). Upset bonus = winner seed minus loser seed — unseeded counts as 33, floored at 0. Unseeded vs. unseeded is a flat 0.5. Chalk shows what a seed-order bracket would score.');
+  strip.appendChild(scorePill);
+
+  // ── DRAW ACCURACY PILL ──
+  // Uses cDrawOrig/wDrawOrig which cover ALL confirmed matches (incl. voluntary backup swaps)
+  const origRes=s.cDrawOrig+s.wDrawOrig;
+  const drawAccPct=origRes>0?Math.round(s.cDrawOrig/origRes*100):'—';
+  const drawAccFrac=origRes>0?`${s.cDrawOrig} / ${origRes}`:'—';
+  const drawAccPill=document.createElement('div');drawAccPill.className='stat-pill';
+  drawAccPill.innerHTML=`
+    <span class="slbl">Draw Accuracy</span>
+    <div style="display:flex;align-items:baseline;gap:8px">
+      <span class="sval">${drawAccFrac}</span>
+      ${origRes>0?`<span class="score-chalk-num">${drawAccPct}%</span>`:''}
+    </div>`;
+  attachTip(drawAccPill,'Draw Accuracy','How often your pre-tournament picks were right, evaluated when each match is confirmed. Original picks only.');
+  strip.appendChild(drawAccPill);
+
+  // ── MATCH ACCURACY PILL ──
+  const allRes=s.cOrig+s.wOrig+s.cBackup+s.wBackup;
+  const matchCorrect=s.cOrig+s.cBackup;
+  const matchAccPct=allRes>0?Math.round(matchCorrect/allRes*100):'—';
+  const matchAccFrac=allRes>0?`${matchCorrect} / ${allRes}`:'—';
+  const matchAccPill=document.createElement('div');matchAccPill.className='stat-pill';
+  matchAccPill.innerHTML=`
+    <span class="slbl">Match Accuracy</span>
+    <div style="display:flex;align-items:baseline;gap:8px">
+      <span class="sval">${matchAccFrac}</span>
+      ${allRes>0?`<span class="score-chalk-num">${matchAccPct}%</span>`:''}
+    </div>`;
+  attachTip(matchAccPill,'Match Accuracy','How often you picked the right winner at match time, including any pick changes made during the tournament.');
+  strip.appendChild(matchAccPill);
+
+  // ── DRAW HEALTH PILL ──
+  const healthPill=document.createElement('div');healthPill.className='stat-pill';
+  healthPill.style.borderRight='none';
+  if(s.maxHealthPts>0){
+    const pct=Math.round(s.reachableHealthPts/s.maxHealthPts*100);
+    const barColor=pct>=67?'#2d7a3a':pct>=33?'#d4820a':'#c0392b';
+    const textColor=pct>=67?'var(--green)':pct>=33?'#d4820a':'var(--red)';
+    healthPill.innerHTML=`
+      <span class="slbl">Draw Health</span>
+      <div class="health-val-row">
+        <div class="health-bar-track">
+          <div class="health-bar-fill" style="width:${pct}%;background:${barColor}"></div>
+        </div>
+        <span class="health-pct" style="color:${textColor}">${pct}%</span>
+      </div>`;
+  } else {
+    healthPill.innerHTML=`<span class="slbl">Draw Health</span><span class="sval" style="color:var(--text3)">—</span>`;
+  }
+  attachTip(healthPill,'Draw Health','How much of your draw\'s scoring potential is still alive? The lower it gets, the more busted your bracket.');
+  strip.appendChild(healthPill);
+
+  // Keep desc bar hidden by default
+  const bar=$('stat-desc-bar');
+  if(bar)bar.classList.remove('visible');
+}
+
+// ── LOCK / UNLOCK ──
+function lockDraw(){
+  const d=activeDraw();if(!d)return;
+  // Snapshot originalPick for every match
+  d.rounds.forEach(r=>r.matches.forEach(m=>{
+    m.originalPick=m.pick;
+  }));
+  d.locked=true;
+  saveToStorage();updateLockBtn();renderStats();renderBracket();
+}
+
+function doUnlock(){
+  const d=activeDraw();if(!d)return;
+  const hasResults=d.rounds.some(r=>r.matches.some(m=>m.winner));
+  if(hasResults){
+    d.rounds.forEach(r=>r.matches.forEach(m=>{
+      m.winner=null;m.result=null;m.score='';
+      m.pick=m.originalPick||m.pick;
+      m.originalPick=null;
+    }));
+    // Clear all cascaded player slots first, then re-cascade all picks fully
+    d.rounds.forEach((r,ri)=>r.matches.forEach((m,mi)=>{
+      if(ri>0){m.p1={name:'',seed:''};m.p2={name:'',seed:''};}
+    }));
+    d.rounds[0].matches.forEach((m,mi)=>placePickAllRounds(d,0,mi));
+  } else {
+    d.rounds.forEach(r=>r.matches.forEach(m=>{m.originalPick=null;}));
+  }
+  d.locked=false;
+  saveToStorage();updateLockBtn();renderStats();renderBracket();
+}
+
+function unlockDraw(){
+  const d=activeDraw();if(!d)return;
+  const hasResults=d.rounds.some(r=>r.matches.some(m=>m.winner));
+  if(!hasResults){doUnlock();return;}
+  // Show inline confirmation
+  const overlay=document.createElement('div');
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:500;display:flex;align-items:center;justify-content:center';
+  const box=document.createElement('div');
+  box.style.cssText='background:var(--surface);border:1px solid var(--border2);border-radius:12px;padding:24px;width:340px;max-width:92vw;box-shadow:0 8px 32px rgba(0,0,0,0.18)';
+  box.innerHTML=`
+    <div style="font-family:var(--serif);font-size:17px;margin-bottom:8px">Unlock bracket?</div>
+    <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:18px">This will clear all confirmed results and backup picks. Your original picks will be preserved.</div>
+    <div style="display:flex;gap:8px">
+      <button id="unlock-confirm" style="flex:1;padding:9px;background:var(--red);color:#fff;border:none;border-radius:7px;font-family:var(--sans);font-size:13px;font-weight:600;cursor:pointer">Yes, unlock</button>
+      <button id="unlock-cancel" style="padding:9px 16px;background:var(--surface2);border:1px solid var(--border2);color:var(--text);border-radius:7px;font-family:var(--sans);font-size:13px;cursor:pointer">Cancel</button>
+    </div>`;
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  document.getElementById('unlock-confirm').addEventListener('click',()=>{document.body.removeChild(overlay);doUnlock();});
+  document.getElementById('unlock-cancel').addEventListener('click',()=>document.body.removeChild(overlay));
+}
+
+function updateLockBtn(){
+  const sw=$('lock-switch');
+  const track=$('lock-track');
+  const label=$('lock-label');
+  if(!sw)return;
+  const locked=activeDraw()&&activeDraw().locked;
+  track.className='lock-switch-track'+(locked?' on':'');
+  sw.className='lock-switch'+(locked?' on':'');
+  label.textContent=locked?'Locked':'Unlocked';
+}
+
+$('lock-switch').addEventListener('click',()=>{
+  const d=activeDraw();if(!d)return;
+  if(d.locked)unlockDraw();else lockDraw();
+});
+
+// ── PICK CASCADE (pre-lock only) ──
+function findSeed(d,name){
+  for(const r of d.rounds)for(const m of r.matches){
+    if(m.p1.name===name&&m.p1.seed)return m.p1.seed;
+    if(m.p2.name===name&&m.p2.seed)return m.p2.seed;
+  }
+  return'';
+}
+
+function getNextSlot(d,ri,mi){
+  const nri=ri+1;
+  if(nri>=d.rounds.length)return null;
+  return{nri,nmi:Math.floor(mi/2),side:mi%2===0?'p1':'p2'};
+}
+
+function placePickInNextRound(d,ri,mi){
+  const m=d.rounds[ri].matches[mi];
+  const next=getNextSlot(d,ri,mi);
+  if(next){
+    const nm=d.rounds[next.nri].matches[next.nmi];
+    if(!nm.winner){
+      nm[next.side]=m.pick?{name:m.pick,seed:findSeed(d,m.pick)}:{name:'',seed:''};
+    }
+  }
+}
+
+function handlePickClick(ri,mi,p){
+  const d=activeDraw();if(!d)return;
+  const m=d.rounds[ri].matches[mi];
+  if(m.winner)return;
+  if(d.locked&&m.result&&!isBackupPick(m)&&!m.editedAfterLock)return;
+
+  const isWithdrawalRepick=d.locked&&m.editedAfterLock;
+
+  if(isWithdrawalRepick){
+    // Withdrawal replacement — re-snapshot originalPick and cascade like unlocked
+    m.pick=m.pick===p.name?null:p.name;
+    m.originalPick=m.pick;
+    if(m.pick){
+      m.editedAfterLock=false;
+      placePickAllRounds(d,ri,mi);
+    }
+  } else if(d.locked){
+    // Normal backup pick — no cascade
+    m.pick=m.pick===p.name?null:p.name;
+  } else {
+    // Unlocked original pick — cascade forward
+    const prev=m.pick;
+    m.pick=m.pick===p.name?null:p.name;
+    if(prev&&prev!==m.pick)clearPickForward(d,ri,mi,prev);
+    placePickAllRounds(d,ri,mi);
+  }
+  saveToStorage();renderStats();renderBracket();
+}
+
+function placePickAllRounds(d,ri,mi){
+  let r=ri,m=mi;
+  while(true){
+    const next=getNextSlot(d,r,m);
+    if(!next)break;
+    const nm=d.rounds[next.nri].matches[next.nmi];
+    if(nm.winner)break;
+    // Check if the slot we're about to fill currently holds our pick's name
+    // (i.e. it was cascaded from us, not independently set)
+    const currentInSlot=nm[next.side]?.name;
+    const currentMatch=d.rounds[r].matches[m];
+    const pickName=currentMatch.pick;
+    // Stop if there's something in this slot that isn't our pick (independently set)
+    if(currentInSlot&&currentInSlot!==pickName)break;
+    placePickInNextRound(d,r,m);
+    r=next.nri;m=next.nmi;
+  }
+}
+
+function clearPickForward(d,ri,mi,name){
+  // Walk forward and null out slots/picks that matched the old name
+  let r=ri,m=mi;
+  while(true){
+    const next=getNextSlot(d,r,m);if(!next)break;
+    const nm=d.rounds[next.nri].matches[next.nmi];
+    if(nm.winner)break;
+    const side=next.side;
+    if(nm[side].name===name){nm[side]={name:'',seed:''};}
+    if(nm.pick===name){nm.pick=null;}
+    r=next.nri;m=next.nmi;
+    if(!nm.pick&&!nm[side]?.name)break;// nothing more to clear
+  }
+}
+
+// ── APPLY WINNER (post-lock) ──
+function applyWinner(d,ri,mi,winnerName){
+  const m=d.rounds[ri].matches[mi];
+  const loserName=m.p1.name===winnerName?m.p2.name:m.p1.name;
+  m.winner=winnerName;
+  m.result=m.originalPick?(m.originalPick===winnerName?'correct':'wrong'):null;
+
+  // Place winner in next slot
+  const next=getNextSlot(d,ri,mi);
+  if(next){
+    const nm=d.rounds[next.nri].matches[next.nmi];
+    if(!nm.winner){
+      nm[next.side]={name:winnerName,seed:findSeed(d,winnerName)};
+      // If this slot had a broken/eliminated player, clear the broken result
+      // so the match becomes fresh for picking
+      if(nm.result==='wrong'&&nm.originalPick&&nm.originalPick!==winnerName){
+        // Keep result=wrong (their original pick is still wrong) but clear the
+        // eliminated player from the slot — the wrong flag stays on the match
+      }
+    }
+  }
+
+  // Mark all downstream matches where loser was originalPick as wrong immediately
+  if(loserName)markLoserForward(d,ri,mi,loserName);
+
+  // Update champion box
+  const fin=d.rounds[d.rounds.length-1].matches[0];
+  const cn=document.querySelector('.champ-name');
+  if(cn)cn.textContent=fin&&fin.winner?fin.winner:(fin&&fin.pick)||'—';
+  saveToStorage();renderStats();renderBracket();
+}
+
+// Walk forward and mark every match where loserName was originalPick as result='wrong'
+// Also mark the player slot as eliminated so it renders crossed out
+function markLoserForward(d,ri,mi,loserName){
+  let r=ri,m=mi;
+  while(true){
+    const next=getNextSlot(d,r,m);if(!next)break;
+    const nm=d.rounds[next.nri].matches[next.nmi];
+    if(nm.winner)break;
+    const side=next.side;
+    const slotName=nm[side]?.name;
+    // Mark the slot as eliminated (visual only — no stat impact)
+    if(slotName===loserName){
+      nm[side]={...nm[side],elim:true};
+    }
+    // Stop if the loser isn't in this slot
+    if(slotName!==loserName&&nm.originalPick!==loserName)break;
+    r=next.nri;m=next.nmi;
+  }
+}
+
+function undoWinner(d,ri,mi){
+  const m=d.rounds[ri].matches[mi];
+  const wasWinner=m.winner;
+  const wasLoser=m.p1.name===wasWinner?m.p2.name:m.p1.name;
+  m.winner=null;m.result=null;
+
+  // Remove winner from next slot and restore original pick
+  const next=getNextSlot(d,ri,mi);
+  if(next&&wasWinner){
+    const nm=d.rounds[next.nri].matches[next.nmi];
+    if(!nm.winner&&nm[next.side].name===wasWinner){
+      const origName=m.originalPick||null;
+      nm[next.side]=origName?{name:origName,seed:findSeed(d,origName)}:{name:'',seed:''};
+    }
+  }
+
+  // Un-mark downstream matches that were marked wrong by this result
+  if(wasLoser)unmarkLoserForward(d,ri,mi,wasLoser);
+
+  saveToStorage();renderStats();renderBracket();
+}
+
+function unmarkLoserForward(d,ri,mi,loserName){
+  let r=ri,m=mi;
+  while(true){
+    const next=getNextSlot(d,r,m);if(!next)break;
+    const nm=d.rounds[next.nri].matches[next.nmi];
+    if(nm.winner)break;
+    const side=next.side;
+    if(nm[side]?.elim&&nm[side].name===loserName){
+      const{elim,...rest}=nm[side];
+      nm[side]=rest; // remove elim flag, keep everything else
+    }
+    if(nm[side]?.name!==loserName&&nm.originalPick!==loserName)break;
+    r=next.nri;m=next.nmi;
+  }
+}
+
+// ── WINNER PICKER (when no pick set and ✓/✗ clicked) ──
+function openWinnerPicker(d,ri,mi,cb){
+  const m=d.rounds[ri].matches[mi];
+  const players=[m.p1,m.p2].filter(p=>p.name);
+  if(players.length===0){alert('No players in this match.');return;}
+  if(players.length===1){cb(players[0].name);return;}
+  const modal=$('edit-player-modal');
+  $('epm-title').textContent='Who won this match?';
+  $('epm-subtitle').textContent='';
+  $('epm-inputs').style.display='none';
+  const area=$('epm-btn-area');area.innerHTML='';
+  const col=document.createElement('div');col.style.cssText='display:flex;flex-direction:column;gap:8px;width:100%';
+  players.forEach(p=>{
+    const btn=document.createElement('button');
+    btn.style.cssText='padding:10px 14px;background:var(--surface2);border:1px solid var(--border2);color:var(--text);border-radius:7px;font-family:var(--sans);font-size:13px;cursor:pointer;text-align:left;display:flex;align-items:center;gap:8px';
+    btn.innerHTML=`<span style="font-family:var(--mono);font-size:10px;color:var(--accent);min-width:20px">${p.seed||''}</span>${p.name}`;
+    btn.addEventListener('click',()=>{closeModal();cb(p.name);});
+    col.appendChild(btn);
+  });
+  const cancel=document.createElement('button');
+  cancel.style.cssText='padding:8px;background:none;border:1px solid var(--border2);color:var(--text2);border-radius:7px;font-size:12px;cursor:pointer';
+  cancel.textContent='Cancel';cancel.addEventListener('click',closeModal);
+  col.appendChild(cancel);
+  area.appendChild(col);
+  modal.style.display='flex';
+}
+
+function closeModal(){
+  const modal=$('edit-player-modal');
+  modal.style.display='none';
+  $('epm-inputs').style.display='';
+  $('epm-subtitle').textContent='Update name and seed. Picks for this player will be cleared.';
+  $('epm-btn-area').innerHTML=`<button id="epm-confirm" style="flex:1;padding:9px;background:var(--accent);color:var(--accent-text);border:none;border-radius:7px;font-family:var(--sans);font-size:13px;font-weight:600;cursor:pointer">Update player</button><button id="epm-cancel" style="padding:9px 16px;background:var(--surface2);border:1px solid var(--border2);color:var(--text);border-radius:7px;font-family:var(--sans);font-size:13px;cursor:pointer">Cancel</button>`;
+  $('epm-cancel').addEventListener('click',closeModal);
+  $('epm-confirm').addEventListener('click',confirmEditPlayer);
+}
+
+// ── EDIT PLAYER MODAL ──
+let editCtx=null;
+
+function openEditPlayerModal(ri,mi,side){
+  const d=activeDraw();if(!d)return;
+  const m=d.rounds[ri].matches[mi];
+  editCtx={ri,mi,side};
+  $('epm-title').textContent='Edit player — '+(m[side].name||'empty slot');
+  $('epm-seed').value=m[side].seed||'';
+  $('epm-name').value=m[side].name||'';
+  $('edit-player-modal').style.display='flex';
+  setTimeout(()=>$('epm-name').focus(),50);
+}
+
+function confirmEditPlayer(){
+  if(!editCtx)return;
+  const d=activeDraw();if(!d)return;
+  const{ri,mi,side}=editCtx;
+  const m=d.rounds[ri].matches[mi];
+  const oldName=m[side].name;
+  const newName=$('epm-name').value.trim();
+  const newSeed=$('epm-seed').value.trim();
+  m[side]={name:newName,seed:newSeed};
+  if(m.pick===oldName)m.pick=null;
+  if(m.originalPick===oldName)m.originalPick=null;
+  if(oldName&&oldName!==newName){
+    if(d.locked){
+      // Withdrawal after lock — clear the whole chain and mark for re-picking
+      m.editedAfterLock=true;
+      withdrawalClearForward(d,ri,mi,oldName);
+    } else {
+      updatePlayerNameForward(d,ri,mi,oldName,newName,newSeed);
+    }
+  }
+  closeModal();editCtx=null;
+  saveToStorage();renderStats();renderBracket();
+}
+
+// Walk forward from ri,mi and clear any trace of withdrawnName —
+// slots, picks, originalPicks — marking each affected match for re-picking
+function withdrawalClearForward(d,ri,mi,withdrawnName){
+  let r=ri,m=mi;
+  while(true){
+    const next=getNextSlot(d,r,m);if(!next)break;
+    const nm=d.rounds[next.nri].matches[next.nmi];
+    let touched=false;
+    if(nm[next.side]?.name===withdrawnName){
+      nm[next.side]={name:'',seed:''};touched=true;
+    }
+    if(nm.pick===withdrawnName){nm.pick=null;touched=true;}
+    if(nm.originalPick===withdrawnName){nm.originalPick=null;touched=true;}
+    if(touched)nm.editedAfterLock=true;
+    // Keep walking only if the withdrawn player was in this slot
+    if(!touched)break;
+    r=next.nri;m=next.nmi;
+  }
+}
+
+function updatePlayerNameForward(d,ri,mi,oldName,newName,newSeed){
+  let r=ri,m=mi;
+  while(true){
+    const nri=r+1;if(nri>=d.rounds.length)break;
+    const nmi=Math.floor(m/2);
+    const side=m%2===0?'p1':'p2';
+    const nm=d.rounds[nri].matches[nmi];
+    if(nm[side].name===oldName&&!nm.winner)nm[side]={name:newName||'',seed:newSeed||''};
+    if(nm.pick===oldName)nm.pick=newName||null;
+    if(nm.winner)break;
+    r=nri;m=nmi;
+  }
+}
+
+$('epm-cancel').addEventListener('click',closeModal);
+$('epm-confirm').addEventListener('click',confirmEditPlayer);
+$('edit-player-modal').addEventListener('click',e=>{if(e.target===$('edit-player-modal'))closeModal();});
+
+// ── STORAGE ──
+const STORAGE_KEY='slam_bracket';
+const STORAGE_WARN_BYTES=4*1024*1024; // 4MB
+
+function saveToStorage(){
+  const json=JSON.stringify(state);
+  try{
+    localStorage.setItem(STORAGE_KEY,json);
+  }catch(e){
+    console.warn('localStorage write failed',e);
+  }
+  // Check size and show warning if approaching limit
+  const bytes=new Blob([json]).size;
+  const warn=$('storage-warn');
+  if(warn){
+    if(bytes>STORAGE_WARN_BYTES){
+      warn.style.display='flex';
+      warn.title=`Autosave storage is ${(bytes/1024/1024).toFixed(1)}MB — consider removing old draws to free space.`;
+    } else {
+      warn.style.display='none';
+    }
+  }
+}
+
+// Save only active slam+year draws to a scoped JSON file
+function triggerDownload(){
+  const d=activeDraw();if(!d)return;
+  const key=slamKey(d);
+  const scopedDraws=state.draws.filter(x=>slamKey(x)===key);
+  const slug=(d.slam+'-'+d.year).toLowerCase().replace(/[^a-z0-9]+/g,'-');
+  const payload={draws:scopedDraws,activeTab:0,_slamKey:key};
+  const b=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=slug+'.json';a.click();
+}
+
+// Merge loaded draws into current state by slam+draw type — replaces matching, adds new
+function mergeDraws(incoming){
+  incoming.forEach(d=>{
+    const idx=state.draws.findIndex(x=>x.slam===d.slam&&x.year===d.year&&x.draw===d.draw);
+    if(idx>=0)state.draws[idx]=d; // replace existing
+    else state.draws.push(d);     // add new
+  });
+  // Switch active tab to first draw of the loaded slam+year
+  if(incoming.length>0){
+    const key=slamKey(incoming[0]);
+    const idx=state.draws.findIndex(d=>slamKey(d)===key);
+    if(idx>=0)state.activeTab=idx;
+  }
+}
+
+function migrateState(s){
+  const draws=s.draws||[];
+  draws.forEach(d=>{
+    if(d.locked===undefined)d.locked=false;
+    if(d.rounds)d.rounds.forEach(r=>r.matches.forEach(m=>{
+      if(m.backup!==undefined)delete m.backup;
+      if(m.backupSide!==undefined)delete m.backupSide;
+      if(m.p1Backup!==undefined)delete m.p1Backup;
+      if(m.p2Backup!==undefined)delete m.p2Backup;
+      if(m.watch!==undefined)delete m.watch;
+      if(m.originalPick===undefined)m.originalPick=null;
+      if(m.editedAfterLock===undefined)m.editedAfterLock=false;
+    }));
+  });
+  return{...s,draws};
+}
+
+// ── PDF PARSER ──
+async function extractPdfText(file){
+  const ab=await file.arrayBuffer();const pdf=await pdfjsLib.getDocument({data:ab}).promise;
+  let text='';
+  for(let i=1;i<=pdf.numPages;i++){const pg=await pdf.getPage(i);const c=await pg.getTextContent();text+=c.items.map(it=>it.str).join(' ')+'\n';}
+  return text;
+}
+
+function parseTnnsText(text){
+  const byPos={};
+  for(const line of text.split('\n')){
+    for(const e of [...line.matchAll(/(\d+)\s+(.*?)(?=\s+\d+\s+(?:[A-Z]|\d)|$)/g)]){
+      const pos=parseInt(e[1]);if(pos<1||pos>128)continue;
+      let rest=e[2].trim(),seed='';
+      const sm=rest.match(/^(\d+)\s+(.+)$/);
+      if(sm&&parseInt(sm[1])>=1&&parseInt(sm[1])<=32){seed=sm[1];rest=sm[2].trim();}
+      const mm=rest.match(/^(Q|WC|LL|PR)\s+(.+)$/);if(mm){if(!seed)seed=mm[1];rest=mm[2].trim();}
+      const mm2=rest.match(/^(Q|WC|LL|PR)\s+(.+)$/);if(mm2){if(!seed)seed=mm2[1];rest=mm2[2].trim();}
+      rest=rest.replace(/^[A-Z]{2,4}\s+/,'');
+      const nm=rest.match(/^([A-Z][A-Z\s\-\']+),\s*([A-Za-z][a-zA-Z\-]*)/);
+      if(!nm)continue;
+      const last=nm[1].trim().split(/[\s\-]/).map(w=>w[0]+w.slice(1).toLowerCase()).join(' ');
+      byPos[pos]={seed,name:last+' '+nm[2][0]+'.'};
+    }
+  }
+  const matches=[];
+  for(let i=1;i<=128;i+=2){
+    const p1=byPos[i]||{name:'',seed:''};const p2=byPos[i+1]||{name:'',seed:''};
+    if(p1.name||p2.name)matches.push({p1_name:p1.name,p1_seed:p1.seed,p2_name:p2.name,p2_seed:p2.seed});
+  }
+  return matches;
+}
+
+function buildInitialRounds(r1m){
+  const r1=r1m.map((m,i)=>({
+    id:'r1_'+i,
+    p1:{name:m.p1_name||'',seed:m.p1_seed||''},
+    p2:{name:m.p2_name||'',seed:m.p2_seed||''},
+    pick:null,originalPick:null,winner:null,result:null,score:''
+  }));
+  const rounds=[{label:'R1',matches:r1}];let prev=r1;
+  ['R2','R3','R4','QF','SF','F'].forEach(lbl=>{
+    const cnt=Math.ceil(prev.length/2);if(cnt<1)return;
+    const ms=[];
+    for(let i=0;i<cnt;i++)ms.push({id:lbl+'_'+i,p1:{name:'',seed:''},p2:{name:'',seed:''},pick:null,originalPick:null,winner:null,result:null,score:''});
+    rounds.push({label:lbl,matches:ms});prev=ms;
+  });
+  return rounds;
+}
+
+// ── SLAM / DRAW NAVIGATION ──
+// Groups draws by slam+year key
+function slamKey(d){return d.slam+'_'+d.year;}
+function slamLabel(d){const cfg=SLAM_CONFIG[d.slam]||{};return(cfg.name||d.slam)+' '+d.year;}
+function drawsForSlam(key){return state.draws.filter(d=>slamKey(d)===key);}
+function uniqueSlams(){const seen=new Set();return state.draws.filter(d=>{const k=slamKey(d);if(seen.has(k))return false;seen.add(k);return true;});}
+function activeSlamKey(){const d=activeDraw();return d?slamKey(d):null;}
+
+function renderHeader(){
+  const d=activeDraw();
+  // Slam dropdown label
+  const lbl=$('slam-dropdown-label');
+  if(lbl)lbl.textContent=d?slamLabel(d):'—';
+  // Segmented control: draws for active slam
+  const seg=$('seg-control');
+  if(seg){
+    seg.innerHTML='';
+    if(d){
+      const key=slamKey(d);
+      const slams=uniqueSlams();
+      // Only show seg if active slam has draws; also show all draw types
+      const DRAW_TYPES=[{key:'MS',label:"Men's",short:'M'},{key:'WS',label:"Women's",short:'W'}];
+      DRAW_TYPES.forEach(({key,label,short})=>{
+        const btn=document.createElement('button');
+        btn.className='seg-btn';
+        btn.innerHTML=`<span class="seg-full">${label}</span><span class="seg-short">${short}</span>`;
+        const match=state.draws.find(x=>slamKey(x)===slamKey(d)&&x.draw===key);
+        if(!match){btn.disabled=true;}
+        else{
+          if(d.draw===key)btn.classList.add('active');
+          btn.addEventListener('click',()=>{
+            const idx=state.draws.indexOf(match);
+            if(idx>=0)switchTab(idx);
+          });
+        }
+        seg.appendChild(btn);
+      });
+    }
+  }
+  updateLockBtn();
+}
+
+function renderSlamDropdown(){
+  const menu=$('slam-dropdown-menu');
+  const btn=$('slam-dropdown-btn');
+  if(!menu||!btn)return;
+  menu.innerHTML='';
+  const slams=uniqueSlams();
+  const activeKey=activeSlamKey();
+  slams.forEach(sd=>{
+    const key=slamKey(sd);
+    const item=document.createElement('div');
+    item.className='slam-dropdown-item'+(key===activeKey?' active':'');
+    const name=document.createElement('span');name.textContent=slamLabel(sd);
+    const del=document.createElement('button');
+    del.className='slam-dropdown-item-del';del.textContent='×';del.title='Remove all draws for this slam';
+    del.addEventListener('click',e=>{
+      e.stopPropagation();
+      const toRemove=state.draws.filter(d=>slamKey(d)===key);
+      toRemove.forEach(d=>{const i=state.draws.indexOf(d);if(i>=0)state.draws.splice(i,1);});
+      if(state.draws.length===0){saveToStorage();applyTheme('');closeSlamDropdown();showUploadScreen();return;}
+      state.activeTab=Math.min(state.activeTab,state.draws.length-1);
+      saveToStorage();closeSlamDropdown();switchTab(state.activeTab);
+    });
+    item.appendChild(name);item.appendChild(del);
+    item.addEventListener('click',()=>{
+      // Switch to first draw of this slam
+      const first=state.draws.findIndex(d=>slamKey(d)===key);
+      if(first>=0){closeSlamDropdown();switchTab(first);}
+    });
+    menu.appendChild(item);
+  });
+  // Add draw option at bottom
+  const addItem=document.createElement('div');
+  addItem.className='slam-dropdown-item';
+  addItem.style.cssText='border-top:1px solid var(--border);color:var(--text2)';
+  addItem.textContent='+ Add draw…';
+  addItem.addEventListener('click',()=>{closeSlamDropdown();saveToStorage();showUploadScreen();});
+  menu.appendChild(addItem);
+}
+
+function openSlamDropdown(){
+  renderSlamDropdown();
+  $('slam-dropdown-menu').classList.add('open');
+  $('slam-dropdown-btn').classList.add('open');
+}
+function closeSlamDropdown(){
+  $('slam-dropdown-menu').classList.remove('open');
+  $('slam-dropdown-btn').classList.remove('open');
+}
+
+$('slam-dropdown-btn').addEventListener('click',e=>{
+  e.stopPropagation();
+  const menu=$('slam-dropdown-menu');
+  if(menu.classList.contains('open'))closeSlamDropdown();
+  else openSlamDropdown();
+});
+document.addEventListener('click',()=>closeSlamDropdown());
+
+function switchTab(i){
+  state.activeTab=i;
+  statsRoundFilter=null; // reset to live when switching draws
+  const d=state.draws[i];
+  applyTheme(d.slam);
+  renderHeader();renderStats();renderBracket();
+}
+
+function removeDrawTab(i){
+  state.draws.splice(i,1);
+  if(state.draws.length===0){saveToStorage();applyTheme('');showUploadScreen();return;}
+  state.activeTab=Math.min(state.activeTab,state.draws.length-1);
+  saveToStorage();switchTab(state.activeTab);
+}
+
+// ── SEARCH ──
+function allMatchesForSearch(){
+  const results=[];
+  const activeKey=activeSlamKey();
+  state.draws.forEach((d,di)=>{
+    if(slamKey(d)!==activeKey)return; // only active slam+year
+    d.rounds.forEach((r,ri)=>{
+      r.matches.forEach((m,mi)=>{
+        [m.p1,m.p2].forEach(p=>{
+          if(p.name)results.push({drawIdx:di,ri,mi,m,p,round:r.label,draw:d});
+        });
+      });
+    });
+  });
+  return results;
+}
+
+function runSearch(q){
+  const res=$('search-results');
+  if(!q||q.length<2){res.classList.remove('open');return;}
+  const lower=q.toLowerCase();
+  const all=allMatchesForSearch();
+  const matched=all.filter(x=>x.p.name.toLowerCase().includes(lower));
+  // Deduplicate by draw+ri+mi (each match appears once per player, show once)
+  const seen=new Set();
+  const deduped=matched.filter(x=>{const k=x.drawIdx+'_'+x.ri+'_'+x.mi+'_'+x.p.name;if(seen.has(k))return false;seen.add(k);return true;});
+  if(deduped.length===0){
+    res.innerHTML='<div class="search-no-results">No players found</div>';
+    res.classList.add('open');return;
+  }
+  // Group by draw
+  const byDraw=new Map();
+  deduped.forEach(x=>{const k=x.drawIdx;if(!byDraw.has(k))byDraw.set(k,[]);byDraw.get(k).push(x);});
+  res.innerHTML='';
+  byDraw.forEach((items,di)=>{
+    const d=state.draws[di];
+    const grp=document.createElement('div');grp.className='search-group-label';
+    grp.textContent=slamLabel(d)+' · '+d.draw;
+    res.appendChild(grp);
+    items.forEach(x=>{
+      const item=document.createElement('div');item.className='search-result-item';
+      const opp=x.m.p1.name===x.p.name?x.m.p2:x.m.p1;
+      item.innerHTML=`<span class="search-result-round">${x.round}</span><span class="search-result-name">${x.p.name}</span><span class="search-result-vs">vs ${opp.name||'TBD'}</span>`;
+      item.addEventListener('click',()=>{
+        closeSearch();
+        if(x.drawIdx!==state.activeTab)switchTab(x.drawIdx);
+        // Scroll to card after render
+        setTimeout(()=>{
+          const cards=document.querySelectorAll('.mc');
+          // Find card by position — re-render has happened, scan for player name
+          const allPr=document.querySelectorAll('.pr-name');
+          for(const el of allPr){
+            if(el.textContent===x.p.name){
+              el.closest('.mc')?.scrollIntoView({behavior:'smooth',block:'center'});
+              const card=el.closest('.mc');
+              if(card){card.style.transition='box-shadow 0.2s';card.style.boxShadow='0 0 0 2px var(--accent)';setTimeout(()=>{card.style.boxShadow='';},1200);}
+              break;
+            }
+          }
+        },150);
+      });
+      res.appendChild(item);
+    });
+  });
+  res.classList.add('open');
+}
+
+function closeSearch(){
+  $('search-results').classList.remove('open');
+  $('search-input').value='';
+  $('search-clear').classList.remove('visible');
+}
+
+$('search-input').addEventListener('input',e=>{
+  const q=e.target.value.trim();
+  $('search-clear').classList.toggle('visible',q.length>0);
+  runSearch(q);
+});
+$('search-input').addEventListener('focus',e=>{if(e.target.value.trim().length>=2)runSearch(e.target.value.trim());});
+$('search-clear').addEventListener('click',closeSearch);
+document.addEventListener('click',e=>{if(!$('search-wrap').contains(e.target))$('search-results').classList.remove('open');});
+$('search-input').addEventListener('keydown',e=>{
+  if(e.key==='Escape'){closeSearch();return;}
+  const res=$('search-results');
+  if(!res.classList.contains('open'))return;
+  const items=res.querySelectorAll('.search-result-item');
+  if(!items.length)return;
+  const focused=res.querySelector('.search-result-item.kbd-focus');
+  const idx=focused?Array.from(items).indexOf(focused):-1;
+  if(e.key==='ArrowDown'){
+    e.preventDefault();
+    const next=idx<items.length-1?idx+1:0;
+    items.forEach(i=>i.classList.remove('kbd-focus'));
+    items[next].classList.add('kbd-focus');
+    items[next].scrollIntoView({block:'nearest'});
+  } else if(e.key==='ArrowUp'){
+    e.preventDefault();
+    if(idx<=0){
+      items.forEach(i=>i.classList.remove('kbd-focus'));
+      return; // back to input, no item focused
+    }
+    items.forEach(i=>i.classList.remove('kbd-focus'));
+    items[idx-1].classList.add('kbd-focus');
+    items[idx-1].scrollIntoView({block:'nearest'});
+  } else if(e.key==='Enter'){
+    e.preventDefault();
+    if(focused)focused.click();
+  }
+});
+document.addEventListener('keydown',e=>{
+  if((e.metaKey||e.ctrlKey)&&e.key==='f'){
+    const input=$('search-input');
+    if(input&&$('screen-bracket').classList.contains('active')){
+      e.preventDefault();
+      input.focus();input.select();
+    }
+  }
+});
+
+// ── CHALK SCORING ──
+function calcChalkScore(d){
+  let chalkBase=0,chalkSkill=0;
+  d.rounds.forEach((r,ri)=>{
+    const cfg=ROUND_CONFIG[ri]||ROUND_CONFIG[0];
+    r.matches.forEach(m=>{
+      if(!m.winner)return; // only completed matches
+      const ws=numericSeed(m.p1.seed),ls=numericSeed(m.p2.seed);
+      const p1Seeded=ws<=32,p2Seeded=ls<=32;
+      if(!p1Seeded&&!p2Seeded){
+        // Unseeded vs unseeded: chalk gets 50% expected value of flat bonus
+        chalkBase+=cfg.base*0.5;
+        chalkSkill+=0.3*0.5;
+      } else {
+        // Chalk picks lower seed number (better seed), or seeded over unseeded
+        const chalkWinnerSeed=Math.min(ws,ls);
+        const chalkLoserSeed=Math.max(ws,ls);
+        const actualWinnerSeed=m.winner===m.p1.name?ws:ls;
+        if(actualWinnerSeed===chalkWinnerSeed){
+          // Chalk was right
+          chalkBase+=cfg.base;
+          // Chalk pick is always the favorite so upset value = 0
+          chalkSkill+=0;
+        }
+        // If chalk was wrong, scores 0
+      }
+    });
+  });
+  return{chalkBase:parseFloat(chalkBase.toFixed(1)),chalkSkill:parseFloat(chalkSkill.toFixed(1)),chalkTotal:parseFloat((chalkBase+chalkSkill).toFixed(1))};
+}
+
+// ── BRACKET RENDER ──
+const CW=180,CH=62,GAP=20,COL=200;
+
+function renderBracket(){
+  const body=$('bracket-body');body.innerHTML='';
+  const d=activeDraw();if(!d||!d.rounds||!d.rounds.length)return;
+  const rounds=d.rounds;
+  const r1=rounds[0].matches;
+  const total=r1.length,half=Math.ceil(total/2),q=Math.ceil(half/2);
+  const drawRounds=rounds.length-1;
+  const VGAP=32,CELL=CH+VGAP,Q_SEP=28,QQ_SEP=18;
+
+  function r1YCenter(idx){
+    let y=idx*CELL+CH/2;
+    if(idx>=q)y+=QQ_SEP;
+    if(idx>=half)y+=Q_SEP;
+    if(idx>=half+q)y+=QQ_SEP;
+    return y;
+  }
+  function matchYCenter(ri,mi){
+    const f=mi*Math.pow(2,ri),l=(mi+1)*Math.pow(2,ri)-1;
+    return(r1YCenter(f)+r1YCenter(l))/2;
+  }
+
+  const lastR1Y=r1YCenter(total-1);
+  const totalH=lastR1Y+CH/2+16;
+  const CHAMP_W=140;
+  const totalW=drawRounds*COL-GAP+GAP+CW+GAP+CHAMP_W+20;
+
+  const wrap=document.createElement('div');
+  wrap.className='bracket-svg-wrap';
+  wrap.style.cssText=`width:${totalW}px;height:${totalH}px;position:relative`;
+
+  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svg.setAttribute('width',totalW);svg.setAttribute('height',totalH);
+  svg.style.cssText='position:absolute;top:0;left:0;pointer-events:none;overflow:visible';
+
+  const connColor='#c8c4bb';
+
+  function addLine(x1,y1,x2,y2){
+    const l=document.createElementNS('http://www.w3.org/2000/svg','line');
+    l.setAttribute('x1',x1);l.setAttribute('y1',y1);l.setAttribute('x2',x2);l.setAttribute('y2',y2);
+    l.setAttribute('stroke',connColor);l.setAttribute('stroke-width','1');svg.appendChild(l);
+  }
+
+  function drawSep(y,dashed){
+    const lw=drawRounds*COL-GAP;
+    const line=document.createElementNS('http://www.w3.org/2000/svg','line');
+    line.setAttribute('x1',0);line.setAttribute('x2',lw);line.setAttribute('y1',y);line.setAttribute('y2',y);
+    line.setAttribute('stroke',dashed?'#c8c4bb':'#b0aa9f');line.setAttribute('stroke-width',dashed?'1':'1.5');
+    if(dashed)line.setAttribute('stroke-dasharray','5,4');
+    svg.appendChild(line);
+  }
+  function sepY(idx){return(r1YCenter(idx-1)+CH/2+r1YCenter(idx)-CH/2)/2;}
+  drawSep(sepY(q),true);drawSep(sepY(half),false);drawSep(sepY(half+q),true);
+
+  const sectionDefs=[{label:'Top Half · Q1',mi:0},{label:'Top Half · Q2',mi:q},{label:'Bottom Half · Q3',mi:half},{label:'Bottom Half · Q4',mi:half+q}];
+  sectionDefs.forEach(s=>{
+    const lbl=document.createElement('div');
+    lbl.style.cssText=`position:absolute;left:0;font-family:var(--mono);font-size:8px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text3);white-space:nowrap;top:${r1YCenter(s.mi)-CH/2-13}px`;
+    lbl.textContent=s.label;wrap.appendChild(lbl);
+  });
+
+  for(let ri=0;ri<drawRounds;ri++){
+    const x=ri*COL;
+    rounds[ri].matches.forEach((m,mi)=>{
+      const cy=matchYCenter(ri,mi),y=cy-CH/2;
+      placeCard(d,m,ri,mi,x,y,wrap);
+      if(ri<drawRounds-1){
+        const rx=x+CW,midX=rx+GAP/2;
+        const pcy=matchYCenter(ri+1,Math.floor(mi/2));
+        addLine(rx,cy,midX,cy);
+        if(mi%2===0){addLine(midX,cy,midX,matchYCenter(ri,mi+1));}
+        addLine(midX,pcy,(ri+1)*COL,pcy);
+      }
+    });
+  }
+
+  const finX=drawRounds*COL,finCY=totalH/2,finY=finCY-CH/2;
+  const finMatch=rounds[rounds.length-1].matches[0];
+  if(finMatch){
+    placeCard(d,finMatch,rounds.length-1,0,finX,finY,wrap);
+    const sfRi=drawRounds-1;
+    if(rounds[sfRi]&&rounds[sfRi].matches.length>=2){
+      const sfX=(drawRounds-1)*COL,midX=sfX+CW+GAP/2;
+      const sf0=matchYCenter(sfRi,0),sf1=matchYCenter(sfRi,1);
+      addLine(sfX+CW,sf0,midX,sf0);addLine(sfX+CW,sf1,midX,sf1);
+      addLine(midX,sf0,midX,sf1);addLine(midX,finCY,finX,finCY);
+    }
+  }
+
+  // Champion box
+  const champX=finX+CW+GAP,champY=finCY-36;
+  const champDiv=document.createElement('div');champDiv.className='champ-box';
+  champDiv.style.cssText=`left:${champX}px;top:${champY}px;position:absolute`;
+  const champLbl=document.createElement('div');champLbl.className='champ-label';champLbl.textContent='Champion';
+  const champNm=document.createElement('div');champNm.className='champ-name';
+  champNm.textContent=(finMatch&&(finMatch.winner||finMatch.pick))||'—';
+  champDiv.appendChild(champLbl);champDiv.appendChild(champNm);wrap.appendChild(champDiv);
+  addLine(finX+CW,finCY,champX,finCY);
+
+  // Round labels — populate sticky header bar
+  const labelsInner=$('round-labels-inner');
+  labelsInner.innerHTML='';
+  for(let ri=0;ri<drawRounds;ri++){
+    const l=document.createElement('div');
+    l.style.cssText='width:180px;flex-shrink:0;text-align:center;font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text3)';
+    l.textContent=rounds[ri].label;labelsInner.appendChild(l);
+    if(ri<drawRounds-1){const g=document.createElement('div');g.style.cssText='width:20px;flex-shrink:0';labelsInner.appendChild(g);}
+  }
+  const finLbl=document.createElement('div');
+  finLbl.style.cssText='width:180px;flex-shrink:0;text-align:center;font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text3);padding-left:20px';
+  finLbl.textContent='Final';labelsInner.appendChild(finLbl);
+  // Reset scroll sync on re-render
+  labelsInner.style.transform='translateX(0)';
+
+  const outer=document.createElement('div');outer.style.cssText='display:inline-block';
+  wrap.appendChild(svg);outer.appendChild(wrap);body.appendChild(outer);
+}
+
+function placeCard(d,m,ri,mi,x,y,wrap){
+  // Card border reflects only original pick result
+  let cardCls='mc';
+  if(m.editedAfterLock)cardCls+=' st-needs-repick';
+  else if(m.result==='correct')cardCls+=' st-correct';
+  else if(m.result==='wrong')cardCls+=' st-wrong';
+
+  const card=document.createElement('div');
+  card.className=cardCls;
+  card.style.cssText=`left:${x}px;top:${y}px`;
+
+  function makeRow(p,side){
+    const isOrigPick=m.originalPick&&m.originalPick===p.name;
+    const isLivePick=m.pick&&m.pick===p.name;
+    const isBackup=isLivePick&&isBackupPick(m);
+    const backupWrong=isBackup&&m.winner&&m.winner!==p.name;
+    const isElim=m.winner&&m.winner!==p.name&&p.name&&!isLivePick;
+    const isBroken=p.elim&&!m.winner;
+    // Original pick is inactive if: locked, no result yet, original pick exists but no live pick set OR backup is active
+    const origInactive=d.locked&&!m.winner&&isOrigPick&&!isLivePick&&(m.originalPick&&(!m.pick||isBackupPick(m))); // eliminated in earlier round, cascaded here
+
+    let cls='pr';
+    if(!p.name){
+      cls+=' no-pick';
+    } else if(isOrigPick&&m.result==='correct'){
+      cls+=' s-orig-ok locked';
+    } else if(isOrigPick&&m.result==='wrong'&&!isBroken){
+      cls+=' s-orig-wrong locked';
+    } else if(isBroken){
+      cls+=' s-orig-wrong'; // eliminated in earlier round, definitively wrong
+    } else if(isBackup&&backupWrong){
+      cls+=' s-backup-wrong locked';
+    } else if(isBackup){
+      cls+=' s-backup';
+    } else if(origInactive){
+      cls+=' s-orig-inactive'; // original pick present but no active pick or backup is active
+    } else if(isOrigPick||isLivePick){
+      cls+=' s-orig'; // pending original pick (pre or post lock, no result yet)
+    } else if(isElim){
+      cls+=' s-elim';
+    }
+
+    const row=document.createElement('div');row.className=cls;row.style.position='relative';
+    const seedEl=document.createElement('span');seedEl.className='pr-seed';seedEl.textContent=p.seed||'';
+    const nameEl=document.createElement('span');nameEl.className='pr-name';nameEl.textContent=p.name||'—';
+    const dotEl=document.createElement('div');dotEl.className='pr-dot';
+    row.appendChild(seedEl);row.appendChild(nameEl);
+    // Star: high-confidence toggle — only on active pick row of a match where both players
+    // are confirmed (R1: both named in draw; R2+: both feeder matches have a winner)
+    const bothConfirmed=ri===0
+      ?(m.p1.name&&m.p2.name)
+      :(d.rounds[ri-1]?.matches[mi*2]?.winner&&d.rounds[ri-1]?.matches[mi*2+1]?.winner);
+    if(isLivePick&&bothConfirmed&&!m.winner){
+      const starEl=document.createElement('button');
+      starEl.className='pr-star'+(m.highConfidence?' is-high':'');
+      starEl.textContent=m.highConfidence?'★':'☆';
+      starEl.title=m.highConfidence?'High confidence (click to clear)':'Mark as high confidence';
+      starEl.addEventListener('click',e=>{
+        e.stopPropagation();
+        m.highConfidence=!m.highConfidence;
+        saveToStorage();renderStats();renderBracket();
+      });
+      row.appendChild(starEl);
+    }
+    row.appendChild(dotEl);
+
+    if(ri===0){
+      const editBtn=document.createElement('button');
+      editBtn.className='pr-edit-btn';editBtn.textContent='✎';editBtn.title='Edit player';
+      editBtn.addEventListener('click',e=>{e.stopPropagation();openEditPlayerModal(ri,mi,side);});
+      row.appendChild(editBtn);
+    }
+
+    // Clickable: no winner yet, not a locked-and-resolved original pick
+    const isResolved=cls.includes('locked');
+    if(p.name&&!m.winner&&(!isResolved||m.editedAfterLock)){
+      row.addEventListener('click',()=>handlePickClick(ri,mi,p));
+    }
+    return row;
+  }
+
+  const rowsWrap=document.createElement('div');
+  rowsWrap.style.cssText='overflow:hidden;border-radius:5px 5px 0 0;flex-shrink:0';
+  rowsWrap.appendChild(makeRow(m.p1,'p1'));
+  rowsWrap.appendChild(makeRow(m.p2,'p2'));
+  card.appendChild(rowsWrap);
+
+  if(d.locked&&(m.p1.name||m.p2.name)){
+    const footer=document.createElement('div');footer.className='mc-footer';
+    const sd=document.createElement('div');sd.className='mc-score';
+    const inp=document.createElement('input');inp.type='text';inp.placeholder='Score…';inp.value=m.score||'';
+    inp.addEventListener('change',e=>{m.score=e.target.value.trim();saveToStorage();});
+    inp.addEventListener('click',e=>e.stopPropagation());
+    sd.appendChild(inp);footer.appendChild(sd);
+
+    const acts=document.createElement('div');acts.className='mc-acts';
+
+    // ✓ button: means "the current pick won" — always green when originalPick was correct
+    const bOk=document.createElement('button');
+    bOk.className='mc-btn'+(m.result==='correct'?' is-ok':m.winner&&m.result!=='correct'?' is-bad':'');
+    bOk.textContent='✓';
+    bOk.title=m.winner?'Undo result':'Mark pick as winner';
+    bOk.addEventListener('click',e=>{
+      e.stopPropagation();
+      if(m.winner){undoWinner(d,ri,mi);return;}
+      // ✓ = whoever is currently picked won; if no pick, open picker
+      if(m.pick){applyWinner(d,ri,mi,m.pick);return;}
+      openWinnerPicker(d,ri,mi,name=>applyWinner(d,ri,mi,name));
+    });
+
+    // ✗ button: means "the other player won"
+    const bBad=document.createElement('button');
+    bBad.className='mc-btn'+(m.result==='wrong'?' is-bad':m.winner&&m.result!=='wrong'?' is-ok':'');
+    bBad.textContent='✗';
+    bBad.title=m.winner?'Undo result':'Mark pick as loser';
+    bBad.addEventListener('click',e=>{
+      e.stopPropagation();
+      if(m.winner){undoWinner(d,ri,mi);return;}
+      if(m.pick){
+        const other=m.p1.name===m.pick?m.p2.name:m.p1.name;
+        if(!other){openWinnerPicker(d,ri,mi,name=>applyWinner(d,ri,mi,name));return;}
+        applyWinner(d,ri,mi,other);return;
+      }
+      openWinnerPicker(d,ri,mi,name=>applyWinner(d,ri,mi,name));
+    });
+
+    acts.appendChild(bOk);acts.appendChild(bBad);footer.appendChild(acts);
+    card.appendChild(footer);
+  }
+  wrap.appendChild(card);
+}
+
+// ── EDIT SCREEN ──
+function renderEditScreen(matches,slam,draw,year){
+  $('edit-title-label').textContent=slam+' '+year+' — '+draw;
+  const c=$('edit-matches-container');c.innerHTML='';
+  matches.forEach((m,i)=>{
+    const row=document.createElement('div');row.className='match-edit-row';
+    row.innerHTML=`<div class="match-num">${i+1}</div><input class="seed-input" type="text" placeholder="S/Q/WC" value="${m.p1_seed||''}" data-f="p1_seed" data-i="${i}" maxlength="3"><input type="text" placeholder="Player 1" value="${m.p1_name||''}" data-f="p1_name" data-i="${i}"><div class="edit-vs">vs</div><input type="text" placeholder="Player 2" value="${m.p2_name||''}" data-f="p2_name" data-i="${i}"><input class="seed-input" type="text" placeholder="S/Q/WC" value="${m.p2_seed||''}" data-f="p2_seed" data-i="${i}" maxlength="3">`;
+    c.appendChild(row);
+  });
+  c.dataset.raw=JSON.stringify(matches);showScreen('screen-edit');
+}
+
+function getEditedMatches(){
+  const raw=JSON.parse($('edit-matches-container').dataset.raw||'[]');
+  $('edit-matches-container').querySelectorAll('input').forEach(inp=>{
+    const i=parseInt(inp.dataset.i),f=inp.dataset.f;
+    if(!raw[i])raw[i]={p1_name:'',p1_seed:'',p2_name:'',p2_seed:''};
+    raw[i][f]=inp.value.trim();
+  });
+  return raw;
+}
+
+['add-match-btn','add-match-btn-b'].forEach(id=>$(id).onclick=()=>{
+  const r=getEditedMatches();r.push({p1_name:'',p1_seed:'',p2_name:'',p2_seed:''});
+  renderEditScreen(r,pendingDraw.slam,pendingDraw.draw,pendingDraw.year);
+});
+
+$('confirm-draw-btn').onclick=()=>{
+  const edited=getEditedMatches().filter(m=>m.p1_name||m.p2_name);
+  const newDraw={slam:pendingDraw.slam,draw:pendingDraw.draw,year:pendingDraw.year,locked:false,rounds:buildInitialRounds(edited)};
+  const existing=state.draws.findIndex(d=>d.slam===newDraw.slam&&d.draw===newDraw.draw&&d.year===newDraw.year);
+  if(existing>=0){state.draws[existing]=newDraw;state.activeTab=existing;}
+  else{state.draws.push(newDraw);state.activeTab=state.draws.length-1;}
+  pendingDraw=null;
+  saveToStorage();showBracketScreen();
+};
+
+// ── UPLOAD / SCREENS ──
+function showUploadScreen(){
+  pdfFile=null;$('file-loaded').style.display='none';$('parse-status').style.display='none';
+  $('parse-btn').disabled=true;$('parse-btn').textContent='Parse draw';
+  $('pdf-input').value='';$('slam-select').value='';$('draw-select').value='';$('year-input').value='';
+  applyTheme('');
+  if(state.draws.length>0){$('existing-draws').style.display='block';$('go-bracket-btn').style.display='inline-block';renderDrawPills();}
+  else{$('existing-draws').style.display='none';$('go-bracket-btn').style.display='none';}
+  showScreen('screen-upload');
+}
+
+function renderDrawPills(){
+  const pills=$('draw-pills');pills.innerHTML='';
+  state.draws.forEach((d,i)=>{
+    const pill=document.createElement('div');pill.className='draw-pill';
+    const name=document.createElement('span');name.className='draw-pill-name';name.textContent=drawLabel(d);
+    const meta=document.createElement('span');meta.className='draw-pill-meta';
+    const s=calcStats(d);
+    meta.textContent=d.locked?(s.cOrig+' correct, '+s.wOrig+' wrong'):(s.filled+' picks filled');
+    const del=document.createElement('button');del.className='draw-pill-del';del.textContent='×';del.title='Remove';
+    del.addEventListener('click',e=>{
+      e.stopPropagation();state.draws.splice(i,1);saveToStorage();renderDrawPills();
+      if(state.draws.length===0){$('existing-draws').style.display='none';$('go-bracket-btn').style.display='none';}
+    });
+    pill.appendChild(name);pill.appendChild(meta);pill.appendChild(del);
+    pill.addEventListener('click',()=>{state.activeTab=i;showBracketScreen();});
+    pills.appendChild(pill);
+  });
+}
+
+function showBracketScreen(){
+  if(state.draws.length===0){showUploadScreen();return;}
+  const d=activeDraw();
+  applyTheme(d.slam);
+  renderHeader();renderStats();renderBracket();showScreen('screen-bracket');
+}
+
+function checkReady(){$('parse-btn').disabled=!(pdfFile&&$('slam-select').value&&$('draw-select').value&&$('year-input').value);}
+$('pdf-input').addEventListener('change',e=>{pdfFile=e.target.files[0];if(pdfFile){$('file-loaded').style.display='block';$('file-loaded').textContent='✓ '+pdfFile.name;}checkReady();});
+$('drop-zone').addEventListener('dragover',e=>{e.preventDefault();$('drop-zone').classList.add('drag-over')});
+$('drop-zone').addEventListener('dragleave',()=>$('drop-zone').classList.remove('drag-over'));
+$('drop-zone').addEventListener('drop',e=>{e.preventDefault();$('drop-zone').classList.remove('drag-over');const f=e.dataTransfer.files[0];if(f&&f.type==='application/pdf'){pdfFile=f;$('file-loaded').style.display='block';$('file-loaded').textContent='✓ '+f.name;checkReady();}});
+['slam-select','draw-select'].forEach(id=>$(id).addEventListener('change',()=>{if($('slam-select').value)applyTheme($('slam-select').value);checkReady();}));
+$('year-input').addEventListener('input',checkReady);
+
+function statusLog(msg,reset){const el=$('parse-status');el.style.display='block';if(reset)el.textContent=msg;else el.textContent+='\n'+msg;}
+
+$('parse-btn').addEventListener('click',async()=>{
+  const btn=$('parse-btn');btn.disabled=true;btn.textContent='Parsing…';
+  const slam=$('slam-select').value,draw=$('draw-select').value,year=$('year-input').value;
+  try{
+    statusLog('Reading PDF…',true);
+    const text=await extractPdfText(pdfFile);
+    statusLog('Extracted '+text.length.toLocaleString()+' characters');
+    const matches=parseTnnsText(text);
+    if(!matches.length)throw new Error('No matches found — is this a TNNS Live draw PDF?');
+    statusLog('Parsed '+matches.length+' matches — review below');
+    pendingDraw={slam,draw,year};
+    renderEditScreen(matches,slam,draw,year);
+  }catch(err){statusLog('Error: '+err.message);btn.disabled=false;btn.textContent='Parse draw';}
+});
+
+$('go-bracket-btn').addEventListener('click',()=>showBracketScreen());
+$('add-draw-btn').addEventListener('click',()=>{saveToStorage();showUploadScreen();});
+$('save-btn').onclick=triggerDownload;
+$('load-saved-btn').onclick=()=>$('load-json-input').click();
+$('load-json-input').addEventListener('change',e=>{
+  const f=e.target.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=ev=>{
+    try{
+      const raw=JSON.parse(ev.target.result);
+      let incoming=[];
+      if(raw.draws&&raw.draws.length){
+        const migrated=migrateState(raw);incoming=migrated.draws;
+      } else if(raw.rounds&&raw.rounds.length){
+        const migrated=migrateState({draws:[raw]});incoming=migrated.draws;
+      } else {alert('Unrecognised file format.');return;}
+      if(incoming.length===0){alert('No draws found in file.');return;}
+      mergeDraws(incoming);
+      saveToStorage();showBracketScreen();
+    }catch(e){alert('Could not read bracket file: '+e.message);}
+  };
+  r.readAsText(f);
+  e.target.value=''; // allow reloading same file
+});
+
+// ── PRINT ──
+$('print-btn').onclick=()=>{
+  const d=activeDraw();if(!d||!d.rounds||!d.rounds.length)return;
+  const win=window.open('','_blank');
+  if(!win){alert('Please allow popups for this site.');return;}
+  try{win.document.open();win.document.write(buildPrintHTML(d));win.document.close();setTimeout(()=>{win.focus();win.print();},400);}
+  catch(err){win.document.write('<pre style="padding:20px;color:red">'+err.message+'</pre>');win.document.close();}
+};
+
+function buildPrintHTML(d){
+  const cfg=SLAM_CONFIG[d.slam]||{};
+  const rounds=d.rounds;
+  const r1=rounds[0].matches;
+  const total=r1.length;
+  const half=Math.ceil(total/2);
+  const q=Math.ceil(half/2);
+  const drawRounds=rounds.length-1; // R1..SF, excludes Final
+
+  const accentColors={AO:'#1048a0',RG:'#8b2615',WIM:'#1a5c2a',USO:'#1048a0'};
+  const accent=accentColors[d.slam]||'#1a1916';
+  function escH(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+  // ── GEOMETRY ──
+  // Portrait A3: 297×420mm. Padding: 10mm top/sides, 8mm bottom.
+  // Header ~14mm, labels ~7mm → bracket body height ≈ 381mm
+  const BODY_H=381; // mm available for bracket body
+  const R1_PER_PAGE=32;
+  const PAIR_GAP=1.6; // mm gap between R1 match pairs
+
+  // One "unit" = height of one R1 match including trailing gap
+  const unit=(BODY_H-(R1_PER_PAGE-1)*PAIR_GAP)/(R1_PER_PAGE); // height of 2 rows
+  // But unit = 2*rowH, so:
+  const rowH=unit/2; // height per player row
+
+  // Slot height for round ri: spans 2^ri R1 rows + (2^ri - 1) gaps between pairs
+  // = 2^ri * rowH * 2 + (2^ri - 1) * PAIR_GAP
+  // Simplified: 2^ri * unit + (2^ri - 1) * PAIR_GAP
+  function slotH(ri){
+    const n=Math.pow(2,ri);
+    return n*unit+(n-1)*PAIR_GAP;
+  }
+
+  // Column widths mm — portrait 277mm usable
+  // No final column needed; SF gets bracket arm connecting to champion in header
+  const colW=[54,40,32,26,24,24]; // R1..SF (6 columns, drawRounds=6)
+  const gapW=3;
+
+  // ── NAME LINE ──
+  function nameLineHTML(p,m){
+    if(!p||!p.name) return '<div style="height:'+rowH.toFixed(2)+'mm"></div>';
+    const isOrig=m.originalPick&&m.originalPick===p.name;
+    const isPick=m.pick&&m.pick===p.name;
+    const backup=isBackupPick(m);
+    const isBackupRow=isPick&&backup;
+    const isElim=m.winner&&m.winner!==p.name;
+    const isCorrect=isOrig&&m.result==='correct';
+    const isWrong=isOrig&&m.result==='wrong';
+    const isBackupWrong=isBackupRow&&m.winner&&m.pick!==m.winner;
+
+    let ind='&nbsp;',nameStyle='color:#1a1916',seedCol='#bbb';
+    if(isCorrect){ind='✓';nameStyle='color:'+accent+';font-weight:700';seedCol=accent;}
+    else if(isWrong){ind='✗';nameStyle='color:#c0392b;text-decoration:line-through';seedCol='#c0392b';}
+    else if(isBackupRow&&!isBackupWrong){ind='·';nameStyle='color:#6b3fa0;font-style:italic';seedCol='#9b7bc0';}
+    else if(isBackupWrong){ind='·';nameStyle='color:#6b3fa0;font-style:italic;text-decoration:line-through';seedCol='#9b7bc0';}
+    else if(isPick||isOrig){ind='▸';nameStyle='font-weight:700';}
+    else if(isElim){nameStyle='color:#ccc';}
+
+    return '<div style="height:'+rowH.toFixed(2)+'mm;display:flex;align-items:center;overflow:hidden;gap:1pt">'
+      +'<span style="font-size:5pt;min-width:7pt;text-align:center;flex-shrink:0;color:'+accent+'">'+ind+'</span>'
+      +'<span style="font-family:monospace;font-size:5pt;color:'+seedCol+';min-width:9pt;text-align:right;flex-shrink:0">'+escH(p.seed)+'</span>'
+      +'<span style="font-family:\'Playfair Display\',Georgia,serif;font-size:7.5pt;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'+nameStyle+'">'+escH(p.name)+'</span>'
+      +'</div>';
+  }
+
+  // ── PAGE ──
+  function buildPage(startR1,endR1,pageNum,isTopHalf){
+    const r1Slice=r1.slice(startR1,endR1);
+
+    // Champion (only on top half page)
+    const finMatch=rounds[rounds.length-1]&&rounds[rounds.length-1].matches[0];
+    const champName=finMatch&&(finMatch.winner||finMatch.pick)||'—';
+
+    // Header
+    const halfLabel=isTopHalf?'Top half':'Bottom half';
+    const champHTML=isTopHalf
+      ?'<span style="font-family:monospace;font-size:7pt;color:#888;margin-left:16pt">Champion: </span>'
+       +'<span style="font-family:\'Playfair Display\',Georgia,serif;font-size:10pt;font-weight:600;color:'+accent+'">'+escH(champName)+'</span>'
+      :'';
+    const header='<div style="display:flex;align-items:baseline;justify-content:space-between;border-bottom:1.5pt solid '+accent+';padding-bottom:3pt;margin-bottom:4pt;flex-shrink:0">'
+      +'<div>'
+        +'<span style="font-family:\'Playfair Display\',Georgia,serif;font-size:15pt;font-weight:600;color:'+accent+'">'+escH((cfg.name||d.slam)+' '+d.year)+'</span>'
+        +champHTML
+      +'</div>'
+      +'<span style="font-family:monospace;font-size:7pt;color:#888">'+escH(d.draw)+' · '+halfLabel+' · '+pageNum+' / 2</span>'
+      +'</div>';
+
+    // Round labels
+    let labels='<div style="display:flex;margin-bottom:2mm;flex-shrink:0;border-bottom:0.4pt solid #ddd;padding-bottom:2pt">';
+    for(let ri=0;ri<drawRounds;ri++){
+      if(ri>0) labels+='<div style="width:'+gapW+'mm;flex-shrink:0"></div>';
+      labels+='<div style="width:'+colW[ri]+'mm;flex-shrink:0;font-family:monospace;font-size:5.5pt;text-transform:uppercase;letter-spacing:0.1em;color:#999;text-align:center">'+escH(rounds[ri].label)+'</div>';
+    }
+    labels+='</div>';
+
+    // R1 column
+    function r1Col(){
+      let html='';
+      r1Slice.forEach((m,i)=>{
+        if(i>0){
+          const g=startR1+i;
+          const isQ=(g===q)||(g===half+q&&!isTopHalf);
+          html+=isQ
+            ?'<div style="height:'+(PAIR_GAP+1.5)+'mm;display:flex;align-items:center"><div style="flex:1;border-top:0.4pt dashed #c8c4bb"></div></div>'
+            :'<div style="height:'+PAIR_GAP+'mm"></div>';
+        }
+        html+=nameLineHTML(m.p1,m)+nameLineHTML(m.p2,m);
+      });
+      return html;
+    }
+
+    // Later round columns
+    function laterCol(ri){
+      const startMi=Math.floor(startR1/Math.pow(2,ri));
+      const endMi=Math.ceil(endR1/Math.pow(2,ri));
+      const slice=rounds[ri]?rounds[ri].matches.slice(startMi,endMi):[];
+      const sh=slotH(ri).toFixed(2);
+      const isLast=ri===drawRounds-1; // SF — last visible column
+      let html='';
+      slice.forEach((m,i)=>{
+        // Gap between slots equals PAIR_GAP (aligns with R1 gaps)
+        if(i>0) html+='<div style="height:'+PAIR_GAP+'mm"></div>';
+        // Bracket arm
+        const arm=isLast?'':(i%2===0
+          ?'border-right:0.5pt solid #ccc;border-bottom:0.5pt solid #ccc;'
+          :'border-right:0.5pt solid #ccc;border-top:0.5pt solid #ccc;');
+        html+='<div style="height:'+sh+'mm;'+arm+'display:flex;flex-direction:column;justify-content:center;padding-right:1pt">';
+        html+=nameLineHTML(m.p1,m)+nameLineHTML(m.p2,m);
+        html+='</div>';
+      });
+      return html;
+    }
+
+    // Bracket body
+    let body='<div style="display:flex;align-items:stretch;flex:1;min-height:0;overflow:hidden">';
+    for(let ri=0;ri<drawRounds;ri++){
+      if(ri>0) body+='<div style="width:'+gapW+'mm;flex-shrink:0"></div>';
+      const col=ri===0?r1Col():laterCol(ri);
+      const border=ri===0?'border-right:0.4pt solid #e0ddd8;':'';
+      body+='<div style="width:'+colW[ri]+'mm;flex-shrink:0;'+border+'">'+col+'</div>';
+    }
+    body+='</div>';
+
+    return '<div style="width:277mm;height:420mm;overflow:hidden;display:flex;flex-direction:column;page-break-after:always;box-sizing:border-box;padding:10mm 10mm 8mm;background:#fff">'
+      +header+labels+body+'</div>';
+  }
+
+  const fonts='<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=DM+Mono&display=swap" rel="stylesheet">';
+  return '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>'+escH((cfg.name||d.slam)+' '+d.year+' '+d.draw)+'</title>'+fonts
+    +'<style>@page{size:A3 portrait;margin:0}*{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{background:#f0eeea}'
+    +'@media screen{body{padding:8mm;display:flex;flex-direction:column;gap:8mm}div[style*="page-break"]{box-shadow:0 2px 16px rgba(0,0,0,0.15)}}'
+    +'</style></head><body>'
+    +buildPage(0,half,1,true)
+    +buildPage(half,total,2,false)
+    +'</body></html>';
+}
+
+// ── ROUND LABELS SCROLL SYNC ──
+document.addEventListener('DOMContentLoaded',()=>{
+  const bb=$('bracket-body'),li=$('round-labels-inner');
+  if(bb&&li){bb.addEventListener('scroll',function(){li.style.transform='translateX(-'+this.scrollLeft+'px)';});}
+});
+
+// ── INIT ──
+window.addEventListener('load',()=>{
+  const saved=localStorage.getItem('slam_bracket');
+  if(saved){
+    try{
+      const p=JSON.parse(saved);
+      if(p.draws&&p.draws.length){state=migrateState(p);state.activeTab=Math.min(state.activeTab||0,state.draws.length-1);showBracketScreen();return;}
+      if(p.rounds&&p.rounds.length){state=migrateState({draws:[p],activeTab:0});showBracketScreen();return;}
+    }catch{}
+  }
+  showUploadScreen();
+});
+</script>
+</body>
+</html>

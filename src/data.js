@@ -1,0 +1,167 @@
+// Data loading — assembles Supabase rows into local state shape
+// Assembly applies defensive defaults for all nullable fields (migrateState equivalent)
+
+import { supabase } from './supabase.js'
+import { state } from './state.js'
+import { markLoserForward } from './picks.js'
+
+/**
+ * Load all draws from Supabase and assemble into state.draws.
+ * Fetches matches + picks for each draw. Respects state.currentUser.
+ */
+export async function loadAllDraws() {
+  if (!state.currentUser) return
+
+  // 1. Fetch all draws
+  const { data: drawRows, error: de } = await supabase
+    .from('draws')
+    .select('id, slam, draw_type, year, original_picks_locked, created_at')
+    .order('created_at', { ascending: true })
+
+  if (de) throw de
+  if (!drawRows || drawRows.length === 0) {
+    state.draws = []
+    return
+  }
+
+  // 2. For each draw, fetch matches + picks + lock_schedules in parallel
+  const assembled = await Promise.all(drawRows.map(dr => loadDraw(dr)))
+  state.draws = assembled
+  state.activeTab = Math.min(state.activeTab, state.draws.length - 1)
+
+  // Load lock schedules for active draw
+  await loadLockSchedules()
+}
+
+export async function loadDraw(drawRow) {
+  const drawId = drawRow.id
+  const userId = state.currentUser?.id
+
+  // Fetch matches
+  const { data: matchRows, error: me } = await supabase
+    .from('matches')
+    .select('id, round_index, match_index, p1_name, p1_seed, p2_name, p2_seed, winner, score')
+    .eq('draw_id', drawId)
+    .order('round_index', { ascending: true })
+
+  if (me) throw me
+
+  // Fetch picks for current user
+  let pickMap = {}
+  if (userId) {
+    const { data: pickRows, error: pe } = await supabase
+      .from('picks')
+      .select('match_id, pick, original_pick, result, high_confidence, edited_after_lock')
+      .eq('draw_id', drawId)
+      .eq('user_id', userId)
+
+    if (pe) throw pe
+
+    pickRows.forEach(p => { pickMap[p.match_id] = p })
+  }
+
+  // Build rounds array from matchRows
+  const roundsMap = {}
+  ;(matchRows || []).forEach(mr => {
+    const ri = mr.round_index
+    if (!roundsMap[ri]) roundsMap[ri] = { label: roundLabel(ri), matches: [] }
+    const pk = pickMap[mr.id] || {}
+
+    // Defensive defaults — migrateState equivalent
+    const match = {
+      db_id: mr.id,
+      p1: { name: mr.p1_name ?? '', seed: mr.p1_seed ?? '' },
+      p2: { name: mr.p2_name ?? '', seed: mr.p2_seed ?? '' },
+      pick: pk.pick ?? null,
+      originalPick: pk.original_pick ?? null,
+      result: pk.result ?? null,
+      highConfidence: pk.high_confidence ?? false,
+      editedAfterLock: pk.edited_after_lock ?? false,
+      winner: mr.winner ?? null,
+      score: mr.score ?? '',
+    }
+    roundsMap[ri].matches[mr.match_index] = match
+  })
+
+  // Convert to sorted array
+  const maxRi = Math.max(...Object.keys(roundsMap).map(Number), -1)
+  const rounds = []
+  for (let i = 0; i <= maxRi; i++) {
+    rounds.push(roundsMap[i] || { label: roundLabel(i), matches: [] })
+    // Ensure no gaps in matches array
+    rounds[i].matches = rounds[i].matches.map(m => m || emptyMatch())
+  }
+
+  // Re-apply elim markers for any already-confirmed winners
+  rounds.forEach((r, ri) => {
+    r.matches.forEach((m, mi) => {
+      if (m.winner) {
+        const loserName = m.p1.name === m.winner ? m.p2.name : m.p1.name
+        if (loserName) markLoserForward({ rounds }, ri, mi, loserName)
+      }
+    })
+  })
+
+  return {
+    db_id: drawRow.id,
+    slam: drawRow.slam,
+    draw: drawRow.draw_type,
+    year: drawRow.year,
+    locked: drawRow.original_picks_locked ?? false,
+    rounds,
+  }
+}
+
+export async function loadLockSchedules() {
+  const d = state.draws[state.activeTab]
+  if (!d) { state.lockSchedules = []; return }
+
+  const { data, error } = await supabase
+    .from('lock_schedules')
+    .select('*')
+    .eq('draw_id', d.db_id)
+
+  if (error) throw error
+  state.lockSchedules = data || []
+}
+
+// Reload just the active draw's picks (e.g. after switching tabs)
+export async function reloadActiveDraw() {
+  const d = state.draws[state.activeTab]
+  if (!d) return
+  const drawRow = { id: d.db_id, slam: d.slam, draw_type: d.draw, year: d.year, original_picks_locked: d.locked }
+  const refreshed = await loadDraw(drawRow)
+  state.draws[state.activeTab] = refreshed
+  await loadLockSchedules()
+}
+
+// ── HELPERS ──
+const ROUND_LABELS = ['R1', 'R2', 'R3', 'R4', 'QF', 'SF', 'F']
+function roundLabel(ri) { return ROUND_LABELS[ri] || 'R' + (ri + 1) }
+
+function emptyMatch() {
+  return {
+    db_id: null,
+    p1: { name: '', seed: '' },
+    p2: { name: '', seed: '' },
+    pick: null, originalPick: null, result: null,
+    highConfidence: false, editedAfterLock: false,
+    winner: null, score: '',
+  }
+}
+
+// ── SLAM HELPERS ──
+export const SLAM_CONFIG = {
+  AO: { name: 'Australian Open', surface: 'Hard' },
+  RG: { name: 'Roland Garros', surface: 'Clay' },
+  WIM: { name: 'Wimbledon', surface: 'Grass' },
+  USO: { name: 'US Open', surface: 'Hard' },
+}
+
+export function slamKey(d) { return d.slam + '_' + d.year }
+export function slamLabel(d) { const cfg = SLAM_CONFIG[d.slam] || {}; return (cfg.name || d.slam) + ' ' + d.year }
+export function drawLabel(d) { const cfg = SLAM_CONFIG[d.slam] || {}; return (cfg.name || d.slam) + ' ' + d.year + ' ' + d.draw }
+export function uniqueSlams() {
+  const seen = new Set()
+  return state.draws.filter(d => { const k = slamKey(d); if (seen.has(k)) return false; seen.add(k); return true })
+}
