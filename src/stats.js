@@ -45,6 +45,27 @@ export function renderStats() {
     const pct = s.total > 0 ? Math.round(s.filled / s.total * 100) : 0
     simplePill('picks filled', s.filled + ' / ' + s.total, '')
     simplePill('complete', pct + '%', '')
+
+    // Countdown to original picks lock if one is scheduled
+    const origSched = (state.lockSchedules || []).find(ls =>
+      ls.lock_type === 'original_picks' && !ls.locked_at && ls.scheduled_at &&
+      new Date(ls.scheduled_at) > new Date()
+    )
+    if (origSched) {
+      const msLeft = new Date(origSched.scheduled_at) - Date.now()
+      const totalMins = Math.max(0, Math.floor(msLeft / 60000))
+      const hh = String(Math.floor(totalMins / 60)).padStart(2, '0')
+      const mm = String(totalMins % 60).padStart(2, '0')
+      const allFilled = s.filled === s.total
+      const countdownPill = document.createElement('div')
+      countdownPill.className = 'stat-pill countdown-pill'
+      countdownPill.style.marginLeft = 'auto'
+      countdownPill.innerHTML = `
+        <span class="slbl">picks lock in</span>
+        <span class="sval countdown-val${!allFilled ? ' countdown-urgent' : ''}">${hh}:${mm}</span>`
+      strip.appendChild(countdownPill)
+    }
+
     return
   }
 
@@ -147,11 +168,11 @@ export function renderStats() {
 
   if (upcoming) {
     const msLeft = new Date(upcoming.scheduled_at) - Date.now()
-    const hoursLeft = Math.round(msLeft / 3600000)
-    const label = upcoming.lock_type === 'original_picks' ? 'picks lock' : 'backup picks lock'
-    const displayTime = hoursLeft < 1
-      ? Math.max(1, Math.round(msLeft / 60000)) + 'm'
-      : hoursLeft + 'h'
+    const label = 'next lock'
+    const totalMins = Math.max(0, Math.floor(msLeft / 60000))
+    const hh = String(Math.floor(totalMins / 60)).padStart(2, '0')
+    const mm = String(totalMins % 60).padStart(2, '0')
+    const displayTime = `${hh}:${mm}`
 
     // Check whether all affected picks in the upcoming lock range are filled
     let allFilled = true
@@ -162,7 +183,7 @@ export function renderStats() {
         rounds[ri].matches.forEach((m, mi) => {
           const inRange = (upcoming.match_index_start == null || mi >= upcoming.match_index_start) &&
                           (upcoming.match_index_end == null || mi <= upcoming.match_index_end)
-          if (inRange && !m.pick && !m.winner) allFilled = false
+          if (inRange && !m.matchPick && !m.winner) allFilled = false
         })
       }
     }
@@ -170,6 +191,7 @@ export function renderStats() {
     const countdownPill = document.createElement('div')
     countdownPill.className = 'stat-pill countdown-pill'
     countdownPill.style.borderRight = 'none'
+    countdownPill.style.marginLeft = 'auto'
     countdownPill.innerHTML = `
       <span class="slbl">${label}</span>
       <span class="sval countdown-val${!allFilled ? ' countdown-urgent' : ''}">${displayTime}</span>`

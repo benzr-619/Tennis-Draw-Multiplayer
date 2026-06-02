@@ -2,7 +2,9 @@
 
 import { state, activeDraw } from './state.js'
 import { isBackupPick } from './scoring.js'
+import { isMatchLocked } from './lock.js'
 import { supabase } from './supabase.js'
+import { buildDrawView } from './draw-view.js'
 
 // ── HELPERS ──
 export function findSeed(d, name) {
@@ -19,50 +21,46 @@ export function getNextSlot(d, ri, mi) {
   return { nri, nmi: Math.floor(mi / 2), side: mi % 2 === 0 ? 'p1' : 'p2' }
 }
 
-function placePickInNextRound(d, ri, mi) {
-  const m = d.rounds[ri].matches[mi]
-  const next = getNextSlot(d, ri, mi)
-  if (next) {
-    const nm = d.rounds[next.nri].matches[next.nmi]
-    if (!nm.winner) {
-      nm[next.side] = m.pick ? { name: m.pick, seed: findSeed(d, m.pick) } : { name: '', seed: '' }
-    }
-  }
-}
+// ── FORWARD MATCH-PICK PROPAGATION (raw-field writers only) ──
+// Slot occupancy / elimination / labels are NOT touched here — that is all derived
+// by buildDrawView(). These two helpers only move the user's `matchPick` along the
+// bracket so the stored picks stay identical to the old behavior (Option 1):
+//   • cascadeMatchPickForward — copies the active pick into later matches, passing
+//     through empty/eliminated slots, stopping at a different confirmed player.
+//   • clearMatchPickForward   — removes a matchPick that's been replaced/withdrawn,
+//     stopping as soon as a later match no longer carries that name.
 
-export function placePickAllRounds(d, ri, mi) {
+export function cascadeMatchPickForward(d, ri, mi) {
   let r = ri, m = mi
   while (true) {
     const next = getNextSlot(d, r, m)
     if (!next) break
     const nm = d.rounds[next.nri].matches[next.nmi]
     if (nm.winner) break
-    const currentInSlot = nm[next.side]?.name
-    const currentMatch = d.rounds[r].matches[m]
-    const pickName = currentMatch.pick
-    if (currentInSlot && currentInSlot !== pickName) break
-    placePickInNextRound(d, r, m)
+    const pickName = d.rounds[r].matches[m].matchPick
+    const slot = nm[next.side]
+    const slotName = slot?.name
+    const isBlocking = slotName && !slot?.elim && slotName !== pickName
+    if (isBlocking || !pickName) break
+    nm.matchPick = pickName
     r = next.nri; m = next.nmi
   }
 }
 
-export function clearPickForward(d, ri, mi, name) {
+export function clearMatchPickForward(d, ri, mi, name) {
   let r = ri, m = mi
   while (true) {
     const next = getNextSlot(d, r, m)
     if (!next) break
     const nm = d.rounds[next.nri].matches[next.nmi]
     if (nm.winner) break
-    const side = next.side
-    if (nm[side].name === name) { nm[side] = { name: '', seed: '' } }
-    if (nm.pick === name) { nm.pick = null }
+    if (nm.matchPick !== name) break
+    nm.matchPick = null
     r = next.nri; m = next.nmi
-    if (!nm.pick && !nm[side]?.name) break
   }
 }
 
 // ── SAVE PICK TO SUPABASE ──
-// Returns the pick row upserted, or throws on error
 export async function savePickToSupabase(m, drawId) {
   if (!state.currentUser) return
   if (!m.db_id) return  // match not yet in DB
@@ -71,14 +69,31 @@ export async function savePickToSupabase(m, drawId) {
     user_id: state.currentUser.id,
     draw_id: drawId,
     match_id: m.db_id,
-    pick: m.pick ?? null,
+    match_pick: m.matchPick ?? null,
     original_pick: m.originalPick ?? null,
-    result: m.result ?? null,
+    original_pick_result: m.originalPickResult ?? null,
+    match_pick_result: m.matchPickResult ?? null,
     high_confidence: m.highConfidence ?? false,
     edited_after_lock: m.editedAfterLock ?? false,
+    notes: m.notes ?? null,
   }, { onConflict: 'user_id,match_id' })
 
   if (error) throw error
+}
+
+// Save matchPick for all future unconfirmed matches (for backup pick cascade persistence)
+async function saveCascadeToSupabase(d, ri, mi) {
+  let r = ri, m = mi
+  const saves = []
+  while (true) {
+    const next = getNextSlot(d, r, m)
+    if (!next) break
+    const nm = d.rounds[next.nri].matches[next.nmi]
+    if (nm.winner) break
+    if (nm.db_id) saves.push(savePickToSupabase(nm, d.db_id))
+    r = next.nri; m = next.nmi
+  }
+  await Promise.all(saves)
 }
 
 // ── CLICK HANDLER ──
@@ -88,28 +103,41 @@ export async function handlePickClick(ri, mi, p, { renderStats, renderBracket })
   const m = d.rounds[ri].matches[mi]
   if (m.winner) return
 
-  // If locked and match is locked, block
   const drawLocked = d.locked
   const isWithdrawalRepick = drawLocked && m.editedAfterLock
 
-  if (drawLocked && m.result && !isBackupPick(m) && !m.editedAfterLock) return
+  if (drawLocked && m.originalPickResult && !isBackupPick(m) && !m.editedAfterLock) return
+
+  // Block backup picks on matches whose backup pick window is locked
+  if (drawLocked && !isWithdrawalRepick && isMatchLocked(ri, mi, 'backup_picks')) return
 
   if (isWithdrawalRepick) {
-    m.pick = m.pick === p.name ? null : p.name
-    m.originalPick = m.pick
-    if (m.pick) {
+    m.matchPick = m.matchPick === p.name ? null : p.name
+    m.originalPick = m.matchPick
+    if (m.matchPick) {
       m.editedAfterLock = false
-      placePickAllRounds(d, ri, mi)
+      cascadeMatchPickForward(d, ri, mi)
     }
   } else if (drawLocked) {
-    m.pick = m.pick === p.name ? null : p.name
+    // Backup pick: cascade matchPick into future rounds + save all affected matches
+    const prev = m.matchPick
+    m.matchPick = m.matchPick === p.name ? null : p.name
+    if (prev && prev !== m.matchPick) clearMatchPickForward(d, ri, mi, prev)
+    if (m.matchPick) cascadeMatchPickForward(d, ri, mi)
+    buildDrawView(d)
+    await savePickToSupabase(m, d.db_id)
+    await saveCascadeToSupabase(d, ri, mi)
+    renderStats()
+    renderBracket()
+    return
   } else {
-    const prev = m.pick
-    m.pick = m.pick === p.name ? null : p.name
-    if (prev && prev !== m.pick) clearPickForward(d, ri, mi, prev)
-    placePickAllRounds(d, ri, mi)
+    // Pre-lock: just record the pick; slots are derived by buildDrawView.
+    const prev = m.matchPick
+    m.matchPick = m.matchPick === p.name ? null : p.name
+    if (prev && prev !== m.matchPick) clearMatchPickForward(d, ri, mi, prev)
   }
 
+  buildDrawView(d)
   await savePickToSupabase(m, d.db_id)
   renderStats()
   renderBracket()
@@ -118,19 +146,13 @@ export async function handlePickClick(ri, mi, p, { renderStats, renderBracket })
 // ── APPLY WINNER ──
 export async function applyWinner(d, ri, mi, winnerName, { renderStats, renderBracket }) {
   const m = d.rounds[ri].matches[mi]
-  const loserName = m.p1.name === winnerName ? m.p2.name : m.p1.name
   m.winner = winnerName
-  m.result = m.originalPick ? (m.originalPick === winnerName ? 'correct' : 'wrong') : null
+  // Set both result fields independently
+  m.originalPickResult = m.originalPick ? (m.originalPick === winnerName ? 'correct' : 'wrong') : null
+  m.matchPickResult    = m.matchPick    ? (m.matchPick    === winnerName ? 'correct' : 'wrong') : null
 
-  const next = getNextSlot(d, ri, mi)
-  if (next) {
-    const nm = d.rounds[next.nri].matches[next.nmi]
-    if (!nm.winner) {
-      nm[next.side] = { name: winnerName, seed: findSeed(d, winnerName) }
-    }
-  }
-
-  if (loserName) markLoserForward(d, ri, mi, loserName)
+  // Re-derive advancers, eliminations, and labels from the new winner.
+  buildDrawView(d)
 
   // DB persistence (commissioner only)
   if (state.currentUser?.is_commissioner && m.db_id) {
@@ -139,17 +161,18 @@ export async function applyWinner(d, ri, mi, winnerName, { renderStats, renderBr
       .eq('id', m.db_id)
 
     const { data: matchPicks } = await supabase
-      .from('picks').select('id, pick').eq('match_id', m.db_id)
+      .from('picks').select('id, match_pick, original_pick').eq('match_id', m.db_id)
     for (const pk of (matchPicks || [])) {
-      const result = pk.pick === winnerName ? 'correct' : (pk.pick ? 'wrong' : null)
-      if (result !== null) {
-        await supabase.from('picks').update({ result }).eq('id', pk.id)
-      }
+      const origPickResult  = pk.original_pick ? (pk.original_pick === winnerName ? 'correct' : 'wrong') : null
+      const matchPickResult = pk.match_pick     ? (pk.match_pick    === winnerName ? 'correct' : 'wrong') : null
+      await supabase.from('picks').update({
+        original_pick_result: origPickResult,
+        match_pick_result:    matchPickResult,
+      }).eq('id', pk.id)
     }
-    // Update local result for current user
-    m.result = m.originalPick ? (m.originalPick === winnerName ? 'correct' : 'wrong') : null
-  } else {
-    await savePickToSupabase(m, d.db_id)
+    // Update local result fields for current user
+    m.originalPickResult = m.originalPick ? (m.originalPick === winnerName ? 'correct' : 'wrong') : null
+    m.matchPickResult    = m.matchPick    ? (m.matchPick    === winnerName ? 'correct' : 'wrong') : null
   }
 
   renderStats()
@@ -158,68 +181,27 @@ export async function applyWinner(d, ri, mi, winnerName, { renderStats, renderBr
 
 export async function undoWinner(d, ri, mi, { renderStats, renderBracket }) {
   const m = d.rounds[ri].matches[mi]
-  const wasWinner = m.winner
-  const wasLoser = m.p1.name === wasWinner ? m.p2.name : m.p1.name
-  m.winner = null; m.result = null
+  m.winner = null; m.originalPickResult = null; m.matchPickResult = null
 
-  const next = getNextSlot(d, ri, mi)
-  if (next && wasWinner) {
-    const nm = d.rounds[next.nri].matches[next.nmi]
-    if (!nm.winner && nm[next.side].name === wasWinner) {
-      const origName = m.originalPick || null
-      nm[next.side] = origName ? { name: origName, seed: findSeed(d, origName) } : { name: '', seed: '' }
-    }
-  }
-
-  if (wasLoser) unmarkLoserForward(d, ri, mi, wasLoser)
+  // Re-derive everything from the cleared result.
+  buildDrawView(d)
 
   // DB persistence (commissioner only)
   if (state.currentUser?.is_commissioner && m.db_id) {
     await supabase.from('matches')
       .update({ winner: null, score: null }).eq('id', m.db_id)
     await supabase.from('picks')
-      .update({ result: null }).eq('match_id', m.db_id)
-  } else {
-    await savePickToSupabase(m, d.db_id)
+      .update({ original_pick_result: null, match_pick_result: null }).eq('match_id', m.db_id)
   }
 
   renderStats()
   renderBracket()
 }
 
-export function markLoserForward(d, ri, mi, loserName) {
-  let r = ri, m = mi
-  while (true) {
-    const next = getNextSlot(d, r, m)
-    if (!next) break
-    const nm = d.rounds[next.nri].matches[next.nmi]
-    if (nm.winner) break
-    const side = next.side
-    const slotName = nm[side]?.name
-    if (slotName === loserName) { nm[side] = { ...nm[side], elim: true } }
-    if (slotName !== loserName && nm.originalPick !== loserName) break
-    r = next.nri; m = next.nmi
-  }
-}
-
-export function unmarkLoserForward(d, ri, mi, loserName) {
-  let r = ri, m = mi
-  while (true) {
-    const next = getNextSlot(d, r, m)
-    if (!next) break
-    const nm = d.rounds[next.nri].matches[next.nmi]
-    if (nm.winner) break
-    const side = next.side
-    if (nm[side]?.elim && nm[side].name === loserName) {
-      const { elim, ...rest } = nm[side]
-      nm[side] = rest
-    }
-    if (nm[side]?.name !== loserName && nm.originalPick !== loserName) break
-    r = next.nri; m = next.nmi
-  }
-}
-
 // ── WITHDRAWAL CLEAR FORWARD ──
+// Clears a withdrawn player out of later matches' raw fields (matchPick /
+// originalPick) and flags them as needing a repick. Slot occupancy itself is
+// re-derived by buildDrawView; this only touches authoritative per-match fields.
 export function withdrawalClearForward(d, ri, mi, withdrawnName) {
   let r = ri, m = mi
   while (true) {
@@ -228,7 +210,7 @@ export function withdrawalClearForward(d, ri, mi, withdrawnName) {
     const nm = d.rounds[next.nri].matches[next.nmi]
     let touched = false
     if (nm[next.side]?.name === withdrawnName) { nm[next.side] = { name: '', seed: '' }; touched = true }
-    if (nm.pick === withdrawnName) { nm.pick = null; touched = true }
+    if (nm.matchPick === withdrawnName) { nm.matchPick = null; touched = true }
     if (nm.originalPick === withdrawnName) { nm.originalPick = null; touched = true }
     if (touched) nm.editedAfterLock = true
     if (!touched) break
@@ -236,6 +218,8 @@ export function withdrawalClearForward(d, ri, mi, withdrawnName) {
   }
 }
 
+// Pre-lock rename: propagate a renamed player through later matchPick references.
+// Slot occupancy is re-derived by buildDrawView from the renamed round-0 entry.
 export function updatePlayerNameForward(d, ri, mi, oldName, newName, newSeed) {
   let r = ri, m = mi
   while (true) {
@@ -243,8 +227,7 @@ export function updatePlayerNameForward(d, ri, mi, oldName, newName, newSeed) {
     const nmi = Math.floor(m / 2)
     const side = m % 2 === 0 ? 'p1' : 'p2'
     const nm = d.rounds[nri].matches[nmi]
-    if (nm[side].name === oldName && !nm.winner) nm[side] = { name: newName || '', seed: newSeed || '' }
-    if (nm.pick === oldName) nm.pick = newName || null
+    if (nm.matchPick === oldName) nm.matchPick = newName || null
     if (nm.winner) break
     r = nri; m = nmi
   }

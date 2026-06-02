@@ -4,6 +4,32 @@ Source of truth for this codebase. Read before touching any code.
 
 ---
 
+## 0. Repo Hygiene (established 2026-06-01, Refactor Step 1)
+
+- `.gitignore` covers `node_modules/`, `dist/`, `.env.local`, `*.timestamp-*.mjs`, `_archive/`, `.DS_Store`. These are never committed.
+- `node_modules/`, `dist/`, and `.env.local` were removed from git tracking (working copies on disk untouched).
+- **ACTION STILL REQUIRED BY BEN:** `.env.local` was committed earlier, so the Supabase anon key is in git history. Rotate the anon key in the Supabase dashboard.
+- One-off SQL data dumps (RG 2026 seed/restore files, `add_is_active.sql`) moved to `_archive/` — kept locally, ignored by git, never loaded into context.
+- Build-session scratch notes (chat*-prompt.md, context.md, project-instructions.md) deleted; CLAUDE.md is the sole source of truth.
+- Do NOT read `reference/index.html`, `_archive/`, `dist/`, `node_modules/`, or any `*.sql` data dump unless explicitly told to — they are archives, not working code.
+
+### Refactor Step 2 (2026-06-01) — complexity-wall parts C & E
+
+- **C done:** extracted shared bracket geometry into `bracket-layout.js`; removed three verbatim copies from `bracket.js`, `viewer-bracket.js`, `commissioner-results.js`. Verified via `vite build`.
+- **E done:** split the ~1000-line `commissioner.js` into `commissioner.js` (orchestrator + Draw Management) + `commissioner-results.js` + `commissioner-locks.js` + `commissioner-shared.js`. No behavior change.
+### Refactor Step 3 (2026-06-01) — complexity-wall parts A, B & D (DONE)
+
+The data-model rewrite. All three parts complete; behavior verified against a Node render-facts golden (`test-harness/`, see below).
+
+- **A done — explicit derived model.** New `src/draw-view.js` / `buildDrawView(d)` is the SINGLE pure derivation of all non-authoritative bracket state. `data.js` no longer reconstructs `p1`/`p2` inline or replays elimination at load; it loads raw rows and calls `buildDrawView`. The function is idempotent (rebuilds round-2+ slots from scratch each call) so it runs on every state change instead of incremental mutation.
+- **B done — collapsed the forward-walkers.** The six overlapping walkers are gone. All slot/elim/label derivation now lives in `buildDrawView`. `picks.js` keeps only two tiny raw-field writers — `cascadeMatchPickForward` / `clearMatchPickForward` — to keep stored backup picks byte-identical (Option 1, no DB change), plus `withdrawalClearForward` / `updatePlayerNameForward` which now touch only authoritative fields (matchPick/originalPick/editedAfterLock), not slots. `markLoserForward`/`unmarkLoserForward`/`placePickAllRounds`/`clearPickForward`/`placePickInNextRound` deleted.
+- **D done — deleted the displaced-label hack.** `bracket.js` no longer does Case-1/Case-2 feeder lookups. `buildDrawView` computes `m.elimLabels = [{name,pos}]`; `placeCard` just paints them.
+- **Behavior note (approved by Ben):** the pure rebuild removed a latent "stale-until-reload" bug — three render spots (a pre-lock pick change leaving a ghost slot; a withdrawal repick leaving a stale/blank slot) now show the correct, reload-consistent state live. New live output == old post-refresh output. Everything else is byte-identical.
+- **No DB migration.** Schema and stored data unchanged; the same pick rows are written as before.
+- **Regression harness:** `test-harness/` drives the REAL `picks.js` + `data.js` + `bracket.js placeCard` in Node (Supabase + DOM stubbed) and snapshots state + render-facts (card/row classes, names, elim labels, stats) to `GOLDEN.frozen.txt`. Run: `cd test-harness && node --import ./register.mjs ./harness.mjs` then diff against the golden. Throwaway but kept — re-run it before/after any future bracket-state change.
+
+---
+
 ## 1. App Overview
 
 Slam Bracket Multiplayer is a shared pick pool app for Grand Slam tennis. A commissioner (single admin user) uploads TNNS Live draw PDFs, edits player names, and manages lock windows. Players log in, make picks before locks, confirm their own match results mid-tournament, and make backup picks when their original picks are eliminated. A leaderboard shows scores and stats for all players across draws.
@@ -33,12 +59,12 @@ All screens live in `index.html` as `<div id="screen-*">` elements. `showScreen(
 | ID | Who sees it | Purpose |
 |---|---|---|
 | `screen-auth` | Everyone (logged out) | Login + signup |
-| `screen-bracket` | Players + commissioner | Active draw view, pick-making |
-| `screen-commissioner` | Commissioner only | Draw upload, player editing, lock managing |
-| `screen-leaderboard` | Players + commissioner | Stats comparison across all players |
-| `screen-viewer` | Players + commissioner | Read-only view of another player's bracket (accessed from leaderboard) |
+| `screen-bracket` | Players only | Active draw view, pick-making |
+| `screen-commissioner` | Commissioner only | Full app home for commissioner: draw upload, player editing, lock managing, result confirmation |
+| `screen-leaderboard` | Players only | Stats comparison across all players |
+| `screen-viewer` | Players only | Read-only original-picks viewer — completely separate from screen-bracket; navigated to from leaderboard |
 
-Navigation: after login → `screen-bracket` for most recent active slam (or most recent if none active). Slam dropdown + M/W segmented control on the header (same pattern as reference app) for switching draws. Leaderboard and commissioner accessible via header nav links.
+Navigation: after login → commissioner lands on `screen-commissioner` and never sees any other screen. Players land on `screen-bracket` for the current live slam. No slam dropdown anywhere — there is exactly one live slam at a time; the header shows the slam name as static text (e.g. "Roland Garros 2026"). M/W segmented control remains on both player bracket and commissioner screens. Between slams, the most recently active slam stays visible (no empty state needed). Past slams are accessible only via leaderboard → Your Draws tab.
 
 ---
 
@@ -50,13 +76,19 @@ src/
   supabase.js      — Supabase client init (reads env vars)
   auth.js          — login, signup, logout, session management
   state.js         — local state cache, activeDraw(), applyTheme()
-  bracket.js       — renderBracket(), placeCard(), SVG connectors (ported)
-  picks.js         — handlePickClick(), placePickAllRounds(), clearPickForward() (ported)
+  bracket-layout.js — renderBracketLayout(): SHARED bracket geometry (card positions, connectors, separators, section/round labels, champion box). Knows nothing about pick state/colors/clicks. Used by bracket.js, viewer-bracket.js, commissioner-results.js.
+  draw-view.js     — buildDrawView(): SINGLE pure, idempotent derivation of round-2+ slot occupants, elim flags, and displaced-pick labels (m.elimLabels) from authoritative fields. The only place slot/elim/label state is computed. (Refactor Step 3, parts A/B/D.)
+  bracket.js       — renderBracket() (calls renderBracketLayout), placeCard() — live bracket card painting only; paints m.elimLabels, no derivation
+  picks.js         — handlePickClick(), applyWinner()/undoWinner() (call buildDrawView), cascadeMatchPickForward()/clearMatchPickForward() (raw matchPick writers), withdrawalClearForward()/updatePlayerNameForward()
   scoring.js       — calcMatchScore(), calcStats(), calcChalkScore() (ported)
   stats.js         — renderStats(), stats bar pills (ported)
   lock.js          — lock/unlock logic, applyWinner(), undoWinner() (ported)
-  commissioner.js  — draw upload/parse, player editing, result confirmation, lock scheduling
+  commissioner.js          — orchestrator + Draw Management tab (upload/parse/confirm) + commissioner header; re-exports renderResults/renderLockManaging
+  commissioner-shared.js   — $c(), escHtml() shared by the commissioner modules
+  commissioner-results.js  — Results tab: renderResults(), winner confirm/undo, results search
+  commissioner-locks.js    — Lock Managing tab: renderLockManaging(), original-picks + backup-pick lock scheduling
   leaderboard.js   — renderLeaderboard(), stats aggregation
+  viewer-bracket.js — renderViewerBracket() (calls renderBracketLayout), placeViewerCard() — read-only card painting for screen-viewer; no live-bracket logic
   print.js         — buildPrintHTML() (ported verbatim)
   parser.js        — extractPdfText(), parseTnnsText(), buildInitialRounds() (ported)
 index.html
@@ -80,6 +112,10 @@ state = {
 
 Draw, Round, Match, Player shapes are identical to the reference app. See `reference/index.html` section 4 (Data Model) for full definitions.
 
+**Authoritative (raw) vs. derived state (Refactor Step 3, 2026-06-01).** Each match carries only a small set of *authoritative* fields that come straight from the DB and are the source of truth: round-0 `p1`/`p2` (the actual draw), `winner`/`score`, and per-user `matchPick`, `originalPick`, `originalPickResult`, `matchPickResult`, `highConfidence`, `editedAfterLock`, `notes`. **Everything else is DERIVED** by `buildDrawView(d)` in `src/draw-view.js`: the `p1`/`p2` occupants for rounds 2+, each slot's `elim` flag, and the `m.elimLabels` array (displaced eliminated-pick labels). `buildDrawView` is the ONE place this derivation happens; it is pure and idempotent (round-2+ slots are rebuilt from scratch every call). Renderers, scoring, and stats consume the derived fields and contain zero derivation logic. Never reconstruct slots or replay eliminations anywhere else — call `buildDrawView` after any authoritative change.
+
+Slot occupancy is derived from the feeder matches via `winner || originalPick || matchPick` (actual advancer first, then the user's projected pick). Elimination flags + dead-backup clearing replay forward from every confirmed winner. Displaced-pick label sides are resolved from the feeders' `originalPick`.
+
 Additional fields vs. reference:
 ```js
 Match {
@@ -89,9 +125,12 @@ Match {
 
 Pick {           // per-user per-match, fetched separately
   match_id: string,
-  pick: string | null,
-  original_pick: string | null,
-  result: 'correct' | 'wrong' | null,
+  matchPick: string | null,              // JS field; DB column: match_pick
+                                         // Active pick at match time. Pre-lock = original intent.
+                                         // Post-lock = backup pick (or still original if unchanged).
+  original_pick: string | null,          // Snapshotted at lock; never mutated after lock except withdrawal
+  originalPickResult: 'correct'|'wrong'|null,  // Was original_pick correct? Drives scoring + draw accuracy.
+  matchPickResult: 'correct'|'wrong'|null,     // Was matchPick correct? Drives match accuracy.
   high_confidence: boolean,
   edited_after_lock: boolean
 }
@@ -102,7 +141,7 @@ Pick {           // per-user per-match, fetched separately
 See `migrations.sql` for full table definitions. Summary:
 
 - `profiles` — extends `auth.users`; adds `display_name`, `is_commissioner`
-- `draws` — one row per slam+draw_type+year
+- `draws` — one row per slam+draw_type+year; `is_active boolean` flags the current live slam. Only one slam (both its MS+WS draws) is active at a time. Uploading and confirming a new slam auto-sets `is_active = false` on all existing draws and `is_active = true` on the new ones.
 - `matches` — 127 rows per draw (rounds 0–6); shared across all users; winner/score set by commissioner
 - `picks` — one row per user×match; upserted on every pick change
 - `lock_schedules` — commissioner-defined lock windows; `locked_at` set when manually triggered
@@ -110,9 +149,9 @@ See `migrations.sql` for full table definitions. Summary:
 ### Key Supabase access patterns
 
 - **Load a draw:** fetch `draws` row → fetch all `matches` for that draw → fetch all `picks` for current user + that draw → assemble into local state
-- **Save a pick:** upsert into `picks` (user_id, match_id, pick, high_confidence, edited_after_lock)
-- **Confirm result (player):** each player confirms their own match results using ✓/✗ buttons on their bracket, identical to the single-player app. `picks.result` is written by the player for their own picks. Honor system for backup picks.
-- **Lock original picks:** update `draws.original_picks_locked` = true; snapshot `picks.original_pick = picks.pick` for all users in that draw
+- **Save a pick:** upsert into `picks` (user_id, match_id, match_pick, original_pick, original_pick_result, match_pick_result, high_confidence, edited_after_lock)
+- **Confirm result (commissioner):** `applyWinner()` sets both `original_pick_result` and `match_pick_result` independently for every pick row on that match. One winner click → two comparisons → two result columns.
+- **Lock original picks:** update `draws.original_picks_locked` = true; snapshot `picks.original_pick = picks.match_pick` for all users in that draw
 - **Lock backup picks (per schedule):** update `lock_schedules.locked_at`; mark affected matches as backup-locked
 
 ---
@@ -129,13 +168,17 @@ See `migrations.sql` for full table definitions. Summary:
 
 ## 7. Pick Semantics (identical to reference app)
 
-**Pre-lock:** picks cascade forward via `placePickAllRounds()`. Changing a pick clears the old one forward via `clearPickForward()`.
+Pick semantics are unchanged from the reference app; only the *implementation* changed in Refactor Step 3 — slot occupancy is now derived by `buildDrawView`, not mutated by forward-walk functions.
 
-**Post-lock (normal):** picks are backup — no cascade, purple styling. Only available when the match has no result yet.
+**Pre-lock:** a click just records `matchPick` on that match; the candidate slots for later rounds are derived. Changing a pick clears any now-orphaned forward `matchPick` via `clearMatchPickForward()`; slots re-derive automatically.
 
-**Post-lock (`edited_after_lock: true`):** withdrawal repick — cascades like pre-lock, re-snapshots `original_pick`, clears `edited_after_lock`.
+**Post-lock (normal):** picks are backup — purple styling, no slot change. The active backup is propagated forward through eliminated slots via `cascadeMatchPickForward()` and persisted (`saveCascadeToSupabase` — keeps stored picks identical to the old behavior). Only available when the match has no result yet.
 
-`original_pick` is sacred post-lock. Never mutate it except via withdrawal flow.
+**Post-lock (`edited_after_lock: true`):** withdrawal repick — re-records `matchPick`, re-snapshots `original_pick`, clears `edited_after_lock`, cascades the new pick forward.
+
+`original_pick` is sacred post-lock. Never mutate it except via the withdrawal flow.
+
+After any authoritative change, handlers call `buildDrawView(d)` then render. (The commissioner edit/withdrawal path in `bracket.js` mutates authoritative fields and renders; slots re-derive on the next `buildDrawView`.)
 
 ---
 
@@ -180,10 +223,13 @@ This applies to both original pick locks (pre-tournament) and backup pick locks 
 
 ## 12. Commissioner Screen
 
+The commissioner screen is the commissioner's entire app — they never see the player bracket, leaderboard, or viewer. The M/W switcher and static slam name live in the commissioner header exactly as they do in the player header.
+
 Tabs or sections:
-1. **Draw management** — upload PDF → parse → review/edit R1 matches → confirm draw (replaces existing if same slam+draw+year)
+1. **Draw management** — upload PDF → parse → review/edit R1 matches → confirm draw (replaces existing if same slam+draw+year; auto-deactivates previous slam)
 2. **Player editing** — edit any player name/seed post-upload (same modal as reference app)
-3. **Lock managing** — visual bracket-style view of the draw where the commissioner selects which match cards to lock or unlock. Two levels of control:
+3. **Results** — match-by-match result confirmation. Shows matches grouped by round; each match displays the two actual player names and a button to select the winner. No pick colors, no scoring UI. Commissioner clicks the winner; `applyWinner()` fires. Undo available on confirmed matches.
+4. **Lock managing** — visual bracket-style view of the draw where the commissioner selects which match cards to lock or unlock. Two levels of control:
    - **Original picks lock** — a single toggle that locks/unlocks the entire draw for original pick-making. Can be scheduled with a datetime or triggered immediately.
    - **Backup pick locks** — commissioner clicks individual match cards (or selects groups) to mark them as locked for backup picks. A selected group can be given a scheduled datetime or locked immediately. Locks can be undone individually. Because tournament scheduling is unpredictable (rain delays, order-of-play changes), all locking is manual-trigger with optional scheduling — no automatic firing.
 
@@ -203,7 +249,9 @@ Tabs or sections:
 
 **`renderBracket()` is destructive.** Clears and rebuilds from scratch. Never cache DOM references to bracket cards across renders.
 
-**Viewer mode.** When `state.viewingUser` is set (not null), bracket renders in read-only mode: no pick clicks, no ✓/✗ buttons, no edit buttons. A banner shows whose bracket you're viewing with a back button that clears `state.viewingUser` and returns to the leaderboard.
+**Viewer mode.** The bracket viewer (`screen-viewer`) is a completely separate screen from the live bracket (`screen-bracket`). `renderViewerBracket(draw)` in `viewer-bracket.js` handles all viewer rendering. The viewer assembles its own draw object via `assembleDrawForUserOriginalPicks()` and does NOT write into `state.draws`, so returning from the viewer requires no data restoration.
+
+**Shared geometry, separate painting (updated 2026-06-01, audit part C).** The old rule "viewer-bracket.js never shares code with bracket.js" is REPLACED. Bracket *geometry* (positions, connectors, labels, champion box) lives once in `bracket-layout.js` / `renderBracketLayout()` and is shared by the live bracket, the viewer, and the commissioner results view. Each renderer still owns its own `placeCard`/`placeViewerCard`/`_placeResultCard` callback for card *painting* (pick state, colors, clicks). Rule going forward: never duplicate geometry; never share card-painting/state logic between live and viewer. `state.viewingUser` is no longer used. Back button on `screen-viewer` simply calls `showScreen('screen-leaderboard')` + `renderLeaderboard()`.
 
 **Commissioner-only UI.** Wrap all commissioner controls in `if (state.currentUser?.is_commissioner)` checks. Never rely on UI hiding alone — check role before any write operation.
 
@@ -256,14 +304,58 @@ Tabs or sections:
 **Chat 4 built:**
 - `src/stats.js` — lock countdown pill appended after health pill; shows "picks lock in Xh/Xm" or "backup picks lock in Xh/Xm"; pulses accent color when affected picks are unfilled
 - `src/bracket.js` — `placeCard()` adds `needs-backup-pick` class for cards in upcoming backup lock range with no pick/winner; `renderBracket()` renders informative empty state when no draws exist
-- `src/main.js` — API sync toggle wired (shows toast "not yet connected", resets to off); `setInterval` refreshes `renderStats()` every 60s when bracket screen is active
-- `src/state.js` — `apiSyncEnabled: false` field added
-- `index.html` — API sync button in bracket `#hdr-right`; CSS for `.needs-backup-pick`, `.countdown-urgent` pulse, `.btn-sync-active`, `.bracket-empty`, `.sync-toast`; mobile fixes (commissioner nav hidden ≤480px, stats-strip scrollable)
+- `src/main.js` — `setInterval` refreshes `renderStats()` every 60s when bracket screen is active (for countdown clock)
+- `index.html` — Refresh button in bracket `#hdr-right`; CSS for `.needs-backup-pick`, `.countdown-urgent` pulse, `.bracket-empty`; mobile fixes (commissioner nav hidden ≤480px, stats-strip scrollable)
+
+**Chat 5 built:**
+- `index.html` — Updated slam accent colors to real brand colors (AO `#2d7ab8`, RG `#BD5627`, WIM `#275F3D`, USO `#071C63`). USO gets its own distinct bg/border tokens (blue-tinted). Leaderboard header title now uses `var(--text)` (neutral) instead of `var(--accent)` since leaderboard spans all slams.
+- `src/leaderboard.js` — Full redesign: two-tab structure (Slams / Records). Slams tab: draws grouped by slam+year newest-first, M/W draw cards side-by-side, score+health only, fixed sort by score; clicking a card → draw detail view (full-width sortable 4-col table); clicking a player name → original-picks bracket viewer. Records tab: All-Time + per-calendar-year sections, 3 cards each (Avg Score, Match Accuracy, Top Brackets); avg score and match acc show drawsPlayed sample size per row; top brackets rows are clickable → original-picks bracket viewer. `lbDetailDraw` module var tracks draw detail navigation state. `assembleDrawForUserOriginalPicks()` reconstructs p1/p2 for ri 1+ from previous round's originalPick, saves actual tournament players as `m.actualP1`/`m.actualP2`.
+- `src/bracket.js` — In original-picks viewer mode (`isViewerOrigPicks = isReadOnly && m.actualP1 !== undefined`): any predicted player whose `actualP` differs gets `s-orig-wrong` styling (crossed out red) regardless of pick status. For ri >= 1, `.mc-actual-top`/`.mc-actual-bot` labels (11px mono, absolutely positioned outside card bounds) show actual player when they differ from predicted — `.mc-actual-won` (text2, ✓ prefix) if they won the match, `.mc-actual-lost` (text3) if they lost. All `.mc` cards in viewer mode get `.mc-viewer` class; `.pr` pointer-events suppressed. Non-pick winner gets a small green ✓ icon.
+- `index.html` — Dedicated `.viewer-hdr` replaces `.viewer-banner`. Shows player name (serif 17px) + draw context (mono 11px text3) + back button. `hdr-row1` and `hdr-row2` are hidden in viewer mode and restored on back. CSS for `.mc-actual-*`, `.mc-viewer`, `.viewer-hdr-*`.
+
+**Chat 7 fixes (commissioner lock bugs):**
+- `src/commissioner.js` — `getOrigPicksSchedule()`, `isMatchBackupLocked()`, `getMatchScheduledLock()` all now filter by `ls.draw_id === d.db_id`; fixes MS/WS draws bleeding lock state into each other
+- `src/commissioner.js` — `handleBackupLock()` now deletes any existing overlapping lock_schedules rows (locked or scheduled) before inserting a new one; fixes schedule-vs-lock-now conflict
+- `src/commissioner.js` — `renderLockBracket()` now checks feeder match winner before displaying player names on lock cards; slots with no confirmed winner show `—`; fixes mix of pick-projected vs actual players
+- `src/commissioner.js` — `renderLockBracket()` inserts a horizontal divider between the top and bottom halves of each round column
+
+**Chat 6 built:**
+- `src/viewer-bracket.js` — new file; `renderViewerBracket(draw)` + `placeViewerCard()` — fully independent read-only renderer for `screen-viewer`; no live-bracket logic whatsoever
+- `src/bracket.js` — stripped of all viewer logic (`isReadOnly`, `isViewerOrigPicks`, `actualP1/P2` labels, `mc-viewer` class, `predictedMissed`); now live-bracket only
+- `src/leaderboard.js` — `openViewerOriginalPicks()` rewritten: assembles viewer draw without touching `state.draws`, calls `renderViewerBracket()`, switches to `screen-viewer`
+- `src/main.js` — viewer back button simplified: just `showScreen('screen-leaderboard')` + `renderLeaderboard()`; no data restoration or header swapping
+- `index.html` — `screen-viewer` fully fleshed out with its own header (`viewer-hdr-v`), round labels (`viewer-round-labels-inner`), and bracket body (`viewer-bracket-body`); old dead viewer-header elements removed from `screen-bracket`
+
+**Chat 8 built:**
+- `src/bracket.js` — removed ✓/✗ result confirmation buttons and score input from `placeCard()`; replaced with a per-user notes input (`.mc-notes`) shown on locked matches that have a pick; saves to `picks.notes` via `savePickToSupabase()`; removed `openWinnerPicker()` (dead code); removed `applyWinner`/`undoWinner` imports
+- `src/picks.js` — `savePickToSupabase()` now includes `notes` field in upsert; removed the non-commissioner `else` path from `applyWinner()` and `undoWinner()` (players no longer call those)
+- `src/data.js` — picks SELECT query now includes `notes`; `notes` field added to match assembly with default `''`; `emptyMatch()` includes `notes: ''`
+- `src/main.js` — replaced api-sync toggle handler with a real refresh button: calls `reloadActiveDraw()` + `renderStats()` + `renderBracket()`; removed unused `supabase` import
+- `src/state.js` — removed `apiSyncEnabled` field
+- `index.html` — sync button label changed to "Refresh"; removed `.btn-sync-active`, `.sync-toast` CSS; replaced `.mc-footer`/`.mc-score`/`.mc-acts`/`.mc-btn` CSS with simplified `.mc-footer` + `.mc-notes`
+- `migrations.sql` — added `notes text` to picks table definition; added migration comment at bottom
+
+**Chat 9 built:**
+- `migrations.sql` — documented DB migration: rename `pick`→`match_pick`, rename `result`→`original_pick_result`, add `match_pick_result` column; run in Supabase SQL editor
+- `src/data.js` — SELECT query, match assembly, `emptyMatch()`, p1/p2 fallback chain all updated to new field names
+- `src/picks.js` — `m.pick`→`m.matchPick` throughout all cascade functions; `savePickToSupabase()` uses new column names; `applyWinner()` sets `originalPickResult` and `matchPickResult` independently for every pick row; `undoWinner()` clears both result columns
+- `src/scoring.js` — `isBackupPick()` uses `m.matchPick`; `calcStatsAsOf()` uses `m.originalPickResult` for scoring/draw accuracy and `m.matchPickResult` for backup pick accuracy
+- `src/bracket.js` — `placeCard()` card styling and row styling use `m.originalPickResult`; `m.matchPick` used for live pick detection, notes footer trigger, backup glow, champion box
+- `src/stats.js` — backup lock allFilled check uses `m.matchPick`
+- `src/leaderboard.js` — `loadAllPicksForDraw()` SELECT and both assembly functions use new field names
+- `src/viewer-bracket.js` — `placeViewerCard()` uses `m.originalPickResult` for card/row styling; champion box uses `m.matchPick`
+- `src/print.js` — `nameLineHTML()` uses `m.matchPick`, `m.originalPickResult`; champion box uses `m.matchPick`
+- `src/commissioner.js` — original picks lock snapshot now reads `match_pick` column and writes `original_pick` correctly
+
+**Chat 10 built:**
+- `src/picks.js` — `placePickAllRounds()` split into pre-lock (slot cascade) and post-lock (matchPick-only cascade); post-lock path cascades `matchPick` into future matches without touching `p1`/`p2` slots, passing through elim'd slots; `clearPickForward()` post-lock path only clears `matchPick`, stops when it no longer matches; `handlePickClick()` locked path now cascades + calls `saveCascadeToSupabase()` to persist all future affected matches; `markLoserForward()` also clears `matchPick` when the loser was a backup pick cascade; `saveCascadeToSupabase()` helper saves all future unconfirmed matches after a backup pick cascade
+- `src/bracket.js` — `placeCard()` / `makeRow()`: elim slots (`p.elim === true`) now render the backup matchPick (purple) or empty instead of the eliminated player; eliminated player appears as floating label outside the card; `isBroken` path removed; correct backup picks get a `✓` checkmark (`pr-backup-ok-icon`); floating labels added for both case 1 (elim flag in slot) and case 2 (originalPick displaced by applyWinner in next round, determined via feeder match lookup); `findSeed` imported from picks.js
+- `src/commissioner.js` — undo handler calls `reloadActiveDraw()` after `undoWinner` to restore backup pick cascade state from DB; imports `reloadActiveDraw` from data.js
+- `index.html` — CSS for `.mc-orig-elim`, `.mc-orig-elim-top`, `.mc-orig-elim-bot` (floating displaced-pick labels: red, line-through, 9.5px mono, positioned ±13px outside card); `.pr-backup-ok-icon` (green ✓ for correct backup)
 
 **Not yet built:**
 - Push/email notifications (not planned for v1)
 - Automated tests
-- Real API sync integration (toggle placeholder exists)
 
 **Known conventions established:**
 - `state.draws[i].draw` = `'MS'` or `'WS'` (draw_type from DB)
@@ -272,10 +364,31 @@ Tabs or sections:
 - `handlePickClick(ri, mi, p, { renderStats, renderBracket })` — callbacks passed in to avoid circular imports
 - `applyWinner(d, ri, mi, winnerName, { renderStats, renderBracket })` — same pattern
 - No localStorage anywhere — all state is Supabase or in-memory
+- Slot occupancy / elim flags / displaced labels are DERIVED by `buildDrawView(d)` only (see Section 5). Renderers/handlers never reconstruct or mutate them directly. `buildDrawView` is idempotent — call it after any authoritative change, then render.
+- Backup pick cascade (post-lock): `cascadeMatchPickForward` only sets `nm.matchPick` on future matches — never touches `p1`/`p2` (those are derived). Passes through elim'd slots, breaks at real confirmed players. Persisted via `saveCascadeToSupabase` (stored picks identical to pre-refactor — no DB change).
+- Elim slots (`p.elim === true`, set by buildDrawView): floating label outside the card (`.mc-orig-elim-top`/`-bot`) comes from `m.elimLabels`; inside row shows backup matchPick (purple) or empty. No click handler on elim rows.
+- Displaced originalPick label: computed in `buildDrawView` (formerly the bracket.js Case-1/Case-2 hack). Side resolved via feeder `originalPick` (`rounds[ri-1].matches[mi*2]` → top, `*2+1` → bot).
+- `applyWinner`/`undoWinner`: set authoritative winner/result fields, then call `buildDrawView(d)` to re-derive advancers/elims/labels. No manual next-slot placement or markLoser/unmarkLoser anymore.
+- `undoWinner`: commissioner still calls `reloadActiveDraw()` after undo so backup-pick cascades are re-derived from the authoritative stored picks.
 - `renderLeaderboard()` clears `statsCache` on every call to ensure fresh data
 - Viewer open is initiated inside `leaderboard.js` (`openViewer(prof, draw)`), not main.js
 - Viewer close (back button) is in `main.js`: clears `state.viewingUser`, calls `reloadActiveDraw()`, calls `renderLeaderboard()`
-- `lb-row` grid is `1fr 90px 90px 90px 100px` (5 columns) — applies to both slam and all-time tables
-- `state.apiSyncEnabled` — in-memory only, not persisted; API sync toggle resets to off on click (no real integration yet)
-- Lock countdown in `renderStats()` scans `state.lockSchedules` for nearest upcoming unlocked row; shows sub-hour as minutes
+- Leaderboard has three tabs: `slams`, `records`, `yourdraws` (tracked in `lbTab` module var); default is `slams`; tab order is Slams | Records | Your Draws
+- `lbDetailDraw` in `leaderboard.js` — when set, renders draw detail view instead of tab content; cleared when user presses back or navigates away
+- Slams tab draw cards: `.lb-row-card` grid is `1fr 72px 72px` (name + score + health)
+- Draw detail table: `.lb-row-detail` grid is `1fr 72px 72px 72px 80px` (name + 4 stat cols)
+- `SLAM_COLORS` in `leaderboard.js` maps slam keys to brand hex colors: AO `#2d7ab8`, RG `#BD5627`, WIM `#275F3D`, USO `#071C63`
+- Draw cards use `--lb-slam-color` CSS custom property on `.lb-draw-card` for colored top border
+- Records tab is neutral (no slam theme colors); leaderboard header uses `var(--text)` not `var(--accent)`
+- `openViewerOriginalPicks(prof, draw)` — assembles a viewer draw via `assembleDrawForUserOriginalPicks()` (does NOT mutate `state.draws`), calls `renderViewerBracket(viewerDraw)`, switches to `screen-viewer`
+- Viewer back button (`viewer-back-btn-v` on `screen-viewer`) calls `showScreen('screen-leaderboard')` + `renderLeaderboard()` — no data restoration needed
+- `screen-viewer` has its own header (`viewer-hdr-v`), round labels (`viewer-round-labels-inner`), and bracket body (`viewer-bracket-body`) — all separate IDs from `screen-bracket`
+- `bracket.js` / `placeCard()` contains zero viewer logic; `viewer-bracket.js` / `placeViewerCard()` contains zero live-bracket logic
+- Bracket geometry is NOT duplicated: `bracket-layout.js` / `renderBracketLayout({ draw, body, labelsInner, placeCard, championName, emptyHTML })` is the single source. Live/viewer/results renderers pass their own `placeCard` callback (signature `(draw, match, ri, mi, x, y, wrap)`). Scroll-sync and empty-state markup stay with each caller.
+- Commissioner screen is split (audit part E): `commissioner.js` (orchestrator + header + Draw Management), `commissioner-results.js` (Results tab), `commissioner-locks.js` (Lock Managing tab), `commissioner-shared.js` (`$c`/`escHtml`). `main.js` still imports only `initCommissioner` from `commissioner.js`. The Lock tab's drag-select `mouseup` listener is registered once at module load inside `commissioner-locks.js`.
+- `state.viewingUser` is no longer used and can be removed in a future cleanup
+- Lock countdown in `renderStats()` scans `state.lockSchedules` for nearest upcoming unlocked row; shows sub-hour as minutes; in pre-lock state also checks for `lock_type='original_picks'` row and appends countdown before the early return
 - `needs-backup-pick` glow is suppressed in viewer mode (`isReadOnly`)
+- Your Draws tab (`yourdraws`) shows only the logged-in user's own brackets; one card per slam+year with M and W buttons; button is disabled+greyed if user has no picks in that draw (checked via Supabase query); clicking opens `openViewerOriginalPicks` with `state.currentUser`
+- Records tab year dividers: current calendar year shows "This Year" (`year === new Date().getFullYear()`), older years show the year number
+- Original picks lock scheduling: commissioner can schedule via "Schedule…" button which opens the shared `lock-sched-modal`; inserts a `lock_schedules` row with `lock_type='original_picks'`; scheduled row is deleted when lock fires or is cancelled. `getOrigPicksSchedule(d)` returns the pending row. Modal title/subtitle are set dynamically via `id="lock-sched-title"` / `id="lock-sched-subtitle"` and reset on close via `resetModalTitles()`.

@@ -1,0 +1,187 @@
+──── S1 pre-lock full bracket (champion A) ────  (locked=false)
+  r0m0  [A(1) / B]  mp=A  op=-  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-orig|A} {pr|B} labels=-
+  r0m1  [C / D(4)]  mp=D  op=-  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr|C} {pr s-orig|D} labels=-
+  r0m2  [E(3) / F]  mp=E  op=-  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-orig|E} {pr|F} labels=-
+  r0m3  [G / H(2)]  mp=H  op=-  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr|G} {pr s-orig|H} labels=-
+  r1m0  [A(1) / D(4)]  mp=A  op=-  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-orig|A} {pr|D} labels=-
+  r1m1  [E(3) / H(2)]  mp=E  op=-  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-orig|E} {pr|H} labels=-
+  r2m0  [A(1) / E(3)]  mp=A  op=-  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-orig|A} {pr|E} labels=-
+  STATS filled=7 total=7 cOrig=0 wOrig=0 cBackup=0 wBackup=0 base=0 skill=0 cDrawOrig=0 wDrawOrig=0 maxH=0 reachH=0
+
+──── S1b pre-lock change r0m2 E→F (clears E forward) ────  (locked=false)
+  r0m0  [A(1) / B]  mp=A  op=-  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-orig|A} {pr|B} labels=-
+  r0m1  [C / D(4)]  mp=D  op=-  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr|C} {pr s-orig|D} labels=-
+  r0m2  [E(3) / F]  mp=F  op=-  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr|E} {pr s-orig|F} labels=-
+  r0m3  [G / H(2)]  mp=H  op=-  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr|G} {pr s-orig|H} labels=-
+  r1m0  [A(1) / D(4)]  mp=A  op=-  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-orig|A} {pr|D} labels=-
+  r1m1  [F / H(2)]  mp=-  op=-  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr|F} {pr|H} labels=-
+  r2m0  [A(1) / ·]  mp=A  op=-  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-orig|A} {pr no-pick|—} labels=-
+  STATS filled=6 total=7 cOrig=0 wOrig=0 cBackup=0 wBackup=0 base=0 skill=0 cDrawOrig=0 wDrawOrig=0 maxH=0 reachH=0
+
+──── S1c pre-lock reverted to champion A ────  (locked=false)
+  r0m0  [A(1) / B]  mp=A  op=-  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-orig|A} {pr|B} labels=-
+  r0m1  [C / D(4)]  mp=D  op=-  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr|C} {pr s-orig|D} labels=-
+  r0m2  [E(3) / F]  mp=E  op=-  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-orig|E} {pr|F} labels=-
+  r0m3  [G / H(2)]  mp=H  op=-  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr|G} {pr s-orig|H} labels=-
+  r1m0  [A(1) / D(4)]  mp=A  op=-  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-orig|A} {pr|D} labels=-
+  r1m1  [E(3) / H(2)]  mp=E  op=-  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-orig|E} {pr|H} labels=-
+  r2m0  [A(1) / E(3)]  mp=A  op=-  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-orig|A} {pr|E} labels=-
+  STATS filled=7 total=7 cOrig=0 wOrig=0 cBackup=0 wBackup=0 base=0 skill=0 cDrawOrig=0 wDrawOrig=0 maxH=0 reachH=0
+
+──── S2 after lock (originalPick snapshot) ────  (locked=true)
+  r0m0  [A(1) / B]  mp=A  op=A  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-orig|A} {pr|B} labels=-
+  r0m1  [C / D(4)]  mp=D  op=D  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr|C} {pr s-orig|D} labels=-
+  r0m2  [E(3) / F]  mp=E  op=E  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-orig|E} {pr|F} labels=-
+  r0m3  [G / H(2)]  mp=H  op=H  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr|G} {pr s-orig|H} labels=-
+  r1m0  [A(1) / D(4)]  mp=A  op=A  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-orig|A} {pr|D} labels=-
+  r1m1  [E(3) / H(2)]  mp=E  op=E  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-orig|E} {pr|H} labels=-
+  r2m0  [A(1) / E(3)]  mp=A  op=A  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-orig|A} {pr|E} labels=-
+  STATS filled=7 total=7 cOrig=0 wOrig=0 cBackup=0 wBackup=0 base=0 skill=0 cDrawOrig=0 wDrawOrig=0 maxH=11 reachH=11
+
+──── S3 after A eliminated R1 (winner B) ────  (locked=true)
+  r0m0  [A(1) / B]  mp=A  op=A  opr=wrong  mpr=wrong  win=B
+    RENDER card="mc st-wrong" rows={pr s-orig-wrong locked|A} {pr|B} labels=-
+  r0m1  [C / D(4)]  mp=D  op=D  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr|C} {pr s-orig|D} labels=-
+  r0m2  [E(3) / F]  mp=E  op=E  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-orig|E} {pr|F} labels=-
+  r0m3  [G / H(2)]  mp=H  op=H  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr|G} {pr s-orig|H} labels=-
+  r1m0  [B / D(4)]  mp=-  op=A  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr|B} {pr|D} labels={mc-orig-elim mc-orig-elim-top|A}
+  r1m1  [E(3) / H(2)]  mp=E  op=E  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-orig|E} {pr|H} labels=-
+  r2m0  [A(1)✗ELIM / E(3)]  mp=-  op=A  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr no-pick|—} {pr|E} labels={mc-orig-elim mc-orig-elim-top|A}
+  STATS filled=5 total=7 cOrig=0 wOrig=1 cBackup=0 wBackup=0 base=0 skill=0 cDrawOrig=0 wDrawOrig=1 maxH=11 reachH=5
+
+──── S4 after backup pick B in R2m0 ────  (locked=true)
+  r0m0  [A(1) / B]  mp=A  op=A  opr=wrong  mpr=wrong  win=B
+    RENDER card="mc st-wrong" rows={pr s-orig-wrong locked|A} {pr|B} labels=-
+  r0m1  [C / D(4)]  mp=D  op=D  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr|C} {pr s-orig|D} labels=-
+  r0m2  [E(3) / F]  mp=E  op=E  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-orig|E} {pr|F} labels=-
+  r0m3  [G / H(2)]  mp=H  op=H  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr|G} {pr s-orig|H} labels=-
+  r1m0  [B / D(4)]  mp=B  op=A  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-backup|B} {pr|D} labels={mc-orig-elim mc-orig-elim-top|A}
+  r1m1  [E(3) / H(2)]  mp=E  op=E  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-orig|E} {pr|H} labels=-
+  r2m0  [A(1)✗ELIM / E(3)]  mp=B  op=A  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-backup|B} {pr|E} labels={mc-orig-elim mc-orig-elim-top|A}
+  STATS filled=7 total=7 cOrig=0 wOrig=1 cBackup=0 wBackup=0 base=0 skill=0 cDrawOrig=0 wDrawOrig=1 maxH=11 reachH=5
+
+──── S5 after D wins R1m1 and B wins R2m0 ────  (locked=true)
+  r0m0  [A(1) / B]  mp=A  op=A  opr=wrong  mpr=wrong  win=B
+    RENDER card="mc st-wrong" rows={pr s-orig-wrong locked|A} {pr|B} labels=-
+  r0m1  [C / D(4)]  mp=D  op=D  opr=correct  mpr=correct  win=D
+    RENDER card="mc st-correct" rows={pr s-elim|C} {pr s-orig-ok locked|D} labels=-
+  r0m2  [E(3) / F]  mp=E  op=E  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-orig|E} {pr|F} labels=-
+  r0m3  [G / H(2)]  mp=H  op=H  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr|G} {pr s-orig|H} labels=-
+  r1m0  [B / D(4)]  mp=B  op=A  opr=wrong  mpr=correct  win=B
+    RENDER card="mc st-wrong" rows={pr s-backup|B✓} {pr s-elim|D} labels=-
+  r1m1  [E(3) / H(2)]  mp=E  op=E  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-orig|E} {pr|H} labels=-
+  r2m0  [B / E(3)]  mp=B  op=A  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-backup|B} {pr|E} labels={mc-orig-elim mc-orig-elim-top|A}
+  STATS filled=7 total=7 cOrig=1 wOrig=1 cBackup=1 wBackup=0 base=1 skill=0 cDrawOrig=1 wDrawOrig=2 maxH=11 reachH=5
+
+──── S6a after withdrawalClearForward(H) ────  (locked=true)
+  r0m0  [A(1) / B]  mp=A  op=A  opr=wrong  mpr=wrong  win=B
+    RENDER card="mc st-wrong" rows={pr s-orig-wrong locked|A} {pr|B} labels=-
+  r0m1  [C / D(4)]  mp=D  op=D  opr=correct  mpr=correct  win=D
+    RENDER card="mc st-correct" rows={pr s-elim|C} {pr s-orig-ok locked|D} labels=-
+  r0m2  [E(3) / F]  mp=E  op=E  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-orig|E} {pr|F} labels=-
+  r0m3  [G / H(2)]  mp=H  op=H  opr=-  mpr=-  win=-  EDITED
+    RENDER card="mc st-needs-repick" rows={pr|G} {pr s-orig|H} labels=-
+  r1m0  [B / D(4)]  mp=B  op=A  opr=wrong  mpr=correct  win=B
+    RENDER card="mc st-wrong" rows={pr s-backup|B✓} {pr s-elim|D} labels=-
+  r1m1  [E(3) / ·]  mp=E  op=E  opr=-  mpr=-  win=-  EDITED
+    RENDER card="mc st-needs-repick" rows={pr s-orig|E} {pr no-pick|—} labels=-
+  r2m0  [B / E(3)]  mp=B  op=A  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-backup|B} {pr|E} labels={mc-orig-elim mc-orig-elim-top|A}
+  STATS filled=7 total=7 cOrig=1 wOrig=1 cBackup=1 wBackup=0 base=1 skill=0 cDrawOrig=1 wDrawOrig=2 maxH=11 reachH=5
+
+──── S6b after repick G ────  (locked=true)
+  r0m0  [A(1) / B]  mp=A  op=A  opr=wrong  mpr=wrong  win=B
+    RENDER card="mc st-wrong" rows={pr s-orig-wrong locked|A} {pr|B} labels=-
+  r0m1  [C / D(4)]  mp=D  op=D  opr=correct  mpr=correct  win=D
+    RENDER card="mc st-correct" rows={pr s-elim|C} {pr s-orig-ok locked|D} labels=-
+  r0m2  [E(3) / F]  mp=E  op=E  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-orig|E} {pr|F} labels=-
+  r0m3  [G / H(2)]  mp=G  op=G  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-orig|G} {pr|H} labels=-
+  r1m0  [B / D(4)]  mp=B  op=A  opr=wrong  mpr=correct  win=B
+    RENDER card="mc st-wrong" rows={pr s-backup|B✓} {pr s-elim|D} labels=-
+  r1m1  [E(3) / G]  mp=G  op=E  opr=-  mpr=-  win=-  EDITED
+    RENDER card="mc st-needs-repick" rows={pr s-orig-inactive|E} {pr s-backup|G} labels=-
+  r2m0  [B / E(3)]  mp=B  op=A  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-backup|B} {pr|E} labels={mc-orig-elim mc-orig-elim-top|A}
+  STATS filled=7 total=7 cOrig=1 wOrig=1 cBackup=1 wBackup=0 base=1 skill=0 cDrawOrig=1 wDrawOrig=2 maxH=11 reachH=5
+
+──── S7 after undoWinner R2m0 ────  (locked=true)
+  r0m0  [A(1) / B]  mp=A  op=A  opr=wrong  mpr=wrong  win=B
+    RENDER card="mc st-wrong" rows={pr s-orig-wrong locked|A} {pr|B} labels=-
+  r0m1  [C / D(4)]  mp=D  op=D  opr=correct  mpr=correct  win=D
+    RENDER card="mc st-correct" rows={pr s-elim|C} {pr s-orig-ok locked|D} labels=-
+  r0m2  [E(3) / F]  mp=E  op=E  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-orig|E} {pr|F} labels=-
+  r0m3  [G / H(2)]  mp=G  op=G  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-orig|G} {pr|H} labels=-
+  r1m0  [B / D(4)]  mp=B  op=A  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-backup|B} {pr|D} labels={mc-orig-elim mc-orig-elim-top|A}
+  r1m1  [E(3) / G]  mp=G  op=E  opr=-  mpr=-  win=-  EDITED
+    RENDER card="mc st-needs-repick" rows={pr s-orig-inactive|E} {pr s-backup|G} labels=-
+  r2m0  [A(1)✗ELIM / E(3)]  mp=B  op=A  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr s-backup|B} {pr|E} labels={mc-orig-elim mc-orig-elim-top|A}
+  STATS filled=7 total=7 cOrig=1 wOrig=1 cBackup=0 wBackup=0 base=1 skill=0 cDrawOrig=1 wDrawOrig=1 maxH=11 reachH=5
+
+──── S8 data.js loadDraw reconstruction ────  (locked=true)
+  r0m0  [A(1) / B]  mp=A  op=A  opr=wrong  mpr=wrong  win=B
+    RENDER card="mc st-wrong" rows={pr s-orig-wrong locked|A} {pr|B} labels=-
+  r0m1  [C / D(4)]  mp=D  op=D  opr=correct  mpr=correct  win=D
+    RENDER card="mc st-correct" rows={pr s-elim|C} {pr s-orig-ok locked|D} labels=-
+  r0m2  [E(3) / F]  mp=-  op=-  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr|E} {pr|F} labels=-
+  r0m3  [G / H(2)]  mp=-  op=-  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr|G} {pr|H} labels=-
+  r1m0  [B / D(4)]  mp=-  op=A  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr|B} {pr|D} labels={mc-orig-elim mc-orig-elim-top|A}
+  r1m1  [· / ·]  mp=E  op=E  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr no-pick|—} {pr no-pick|—} labels=-
+  r2m0  [A(1)✗ELIM / E(3)]  mp=-  op=A  opr=-  mpr=-  win=-
+    RENDER card="mc" rows={pr no-pick|—} {pr|E} labels={mc-orig-elim mc-orig-elim-top|A}
+  STATS filled=2 total=6 cOrig=1 wOrig=1 cBackup=0 wBackup=0 base=1 skill=0 cDrawOrig=1 wDrawOrig=1 maxH=7 reachH=1
+

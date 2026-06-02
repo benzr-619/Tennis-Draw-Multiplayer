@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Secrets / env
+.env.local
+.env
+
+# Vite build-cache litter
+*.timestamp-*.mjs
+
+# Archived data dumps / scratch (kept locally, not in git)
+_archive/
+
+# OS
+.DS_Store

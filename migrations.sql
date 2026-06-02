@@ -137,11 +137,13 @@ create table public.picks (
   user_id             uuid not null references public.profiles(id) on delete cascade,
   draw_id             uuid not null references public.draws(id) on delete cascade,
   match_id            uuid not null references public.matches(id) on delete cascade,
-  pick                text,             -- current active pick (player name)
+  match_pick          text,             -- active pick at match time (pre-lock = original; post-lock = backup)
   original_pick       text,             -- snapshotted at lock; never mutated after lock except withdrawal
-  result              text check (result in ('correct','wrong')),
+  original_pick_result text check (original_pick_result in ('correct','wrong')),  -- was original_pick correct?
+  match_pick_result   text check (match_pick_result in ('correct','wrong')),       -- was match_pick correct?
   high_confidence     boolean not null default false,
   edited_after_lock   boolean not null default false,
+  notes               text,             -- freeform per-user notes (scores, commentary, etc.)
   created_at          timestamptz not null default now(),
   updated_at          timestamptz not null default now(),
   unique (user_id, match_id)
@@ -225,3 +227,29 @@ create index on public.picks (draw_id);
 create index on public.picks (user_id);
 create index on public.picks (match_id);
 create index on public.lock_schedules (draw_id);
+
+-- ─────────────────────────────────────────
+-- MIGRATIONS
+-- Run these in Supabase SQL editor for existing databases
+-- ─────────────────────────────────────────
+
+-- Add notes field to picks (Chat 8)
+-- alter table public.picks add column if not exists notes text;
+
+-- Split picks result into two separate result columns (Chat 9)
+-- Run these three statements in order in Supabase SQL editor:
+--
+-- 1. Rename the active pick column
+-- alter table public.picks rename column pick to match_pick;
+--
+-- 2. Rename the single result column to clarify it tracked original picks
+-- alter table public.picks rename column result to original_pick_result;
+--
+-- 3. Add the new match-time result column
+-- alter table public.picks add column if not exists match_pick_result text check (match_pick_result in ('correct','wrong'));
+--
+-- After running, existing rows will have:
+--   match_pick          — the player name that was the active pick (unchanged data)
+--   original_pick       — the pre-lock snapshot (unchanged data)
+--   original_pick_result — whatever result was already recorded (unchanged data)
+--   match_pick_result   — null for all existing rows; populated going forward by applyWinner

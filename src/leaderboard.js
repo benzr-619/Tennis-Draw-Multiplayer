@@ -1,15 +1,26 @@
-// Leaderboard — Chat 3
+// Leaderboard — Chat 6 refinements
 
 import { supabase } from './supabase.js'
-import { state, activeDraw } from './state.js'
+import { state } from './state.js'
 import { calcStats } from './scoring.js'
-import { slamLabel, slamKey } from './data.js'
+import { slamKey, SLAM_CONFIG } from './data.js'
+
+// ── CONSTANTS ──
+
+const SLAM_COLORS = {
+  AO:  '#2d7ab8',
+  RG:  '#BD5627',
+  WIM: '#275F3D',
+  USO: '#071C63',
+}
 
 // ── MODULE STATE ──
-let profiles = null          // Profile[] — cached after first fetch
-let lbView = 'slam'         // 'slam' | 'alltime'
-let lbSort = { col: 'score', dir: -1 }  // dir: 1 = asc, -1 = desc
-let statsCache = new Map()  // drawDbId → { userId: stats }
+
+let lbTab = 'slams'            // 'slams' | 'records' | 'yourdraws'
+let lbDetailDraw = null        // Draw | null — when set, show full-width draw detail
+let lbSort = { col: 'score', dir: -1 }
+let statsCache = new Map()     // drawDbId → { userId: stats }
+let profiles = null
 
 // ── DATA ──
 
@@ -27,27 +38,26 @@ export async function loadAllProfiles() {
 async function loadAllPicksForDraw(drawDbId) {
   const { data, error } = await supabase
     .from('picks')
-    .select('user_id, match_id, pick, original_pick, result, high_confidence, edited_after_lock')
+    .select('user_id, match_id, match_pick, original_pick, original_pick_result, match_pick_result, high_confidence, edited_after_lock')
     .eq('draw_id', drawDbId)
   if (error) throw error
   return data || []
 }
 
-// Build a Draw object for a given user by swapping their picks onto an existing draw's match structure.
-// Does NOT re-fetch matches — reuses baseDraw.rounds.
+// Assembles a draw using the user's current picks (pick field)
 function assembleDrawForUser(baseDraw, userPickRows) {
   const pickMap = {}
   userPickRows.forEach(p => { pickMap[p.match_id] = p })
-
   const rounds = baseDraw.rounds.map(r => ({
     ...r,
     matches: r.matches.map(m => {
       const pk = m.db_id ? (pickMap[m.db_id] || {}) : {}
       return {
         ...m,
-        pick: pk.pick ?? null,
+        matchPick: pk.match_pick ?? null,
         originalPick: pk.original_pick ?? null,
-        result: pk.result ?? null,
+        originalPickResult: pk.original_pick_result ?? null,
+        matchPickResult: pk.match_pick_result ?? null,
         highConfidence: pk.high_confidence ?? false,
         editedAfterLock: pk.edited_after_lock ?? false,
       }
@@ -56,7 +66,61 @@ function assembleDrawForUser(baseDraw, userPickRows) {
   return { ...baseDraw, rounds }
 }
 
-// Returns { userId: { score, drawAcc, matchAcc, drawHealth } }
+// Assembles a draw using original_pick as pick — for the leaderboard bracket viewer
+function assembleDrawForUserOriginalPicks(baseDraw, userPickRows) {
+  const pickMap = {}
+  userPickRows.forEach(p => { pickMap[p.match_id] = p })
+
+  // Build name→seed lookup from R1 (seeds only exist there)
+  const seedMap = {}
+  baseDraw.rounds[0]?.matches.forEach(m => {
+    if (m.p1?.name) seedMap[m.p1.name] = m.p1.seed || ''
+    if (m.p2?.name) seedMap[m.p2.name] = m.p2.seed || ''
+  })
+
+  // Pass 1: copy pick fields onto each match, save actual p1/p2 from baseDraw
+  const rounds = baseDraw.rounds.map(r => ({
+    ...r,
+    matches: r.matches.map(m => {
+      const pk = m.db_id ? (pickMap[m.db_id] || {}) : {}
+      return {
+        ...m,
+        // save actual tournament players before we overwrite p1/p2
+        actualP1: { ...m.p1 },
+        actualP2: { ...m.p2 },
+        matchPick: pk.original_pick ?? pk.match_pick ?? null,
+        originalPick: pk.original_pick ?? null,
+        originalPickResult: pk.original_pick_result ?? null,
+        matchPickResult: pk.match_pick_result ?? null,
+        highConfidence: pk.high_confidence ?? false,
+        editedAfterLock: false,
+      }
+    }),
+  }))
+
+  // Pass 2: reconstruct p1/p2 for ri 1+ from the previous round's picks
+  // Each slot is filled with whoever the player predicted would win the feeder match.
+  // actualP1/actualP2 are derived from the feeder match winners (not DB p1_name/p2_name,
+  // which are empty for R2+ because applyWinner doesn't write them back to the DB).
+  for (let ri = 1; ri < rounds.length; ri++) {
+    rounds[ri].matches.forEach((m, mi) => {
+      const feeder1 = rounds[ri - 1].matches[mi * 2]
+      const feeder2 = rounds[ri - 1].matches[mi * 2 + 1]
+      const name1 = feeder1?.originalPick || ''
+      const name2 = feeder2?.originalPick || ''
+      m.p1 = { name: name1, seed: seedMap[name1] || '' }
+      m.p2 = { name: name2, seed: seedMap[name2] || '' }
+      // Actual players: whoever won the feeder matches in the real tournament
+      const actual1 = feeder1?.winner || ''
+      const actual2 = feeder2?.winner || ''
+      m.actualP1 = { name: actual1, seed: seedMap[actual1] || '' }
+      m.actualP2 = { name: actual2, seed: seedMap[actual2] || '' }
+    })
+  }
+
+  return { ...baseDraw, rounds }
+}
+
 export async function loadDrawStatsForAllUsers(baseDraw) {
   const cached = statsCache.get(baseDraw.db_id)
   if (cached) return cached
@@ -66,7 +130,6 @@ export async function loadDrawStatsForAllUsers(baseDraw) {
     loadAllProfiles(),
   ])
 
-  // Group picks by user_id
   const picksByUser = {}
   allPicks.forEach(p => {
     if (!picksByUser[p.user_id]) picksByUser[p.user_id] = []
@@ -93,199 +156,274 @@ export async function loadDrawStatsForAllUsers(baseDraw) {
   return result
 }
 
-// Load another user's picks into state.draws[activeTab].
-// Only replaces pick fields — match/winner data is untouched.
-export async function loadViewerPicks(userId) {
-  const d = activeDraw()
-  if (!d) return
-  const allPicks = await loadAllPicksForDraw(d.db_id)
-  const userPicks = allPicks.filter(p => p.user_id === userId)
-  const assembled = assembleDrawForUser(d, userPicks)
-  state.draws[state.activeTab] = assembled
-}
 
-// ── RENDER ──
+// ── RENDER ENTRY ──
 
 export async function renderLeaderboard() {
-  statsCache.clear() // always refresh on each navigate
+  statsCache.clear()
 
-  const screen = document.getElementById('screen-leaderboard')
-  if (!screen) return
-
-  // Replace lb-placeholder with lb-root if not yet done
-  let lbRoot = screen.querySelector('.lb-root')
-  if (!lbRoot) {
-    const ph = screen.querySelector('.lb-placeholder')
-    if (ph) ph.remove()
-    lbRoot = document.createElement('div')
-    lbRoot.className = 'lb-root'
-    screen.appendChild(lbRoot)
-  }
-
-  lbRoot.innerHTML = '<div class="lb-loading">Loading…</div>'
+  const root = document.getElementById('lb-root')
+  if (!root) return
+  root.innerHTML = '<div class="lb-loading">Loading…</div>'
 
   try {
     const profs = await loadAllProfiles()
-    lbRoot.innerHTML = ''
+    root.innerHTML = ''
 
-    // Toolbar
-    const toolbar = document.createElement('div')
-    toolbar.className = 'lb-toolbar'
+    // If we're in draw detail view, render that instead of tabs
+    if (lbDetailDraw) {
+      await renderDrawDetail(root, profs, lbDetailDraw)
+      return
+    }
 
-    // Slam context label
-    const d = activeDraw()
-    const contextLabel = document.createElement('span')
-    contextLabel.className = 'lb-context'
-    contextLabel.textContent = d ? slamLabel(d) : 'All Draws'
-    toolbar.appendChild(contextLabel)
-
-    // View toggle
-    const toggle = document.createElement('div')
-    toggle.className = 'lb-view-toggle'
-    ;[{ key: 'slam', label: 'This Slam' }, { key: 'alltime', label: 'All-Time' }].forEach(({ key, label }) => {
+    // Tab bar
+    const tabbar = document.createElement('div')
+    tabbar.className = 'lb-tabbar'
+    ;[{ key: 'slams', label: 'Slams' }, { key: 'records', label: 'Records' }, { key: 'yourdraws', label: 'Your Draws' }].forEach(({ key, label }) => {
       const btn = document.createElement('button')
-      btn.className = 'lb-toggle-btn' + (lbView === key ? ' active' : '')
+      btn.className = 'lb-tab' + (lbTab === key ? ' active' : '')
       btn.textContent = label
       btn.addEventListener('click', () => {
-        if (lbView === key) return
-        lbView = key
-        lbSort = { col: lbView === 'slam' ? 'score' : 'avgScore', dir: -1 }
+        if (lbTab === key) return
+        lbTab = key
+        lbSort = { col: 'score', dir: -1 }
         renderLeaderboard()
       })
-      toggle.appendChild(btn)
+      tabbar.appendChild(btn)
     })
-    toolbar.appendChild(toggle)
-    lbRoot.appendChild(toolbar)
+    root.appendChild(tabbar)
 
-    // Content
     const content = document.createElement('div')
     content.className = 'lb-content'
-    lbRoot.appendChild(content)
+    root.appendChild(content)
 
-    if (lbView === 'slam') {
-      await renderSlamView(content, profs)
+    if (lbTab === 'slams') {
+      await renderSlamsTab(content, profs)
+    } else if (lbTab === 'records') {
+      await renderRecordsTab(content, profs)
     } else {
-      await renderAllTimeView(content, profs)
+      await renderYourDrawsTab(content)
     }
   } catch (err) {
     console.error('Leaderboard error:', err)
-    lbRoot.innerHTML = `<div class="lb-error">Failed to load leaderboard: ${err.message}</div>`
+    root.innerHTML = `<div class="lb-error">Failed to load leaderboard: ${err.message}</div>`
   }
 }
 
-// ── SLAM VIEW ──
+// ── DRAW DETAIL VIEW ──
+// Full-width sortable table for one draw, with back button
 
-async function renderSlamView(container, profs) {
-  const d = activeDraw()
-  if (!d) {
-    container.innerHTML = '<div class="lb-empty">No draw selected.</div>'
-    return
-  }
+async function renderDrawDetail(root, profs, draw) {
+  const color = SLAM_COLORS[draw.slam] || 'var(--border)'
+  const cfg = SLAM_CONFIG[draw.slam] || {}
+  const drawTypeLabel = draw.draw === 'MS' ? "Men's Singles" : "Women's Singles"
 
-  // Get all draws for the current slam key (MS + WS)
-  const key = slamKey(d)
-  const slamDraws = state.draws.filter(x => slamKey(x) === key)
+  // Detail header: back button + draw title
+  const hdr = document.createElement('div')
+  hdr.className = 'lb-detail-header'
+  hdr.style.setProperty('--lb-slam-color', color)
 
-  if (slamDraws.length === 0) {
-    container.innerHTML = '<div class="lb-empty">No draws available.</div>'
-    return
-  }
+  const back = document.createElement('button')
+  back.className = 'lb-detail-back'
+  back.textContent = '← Slams'
+  back.addEventListener('click', () => {
+    lbDetailDraw = null
+    lbSort = { col: 'score', dir: -1 }
+    renderLeaderboard()
+  })
 
-  for (const draw of slamDraws) {
-    const section = document.createElement('div')
-    section.className = 'lb-section'
+  const title = document.createElement('span')
+  title.className = 'lb-detail-title'
+  title.textContent = `${cfg.name || draw.slam} ${draw.year} — ${drawTypeLabel}`
 
-    const sectionTitle = document.createElement('div')
-    sectionTitle.className = 'lb-section-title'
-    sectionTitle.textContent = draw.draw === 'MS' ? "Men's Singles" : "Women's Singles"
-    section.appendChild(sectionTitle)
+  hdr.appendChild(back)
+  hdr.appendChild(title)
+  root.appendChild(hdr)
 
-    const statsMap = await loadDrawStatsForAllUsers(draw)
+  const content = document.createElement('div')
+  content.className = 'lb-content'
+  root.appendChild(content)
 
-    const cols = [
-      { key: 'name',        label: 'Player',          sortable: false },
-      { key: 'score',       label: 'Score',           sortable: true },
-      { key: 'drawAcc',     label: 'Draw Acc',        sortable: true },
-      { key: 'matchAcc',    label: 'Match Acc',       sortable: true },
-      { key: 'drawHealth',  label: 'Draw Health',     sortable: true },
-    ]
+  const statsMap = await loadDrawStatsForAllUsers(draw)
 
-    section.appendChild(buildTable(cols, profs, statsMap, draw))
-    container.appendChild(section)
-  }
+  const cols = [
+    { key: 'score',      label: 'Score',      sortable: true },
+    { key: 'drawAcc',    label: 'Draw %',      sortable: true },
+    { key: 'drawHealth', label: 'Health',      sortable: true },
+    { key: 'matchAcc',   label: 'Match %',     sortable: true },
+  ]
+
+  const tableWrap = document.createElement('div')
+  tableWrap.className = 'lb-detail-table-wrap'
+  tableWrap.appendChild(buildDetailTable(cols, profs, statsMap, draw))
+  content.appendChild(tableWrap)
 }
 
-// ── ALL-TIME VIEW ──
+// ── SLAMS TAB ──
 
-async function renderAllTimeView(container, profs) {
+async function renderSlamsTab(container, profs) {
   if (state.draws.length === 0) {
     container.innerHTML = '<div class="lb-empty">No draws uploaded yet.</div>'
     return
   }
 
-  // Load stats for every draw
-  const allStatsMaps = await Promise.all(state.draws.map(d => loadDrawStatsForAllUsers(d)))
-
-  // Aggregate per user
-  const aggMap = {}
-  profs.forEach(prof => {
-    let totalScore = 0, drawAccNum = 0, drawAccDen = 0
-    let matchAccNum = 0, matchAccDen = 0
-    let drawsPlayed = 0
-
-    allStatsMaps.forEach(statsMap => {
-      const s = statsMap[prof.id]
-      if (!s || !s.hasAnyPicks) return
-      drawsPlayed++
-      totalScore += s.score
-      if (s.drawAcc !== null) { drawAccNum += s.drawAcc; drawAccDen++ }
-      if (s.matchAcc !== null) { matchAccNum += s.matchAcc; matchAccDen++ }
-    })
-
-    aggMap[prof.id] = {
-      drawsPlayed,
-      avgScore: drawsPlayed > 0 ? Math.round(totalScore / drawsPlayed) : null,
-      drawAcc: drawAccDen > 0 ? drawAccNum / drawAccDen : null,
-      matchAcc: matchAccDen > 0 ? matchAccNum / matchAccDen : null,
-      hasAnyPicks: drawsPlayed > 0,
-    }
+  // Group by slam+year
+  const groups = new Map()
+  state.draws.forEach(d => {
+    const k = slamKey(d)
+    if (!groups.has(k)) groups.set(k, { slam: d.slam, year: d.year, draws: [] })
+    groups.get(k).draws.push(d)
   })
 
-  const cols = [
-    { key: 'name',        label: 'Player',      sortable: false },
-    { key: 'drawsPlayed', label: 'Draws',        sortable: true },
-    { key: 'avgScore',    label: 'Avg Score',    sortable: true },
-    { key: 'drawAcc',     label: 'Draw Acc',     sortable: true },
-    { key: 'matchAcc',    label: 'Match Acc',    sortable: true },
-  ]
+  const SLAM_ORDER = ['USO', 'WIM', 'RG', 'AO']
+  const sorted = [...groups.values()].sort((a, b) => {
+    if (b.year !== a.year) return b.year - a.year
+    return SLAM_ORDER.indexOf(a.slam) - SLAM_ORDER.indexOf(b.slam)
+  })
 
-  const section = document.createElement('div')
-  section.className = 'lb-section'
-  section.appendChild(buildTable(cols, profs, aggMap, null))
-  container.appendChild(section)
+  for (const group of sorted) {
+    const groupEl = document.createElement('div')
+    groupEl.className = 'lb-slam-group'
+
+    const groupHdr = document.createElement('div')
+    groupHdr.className = 'lb-slam-header'
+    const nameEl = document.createElement('span')
+    nameEl.className = 'lb-slam-name'
+    nameEl.textContent = SLAM_CONFIG[group.slam]?.name || group.slam
+    const yearEl = document.createElement('span')
+    yearEl.className = 'lb-slam-year'
+    yearEl.textContent = group.year
+    groupHdr.appendChild(nameEl)
+    groupHdr.appendChild(yearEl)
+    groupEl.appendChild(groupHdr)
+
+    const mwRow = document.createElement('div')
+    mwRow.className = 'lb-mw-row'
+
+    const color = SLAM_COLORS[group.slam] || 'var(--border)'
+    for (const draw of group.draws) {
+      const statsMap = await loadDrawStatsForAllUsers(draw)
+      mwRow.appendChild(buildSlamCard(draw, profs, statsMap, color))
+    }
+
+    groupEl.appendChild(mwRow)
+    container.appendChild(groupEl)
+  }
 }
 
-// ── TABLE BUILDER ──
+// Card for Slams tab: score + health only, no sort, fully clickable → detail view
+function buildSlamCard(draw, profs, statsMap, color) {
+  const card = document.createElement('div')
+  card.className = 'lb-draw-card lb-draw-card-clickable'
+  card.style.setProperty('--lb-slam-color', color)
 
-function buildTable(cols, profs, statsMap, draw) {
-  const sortKey = lbSort.col
+  const drawTypeLabel = draw.draw === 'MS' ? "Men's Singles" : "Women's Singles"
 
-  // Sort profiles
-  const sorted = [...profs].sort((a, b) => {
-    const sa = statsMap[a.id] || {}
-    const sb = statsMap[b.id] || {}
-    const va = sa[sortKey] ?? -Infinity
-    const vb = sb[sortKey] ?? -Infinity
-    if (va === vb) return 0
-    return (va < vb ? -1 : 1) * lbSort.dir * -1
-  })
+  const cardHdr = document.createElement('div')
+  cardHdr.className = 'lb-draw-card-header'
+  const labelEl = document.createElement('span')
+  labelEl.className = 'lb-draw-label'
+  labelEl.textContent = drawTypeLabel
+  const expandEl = document.createElement('span')
+  expandEl.className = 'lb-draw-expand'
+  expandEl.textContent = 'All stats →'
+  cardHdr.appendChild(labelEl)
+  cardHdr.appendChild(expandEl)
+  card.appendChild(cardHdr)
+
+  // Sort by score descending (fixed, not user-controllable)
+  const sortedProfs = [...profs]
+    .filter(p => statsMap[p.id]?.hasAnyPicks)
+    .sort((a, b) => (statsMap[b.id]?.score ?? -Infinity) - (statsMap[a.id]?.score ?? -Infinity))
 
   const table = document.createElement('div')
   table.className = 'lb-table'
 
-  // Header row
+  // Header
   const hdr = document.createElement('div')
-  hdr.className = 'lb-row lb-header-row'
+  hdr.className = 'lb-row lb-row-card lb-header-row'
+  ;['Player', 'Score', 'Health'].forEach((label, i) => {
+    const cell = document.createElement('div')
+    cell.className = 'lb-cell' + (i === 0 ? ' lb-cell-name' : i === 1 ? ' lb-cell-score' : ' lb-cell-health')
+    cell.textContent = label
+    hdr.appendChild(cell)
+  })
+  table.appendChild(hdr)
+
+  sortedProfs.forEach((prof, rank) => {
+    const s = statsMap[prof.id] || {}
+    const row = document.createElement('div')
+    row.className = 'lb-row lb-row-card' + (rank % 2 === 1 ? ' lb-row-alt' : '')
+    if (prof.id === state.currentUser?.id) row.classList.add('lb-row-self')
+
+    // Name cell — clickable to open bracket viewer
+    const nameCell = document.createElement('div')
+    nameCell.className = 'lb-cell lb-cell-name'
+    const rankEl = document.createElement('span')
+    rankEl.className = 'lb-rank'
+    rankEl.textContent = '#' + (rank + 1)
+    const nameEl = document.createElement('span')
+    nameEl.className = 'lb-player-name lb-player-link'
+    nameEl.textContent = prof.display_name
+    nameEl.addEventListener('click', (e) => {
+      e.stopPropagation()  // don't trigger card click
+      openViewerOriginalPicks(prof, draw)
+    })
+    nameCell.appendChild(rankEl)
+    nameCell.appendChild(nameEl)
+    row.appendChild(nameCell)
+
+    // Score
+    const scoreCell = document.createElement('div')
+    scoreCell.className = 'lb-cell lb-cell-score'
+    scoreCell.textContent = formatStat('score', s.score)
+    row.appendChild(scoreCell)
+
+    // Health
+    const healthCell = document.createElement('div')
+    healthCell.className = 'lb-cell lb-cell-health'
+    healthCell.textContent = formatStat('drawHealth', s.drawHealth)
+    row.appendChild(healthCell)
+
+    table.appendChild(row)
+  })
+
+  card.appendChild(table)
+
+  // Clicking the card (but not a player name) → draw detail view
+  card.addEventListener('click', () => {
+    lbDetailDraw = draw
+    lbSort = { col: 'score', dir: -1 }
+    renderLeaderboard()
+  })
+
+  return card
+}
+
+// ── DRAW DETAIL TABLE (full-width, sortable) ──
+
+function buildDetailTable(cols, profs, statsMap, draw) {
+  const table = document.createElement('div')
+  table.className = 'lb-table lb-detail-table'
+
+  // Sort
+  const sortKey = lbSort.col
+  const sorted = [...profs]
+    .filter(p => statsMap[p.id]?.hasAnyPicks)
+    .sort((a, b) => {
+      const va = statsMap[a.id]?.[sortKey] ?? -Infinity
+      const vb = statsMap[b.id]?.[sortKey] ?? -Infinity
+      if (va === vb) return 0
+      return (va < vb ? -1 : 1) * lbSort.dir * -1
+    })
+
+  // Header
+  const hdr = document.createElement('div')
+  hdr.className = 'lb-row lb-row-detail lb-header-row'
+  const nameHdrCell = document.createElement('div')
+  nameHdrCell.className = 'lb-cell lb-cell-name'
+  nameHdrCell.textContent = 'Player'
+  hdr.appendChild(nameHdrCell)
   cols.forEach(col => {
     const cell = document.createElement('div')
     cell.className = 'lb-cell lb-cell-' + col.key
@@ -298,12 +436,7 @@ function buildTable(cols, profs, statsMap, draw) {
       arrow.textContent = lbSort.col === col.key ? (lbSort.dir === -1 ? ' ↓' : ' ↑') : ' ↕'
       cell.appendChild(arrow)
       cell.addEventListener('click', () => {
-        if (lbSort.col === col.key) {
-          lbSort.dir *= -1
-        } else {
-          lbSort.col = col.key
-          lbSort.dir = -1
-        }
+        if (lbSort.col === col.key) { lbSort.dir *= -1 } else { lbSort.col = col.key; lbSort.dir = -1 }
         renderLeaderboard()
       })
     }
@@ -311,76 +444,398 @@ function buildTable(cols, profs, statsMap, draw) {
   })
   table.appendChild(hdr)
 
-  // Data rows
+  // Rows
   sorted.forEach((prof, rank) => {
     const s = statsMap[prof.id] || {}
     const row = document.createElement('div')
-    row.className = 'lb-row' + (rank % 2 === 1 ? ' lb-row-alt' : '')
+    row.className = 'lb-row lb-row-detail' + (rank % 2 === 1 ? ' lb-row-alt' : '')
     if (prof.id === state.currentUser?.id) row.classList.add('lb-row-self')
+
+    const nameCell = document.createElement('div')
+    nameCell.className = 'lb-cell lb-cell-name'
+    const rankEl = document.createElement('span')
+    rankEl.className = 'lb-rank'
+    rankEl.textContent = '#' + (rank + 1)
+    const nameEl = document.createElement('span')
+    nameEl.className = 'lb-player-name lb-player-link'
+    nameEl.textContent = prof.display_name
+    nameEl.addEventListener('click', () => openViewerOriginalPicks(prof, draw))
+    nameCell.appendChild(rankEl)
+    nameCell.appendChild(nameEl)
+    row.appendChild(nameCell)
 
     cols.forEach(col => {
       const cell = document.createElement('div')
       cell.className = 'lb-cell lb-cell-' + col.key
-
-      if (col.key === 'name') {
-        const nameEl = document.createElement('span')
-        nameEl.className = 'lb-player-name'
-        nameEl.textContent = prof.display_name
-        // Clicking name opens their bracket in viewer mode
-        if (draw && prof.id !== state.currentUser?.id) {
-          nameEl.classList.add('lb-player-link')
-          nameEl.addEventListener('click', () => openViewer(prof, draw))
-        }
-        cell.appendChild(nameEl)
-        const rankEl = document.createElement('span')
-        rankEl.className = 'lb-rank'
-        rankEl.textContent = '#' + (rank + 1)
-        cell.appendChild(rankEl)
-      } else {
-        cell.textContent = formatStat(col.key, s[col.key])
-        if (!s.hasAnyPicks) cell.style.color = 'var(--text3)'
-      }
-
+      cell.textContent = formatStat(col.key, s[col.key])
       row.appendChild(cell)
     })
+
     table.appendChild(row)
   })
 
   return table
 }
 
-// ── VIEWER ──
+// ── RECORDS TAB ──
 
-async function openViewer(prof, draw) {
-  // Switch to the right draw if needed
-  const targetIdx = state.draws.indexOf(draw)
-  if (targetIdx >= 0 && targetIdx !== state.activeTab) {
-    state.activeTab = targetIdx
+async function renderRecordsTab(container, profs) {
+  if (state.draws.length === 0) {
+    container.innerHTML = '<div class="lb-empty">No draws uploaded yet.</div>'
+    return
   }
 
-  state.viewingUser = prof
+  const allStatsMaps = await Promise.all(state.draws.map(d => loadDrawStatsForAllUsers(d)))
 
-  // Swap picks in the active draw
-  await loadViewerPicks(prof.id)
+  const allTimeAgg = buildAllTimeAgg(profs, state.draws, allStatsMaps)
+  const allBrackets = buildAllBrackets(profs, state.draws, allStatsMaps)
+  const years = [...new Set(state.draws.map(d => d.year))].sort((a, b) => b - a)
 
-  // Show viewer banner
-  const banner = document.getElementById('viewer-banner')
-  const bannerText = document.getElementById('viewer-banner-text')
-  if (banner) banner.style.display = 'flex'
-  if (bannerText) bannerText.textContent = "Viewing " + prof.display_name + "'s bracket"
+  // All-Time section
+  const allTimeSection = document.createElement('div')
+  allTimeSection.className = 'lb-records-section'
+  const allTimeLabel = document.createElement('div')
+  allTimeLabel.className = 'lb-records-section-label'
+  allTimeLabel.textContent = 'All Time'
+  allTimeSection.appendChild(allTimeLabel)
+  const allTimeCards = document.createElement('div')
+  allTimeCards.className = 'lb-records-cards'
+  allTimeCards.appendChild(buildRecCard('Avg Score', profs, allTimeAgg, 'avgScore', true))
+  allTimeCards.appendChild(buildRecCard('Match Accuracy', profs, allTimeAgg, 'matchAcc', true))
+  allTimeCards.appendChild(buildTopBracketsCard(profs, allBrackets))
+  allTimeSection.appendChild(allTimeCards)
+  container.appendChild(allTimeSection)
 
-  // Render bracket in read-only mode and switch screen
-  const { renderBracket } = await import('./bracket.js')
-  const { renderStats } = await import('./stats.js')
-  const { applyTheme } = await import('./state.js')
-  applyTheme(draw.slam)
-  renderStats()
-  renderBracket()
-  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'))
-  document.getElementById('screen-bracket')?.classList.add('active')
+  // Per-year sections
+  for (const year of years) {
+    const yearDraws = state.draws.filter(d => d.year === year)
+    const yearStatsMaps = yearDraws.map(d => allStatsMaps[state.draws.indexOf(d)])
+    const yearAgg = buildAllTimeAgg(profs, yearDraws, yearStatsMaps)
+    const yearBrackets = buildAllBrackets(profs, yearDraws, yearStatsMaps)
+
+    const yearSection = document.createElement('div')
+    yearSection.className = 'lb-records-section'
+
+    const divider = document.createElement('div')
+    divider.className = 'lb-year-divider'
+    const yearLbl = document.createElement('span')
+    yearLbl.className = 'lb-year-label'
+    yearLbl.textContent = year === new Date().getFullYear() ? 'This Year' : year
+    const line = document.createElement('span')
+    line.className = 'lb-year-line'
+    divider.appendChild(yearLbl)
+    divider.appendChild(line)
+    yearSection.appendChild(divider)
+
+    const yearCards = document.createElement('div')
+    yearCards.className = 'lb-records-cards'
+    yearCards.appendChild(buildRecCard('Avg Score', profs, yearAgg, 'avgScore', true))
+    yearCards.appendChild(buildRecCard('Match Accuracy', profs, yearAgg, 'matchAcc', true))
+    yearCards.appendChild(buildTopBracketsCard(profs, yearBrackets))
+    yearSection.appendChild(yearCards)
+    container.appendChild(yearSection)
+  }
 }
 
-// ── FORMAT HELPERS ──
+function buildAllTimeAgg(profs, draws, statsMaps) {
+  const agg = {}
+  profs.forEach(prof => {
+    let totalScore = 0, matchAccNum = 0, matchAccDen = 0, drawsPlayed = 0
+    statsMaps.forEach(statsMap => {
+      const s = statsMap[prof.id]
+      if (!s || !s.hasAnyPicks) return
+      drawsPlayed++
+      totalScore += s.score
+      if (s.matchAcc !== null) { matchAccNum += s.matchAcc; matchAccDen++ }
+    })
+    agg[prof.id] = {
+      drawsPlayed,
+      avgScore: drawsPlayed > 0 ? Math.round(totalScore / drawsPlayed) : null,
+      matchAcc: matchAccDen > 0 ? matchAccNum / matchAccDen : null,
+      hasAnyPicks: drawsPlayed > 0,
+    }
+  })
+  return agg
+}
+
+function buildAllBrackets(profs, draws, statsMaps) {
+  const brackets = []
+  draws.forEach((draw, i) => {
+    const statsMap = statsMaps[i]
+    profs.forEach(prof => {
+      const s = statsMap[prof.id]
+      if (!s || !s.hasAnyPicks) return
+      brackets.push({ prof, draw, score: s.score })
+    })
+  })
+  brackets.sort((a, b) => b.score - a.score)
+  return brackets
+}
+
+// ── RECORDS CARD BUILDERS ──
+
+// showSampleSize: whether to show drawsPlayed sub-label per row
+function buildRecCard(title, profs, aggMap, statKey, showSampleSize) {
+  const card = document.createElement('div')
+  card.className = 'lb-rec-card'
+
+  const hdr = document.createElement('div')
+  hdr.className = 'lb-rec-card-header'
+  const titleEl = document.createElement('span')
+  titleEl.className = 'lb-rec-card-title'
+  titleEl.textContent = title
+  hdr.appendChild(titleEl)
+  card.appendChild(hdr)
+
+  const sorted = [...profs]
+    .filter(p => aggMap[p.id]?.hasAnyPicks)
+    .sort((a, b) => {
+      const va = aggMap[a.id]?.[statKey] ?? -Infinity
+      const vb = aggMap[b.id]?.[statKey] ?? -Infinity
+      return vb - va
+    })
+
+  let showAll = false
+  const tableWrap = document.createElement('div')
+
+  const renderRows = () => {
+    tableWrap.innerHTML = ''
+    const list = showAll ? sorted : sorted.slice(0, 3)
+    list.forEach((prof, i) => {
+      const s = aggMap[prof.id] || {}
+      const row = document.createElement('div')
+      row.className = 'lb-rec-row' + (prof.id === state.currentUser?.id ? ' lb-rec-row-self' : '')
+
+      const pos = document.createElement('span')
+      pos.className = 'lb-rec-pos'
+      pos.textContent = '#' + (i + 1)
+
+      const nameWrap = document.createElement('div')
+      const name = document.createElement('div')
+      name.className = 'lb-rec-name'
+      name.textContent = prof.display_name
+      nameWrap.appendChild(name)
+      if (showSampleSize && s.drawsPlayed) {
+        const sub = document.createElement('div')
+        sub.className = 'lb-rec-sub'
+        sub.textContent = s.drawsPlayed + (s.drawsPlayed === 1 ? ' draw' : ' draws')
+        nameWrap.appendChild(sub)
+      }
+
+      const val = document.createElement('span')
+      val.className = 'lb-rec-val'
+      val.textContent = formatStat(statKey, s[statKey])
+
+      row.appendChild(pos)
+      row.appendChild(nameWrap)
+      row.appendChild(val)
+      tableWrap.appendChild(row)
+    })
+
+    if (sorted.length > 3) {
+      const toggle = document.createElement('div')
+      toggle.style.cssText = 'padding:6px 14px;font-family:var(--mono);font-size:10px;color:var(--text3);cursor:pointer;border-top:1px solid var(--border)'
+      toggle.textContent = showAll ? 'Show less ↑' : `Show all ${sorted.length} ↓`
+      toggle.addEventListener('click', (e) => { e.stopPropagation(); showAll = !showAll; renderRows() })
+      tableWrap.appendChild(toggle)
+    }
+  }
+
+  renderRows()
+  card.appendChild(tableWrap)
+  return card
+}
+
+function buildTopBracketsCard(profs, brackets) {
+  const card = document.createElement('div')
+  card.className = 'lb-rec-card'
+
+  const hdr = document.createElement('div')
+  hdr.className = 'lb-rec-card-header'
+  const titleEl = document.createElement('span')
+  titleEl.className = 'lb-rec-card-title'
+  titleEl.textContent = 'Top Brackets'
+  hdr.appendChild(titleEl)
+  card.appendChild(hdr)
+
+  let showAll = false
+  const tableWrap = document.createElement('div')
+
+  const renderRows = () => {
+    tableWrap.innerHTML = ''
+    const list = showAll ? brackets : brackets.slice(0, 3)
+    list.forEach((entry, i) => {
+      const row = document.createElement('div')
+      row.className = 'lb-rec-row lb-rec-row-clickable' + (entry.prof.id === state.currentUser?.id ? ' lb-rec-row-self' : '')
+
+      const pos = document.createElement('span')
+      pos.className = 'lb-rec-pos'
+      pos.textContent = '#' + (i + 1)
+
+      const nameWrap = document.createElement('div')
+      const name = document.createElement('div')
+      name.className = 'lb-rec-name'
+      name.textContent = entry.prof.display_name
+      const sub = document.createElement('div')
+      sub.className = 'lb-rec-sub'
+      const cfg = SLAM_CONFIG[entry.draw.slam] || {}
+      sub.textContent = (cfg.name || entry.draw.slam) + ' ' + entry.draw.year + ' ' + entry.draw.draw
+      nameWrap.appendChild(name)
+      nameWrap.appendChild(sub)
+
+      const val = document.createElement('span')
+      val.className = 'lb-rec-val'
+      val.textContent = entry.score
+
+      row.appendChild(pos)
+      row.appendChild(nameWrap)
+      row.appendChild(val)
+
+      // Click → open original-picks bracket viewer for this bracket
+      row.addEventListener('click', () => openViewerOriginalPicks(entry.prof, entry.draw))
+
+      tableWrap.appendChild(row)
+    })
+
+    if (brackets.length > 3) {
+      const toggle = document.createElement('div')
+      toggle.style.cssText = 'padding:6px 14px;font-family:var(--mono);font-size:10px;color:var(--text3);cursor:pointer;border-top:1px solid var(--border)'
+      toggle.textContent = showAll ? 'Show less ↑' : `Show all ${brackets.length} ↓`
+      toggle.addEventListener('click', (e) => { e.stopPropagation(); showAll = !showAll; renderRows() })
+      tableWrap.appendChild(toggle)
+    }
+  }
+
+  renderRows()
+  card.appendChild(tableWrap)
+  return card
+}
+
+// ── YOUR DRAWS TAB ──
+
+async function renderYourDrawsTab(container) {
+  if (!state.currentUser) {
+    container.innerHTML = '<div class="lb-empty">Not logged in.</div>'
+    return
+  }
+
+  if (state.draws.length === 0) {
+    container.innerHTML = '<div class="lb-empty">No draws uploaded yet.</div>'
+    return
+  }
+
+  // Determine which draws the current user has picks in
+  const userId = state.currentUser.id
+  const userDrawIds = new Set()
+  await Promise.all(state.draws.map(async d => {
+    const { data } = await supabase
+      .from('picks')
+      .select('match_id')
+      .eq('draw_id', d.db_id)
+      .eq('user_id', userId)
+      .limit(1)
+    if (data && data.length > 0) userDrawIds.add(d.db_id)
+  }))
+
+  // Group by slam+year, newest first
+  const groups = new Map()
+  state.draws.forEach(d => {
+    const k = slamKey(d)
+    if (!groups.has(k)) groups.set(k, { slam: d.slam, year: d.year, draws: [] })
+    groups.get(k).draws.push(d)
+  })
+
+  const SLAM_ORDER = ['USO', 'WIM', 'RG', 'AO']
+  const sorted = [...groups.values()].sort((a, b) => {
+    if (b.year !== a.year) return b.year - a.year
+    return SLAM_ORDER.indexOf(a.slam) - SLAM_ORDER.indexOf(b.slam)
+  })
+
+  const grid = document.createElement('div')
+  grid.className = 'lb-yd-grid'
+  container.appendChild(grid)
+
+  for (const group of sorted) {
+    const color = SLAM_COLORS[group.slam] || 'var(--border)'
+    const cfg = SLAM_CONFIG[group.slam] || {}
+
+    const card = document.createElement('div')
+    card.className = 'lb-yd-card'
+    card.style.setProperty('--lb-slam-color', color)
+
+    const cardTop = document.createElement('div')
+    cardTop.className = 'lb-yd-card-top'
+
+    const slamName = document.createElement('div')
+    slamName.className = 'lb-yd-slam-name'
+    slamName.textContent = cfg.name || group.slam
+
+    const yearEl = document.createElement('div')
+    yearEl.className = 'lb-yd-year'
+    yearEl.textContent = group.year
+
+    cardTop.appendChild(slamName)
+    cardTop.appendChild(yearEl)
+    card.appendChild(cardTop)
+
+    const btnRow = document.createElement('div')
+    btnRow.className = 'lb-yd-btn-row'
+
+    const drawMap = {}
+    group.draws.forEach(d => { drawMap[d.draw] = d })
+
+    ;['MS', 'WS'].forEach(drawType => {
+      const draw = drawMap[drawType]
+      const label = drawType === 'MS' ? 'M' : 'W'
+      const hasPicks = draw && userDrawIds.has(draw.db_id)
+
+      const btn = document.createElement('button')
+      btn.className = 'lb-yd-btn' + (hasPicks ? '' : ' lb-yd-btn-disabled')
+      btn.textContent = label
+      btn.disabled = !hasPicks
+
+      if (hasPicks) {
+        btn.addEventListener('click', () => {
+          openViewerOriginalPicks(state.currentUser, draw)
+        })
+      }
+
+      btnRow.appendChild(btn)
+    })
+
+    card.appendChild(btnRow)
+    grid.appendChild(card)
+  }
+}
+
+// ── VIEWER ──
+
+// Opens the dedicated viewer screen showing a user's ORIGINAL picks with outcomes
+async function openViewerOriginalPicks(prof, draw) {
+  // Assemble the draw with original picks + actuals, store in a module var
+  // (does NOT overwrite state.draws — live bracket data stays untouched)
+  const allPicks = await loadAllPicksForDraw(draw.db_id)
+  const userPicks = allPicks.filter(p => p.user_id === prof.id)
+  const viewerDraw = assembleDrawForUserOriginalPicks(draw, userPicks)
+
+  // Populate viewer header
+  const cfg = SLAM_CONFIG[draw.slam] || {}
+  const drawTypeLabel = draw.draw === 'MS' ? "Men's Singles" : "Women's Singles"
+  const nameEl = document.getElementById('viewer-hdr-name-v')
+  if (nameEl) nameEl.textContent = prof.display_name
+  const drawEl = document.getElementById('viewer-hdr-draw-v')
+  if (drawEl) drawEl.textContent = `${cfg.name || draw.slam} ${draw.year} · ${drawTypeLabel}`
+
+  const { renderViewerBracket } = await import('./viewer-bracket.js')
+  const { applyTheme } = await import('./state.js')
+  applyTheme(draw.slam)
+  renderViewerBracket(viewerDraw)
+
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'))
+  document.getElementById('screen-viewer')?.classList.add('active')
+}
+
+// ── FORMAT ──
 
 function formatStat(key, val) {
   if (val === null || val === undefined) return '—'

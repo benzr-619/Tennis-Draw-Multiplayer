@@ -1,7 +1,6 @@
-import { supabase } from './supabase.js'
 import { state, activeDraw, applyTheme } from './state.js'
 import { login, signup, logout, restoreSession } from './auth.js'
-import { loadAllDraws, loadLockSchedules, reloadActiveDraw, slamKey, slamLabel, uniqueSlams, SLAM_CONFIG } from './data.js'
+import { loadAllDraws, loadLockSchedules, reloadActiveDraw, slamKey, slamLabel, SLAM_CONFIG } from './data.js'
 import { renderBracket, closeModal, confirmEditPlayer } from './bracket.js'
 import { renderStats, resetStatsFilter } from './stats.js'
 import { buildPrintHTML } from './print.js'
@@ -61,7 +60,8 @@ $('auth-form').addEventListener('submit', async e => {
     } else {
       await login(email, password)
     }
-    await showBracketScreen()
+    await loadAllDraws()
+    await routeAfterAuth()
   } catch (err) {
     errEl.textContent = err.message
     errEl.className = 'auth-error visible'
@@ -70,15 +70,29 @@ $('auth-form').addEventListener('submit', async e => {
   }
 })
 
+// ── ROUTING ──
+async function routeAfterAuth() {
+  if (state.currentUser?.is_commissioner) {
+    initCommissioner()
+    showScreen('screen-commissioner')
+  } else {
+    await showBracketScreen()
+  }
+}
+
 // ── HEADER / NAV ──
 function renderHeader() {
   const d = activeDraw()
 
-  // Slam dropdown label
-  const lbl = $('slam-dropdown-label')
-  if (lbl) lbl.textContent = d ? slamLabel(d) : '—'
+  // Static slam name label (bracket screen)
+  const nameEl = $('slam-name-label')
+  if (nameEl) nameEl.textContent = d ? slamLabel(d) : '—'
 
-  // Segmented control
+  // Leaderboard slam name label
+  const lbNameEl = $('lb-slam-name-label')
+  if (lbNameEl) lbNameEl.textContent = d ? slamLabel(d) : '—'
+
+  // Segmented control (bracket screen M/W switcher)
   const seg = $('seg-control')
   if (seg && d) {
     seg.innerHTML = ''
@@ -102,67 +116,11 @@ function renderHeader() {
 
   // User display
   const user = state.currentUser
-  const badge = user?.is_commissioner ? '<span class="commissioner-badge">COMM</span>' : ''
   const userEl = $('hdr-user')
   const userLbEl = $('hdr-user-lb')
-  const userCommEl = $('hdr-user-comm')
-  if (userEl && user) userEl.innerHTML = user.display_name + badge
-  if (userLbEl && user) userLbEl.innerHTML = user.display_name + badge
-  if (userCommEl && user) userCommEl.innerHTML = user.display_name + badge
-
-  // Commissioner nav link visibility
-  const commLink = $('nav-commissioner')
-  const commLinkLb = $('nav-commissioner-from-lb')
-  if (commLink) commLink.style.display = user?.is_commissioner ? '' : 'none'
-  if (commLinkLb) commLinkLb.style.display = user?.is_commissioner ? '' : 'none'
+  if (userEl && user) userEl.textContent = user.display_name
+  if (userLbEl && user) userLbEl.textContent = user.display_name
 }
-
-function renderSlamDropdown() {
-  const menu = $('slam-dropdown-menu')
-  if (!menu) return
-  menu.innerHTML = ''
-  const slams = uniqueSlams()
-  const activeKey = activeDraw() ? slamKey(activeDraw()) : null
-
-  slams.forEach(sd => {
-    const key = slamKey(sd)
-    const item = document.createElement('div')
-    item.className = 'slam-dropdown-item' + (key === activeKey ? ' active' : '')
-    const name = document.createElement('span'); name.textContent = slamLabel(sd)
-    item.appendChild(name)
-    item.addEventListener('click', () => {
-      const first = state.draws.findIndex(d => slamKey(d) === key)
-      if (first >= 0) { closeSlamDropdown(); switchTab(first) }
-    })
-    menu.appendChild(item)
-  })
-
-  if (slams.length === 0) {
-    const empty = document.createElement('div')
-    empty.className = 'slam-dropdown-item'
-    empty.style.color = 'var(--text3)'
-    empty.textContent = 'No draws uploaded yet'
-    menu.appendChild(empty)
-  }
-}
-
-function openSlamDropdown() {
-  renderSlamDropdown()
-  $('slam-dropdown-menu').classList.add('open')
-  $('slam-dropdown-btn').classList.add('open')
-}
-function closeSlamDropdown() {
-  $('slam-dropdown-menu')?.classList.remove('open')
-  $('slam-dropdown-btn')?.classList.remove('open')
-}
-
-$('slam-dropdown-btn').addEventListener('click', e => {
-  e.stopPropagation()
-  const menu = $('slam-dropdown-menu')
-  if (menu.classList.contains('open')) closeSlamDropdown()
-  else openSlamDropdown()
-})
-document.addEventListener('click', () => closeSlamDropdown())
 
 async function switchTab(i) {
   state.activeTab = i
@@ -170,7 +128,6 @@ async function switchTab(i) {
   const d = state.draws[i]
   if (!d) return
   applyTheme(d.slam)
-  // Reload picks for the newly active draw
   await reloadActiveDraw()
   renderHeader()
   renderStats()
@@ -221,24 +178,16 @@ function runSearch(q) {
       const item = document.createElement('div'); item.className = 'search-result-item'
       const opp = x.m.p1.name === x.p.name ? x.m.p2 : x.m.p1
       item.innerHTML = `<span class="search-result-round">${x.round}</span><span class="search-result-name">${x.p.name}</span><span class="search-result-vs">vs ${opp.name || 'TBD'}</span>`
-      item.addEventListener('click', () => {
+      item.addEventListener('click', async () => {
         closeSearch()
-        if (x.drawIdx !== state.activeTab) switchTab(x.drawIdx)
-        setTimeout(() => {
-          const allPr = document.querySelectorAll('.pr-name')
-          for (const el of allPr) {
-            if (el.textContent === x.p.name) {
-              const card = el.closest('.mc')
-              if (card) {
-                card.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                card.style.transition = 'box-shadow 0.2s'
-                card.style.boxShadow = '0 0 0 2px var(--accent)'
-                setTimeout(() => { card.style.boxShadow = '' }, 1200)
-              }
-              break
-            }
-          }
-        }, 150)
+        if (x.drawIdx !== state.activeTab) await switchTab(x.drawIdx)
+        const card = document.querySelector(`.mc[data-ri="${x.ri}"][data-mi="${x.mi}"]`)
+        if (card) {
+          card.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          card.style.transition = 'box-shadow 0.2s'
+          card.style.boxShadow = '0 0 0 2px var(--accent)'
+          setTimeout(() => { card.style.boxShadow = '' }, 1200)
+        }
       })
       res.appendChild(item)
     })
@@ -322,47 +271,27 @@ $('logout-btn-comm').addEventListener('click', doLogout)
 // ── NAV LINKS ──
 $('nav-bracket').addEventListener('click', () => showBracketScreen())
 $('nav-leaderboard').addEventListener('click', () => { showScreen('screen-leaderboard'); renderLeaderboard() })
-$('nav-commissioner').addEventListener('click', () => {
-  if (state.currentUser?.is_commissioner) { initCommissioner(); showScreen('screen-commissioner') }
-})
+
 $('nav-bracket-from-lb').addEventListener('click', () => showBracketScreen())
-$('nav-leaderboard-from-comm').addEventListener('click', () => { showScreen('screen-leaderboard'); renderLeaderboard() })
-$('nav-bracket-from-comm').addEventListener('click', () => showBracketScreen())
-$('nav-commissioner-from-lb').addEventListener('click', () => {
-  if (state.currentUser?.is_commissioner) { initCommissioner(); showScreen('screen-commissioner') }
-})
 
 // ── VIEWER BACK ──
-$('viewer-back-btn').addEventListener('click', async () => {
-  state.viewingUser = null
-  // Restore own picks for the active draw
-  await reloadActiveDraw()
-  // Hide viewer banner
-  const banner = $('viewer-banner')
-  if (banner) banner.style.display = 'none'
-  renderStats()
-  renderBracket()
-  // Return to leaderboard
+$('viewer-back-btn-v').addEventListener('click', async () => {
   showScreen('screen-leaderboard')
   renderLeaderboard()
 })
 
-// ── API SYNC TOGGLE ──
-$('api-sync-btn').addEventListener('click', () => {
-  state.apiSyncEnabled = !state.apiSyncEnabled
-  $('api-sync-label').textContent = state.apiSyncEnabled ? 'Sync on' : 'Sync off'
-  $('api-sync-btn').classList.toggle('btn-sync-active', state.apiSyncEnabled)
-  if (state.apiSyncEnabled) {
-    const toast = document.createElement('div')
-    toast.className = 'sync-toast'
-    toast.textContent = 'API sync not yet connected'
-    document.body.appendChild(toast)
-    setTimeout(() => toast.classList.add('visible'), 10)
-    setTimeout(() => { toast.classList.remove('visible'); setTimeout(() => toast.remove(), 300) }, 3000)
-    // Reset back to off since there's no real integration yet
-    state.apiSyncEnabled = false
-    $('api-sync-label').textContent = 'Sync off'
-    $('api-sync-btn').classList.remove('btn-sync-active')
+// ── REFRESH BUTTON ──
+$('api-sync-btn').addEventListener('click', async () => {
+  const btn = $('api-sync-btn')
+  btn.disabled = true
+  $('api-sync-label').textContent = 'Refreshing…'
+  try {
+    await reloadActiveDraw()
+    renderStats()
+    renderBracket()
+  } finally {
+    btn.disabled = false
+    $('api-sync-label').textContent = 'Refresh'
   }
 })
 
@@ -372,11 +301,6 @@ setInterval(() => {
     renderStats()
   }
 }, 60000)
-
-// ── DRAW UPLOADED (from commissioner) ──
-window.addEventListener('draw-uploaded', () => {
-  renderHeader()
-})
 
 // ── MODAL WIRING ──
 $('epm-cancel').addEventListener('click', closeModal)
@@ -392,7 +316,6 @@ if (bb && li) {
 // ── SHOW BRACKET SCREEN ──
 async function showBracketScreen() {
   if (state.draws.length === 0) {
-    // No draws — show bracket screen with empty state message
     applyTheme('')
     renderHeader()
     renderStats()
@@ -416,9 +339,8 @@ async function init() {
       showScreen('screen-auth')
       return
     }
-    // Load all draws
     await loadAllDraws()
-    await showBracketScreen()
+    await routeAfterAuth()
   } catch (err) {
     console.error('Init error:', err)
     showScreen('screen-auth')

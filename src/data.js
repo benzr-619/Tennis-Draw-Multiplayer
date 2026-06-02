@@ -3,7 +3,7 @@
 
 import { supabase } from './supabase.js'
 import { state } from './state.js'
-import { markLoserForward } from './picks.js'
+import { buildDrawView } from './draw-view.js'
 
 /**
  * Load all draws from Supabase and assemble into state.draws.
@@ -15,7 +15,7 @@ export async function loadAllDraws() {
   // 1. Fetch all draws
   const { data: drawRows, error: de } = await supabase
     .from('draws')
-    .select('id, slam, draw_type, year, original_picks_locked, created_at')
+    .select('id, slam, draw_type, year, original_picks_locked, is_active, created_at')
     .order('created_at', { ascending: true })
 
   if (de) throw de
@@ -27,7 +27,12 @@ export async function loadAllDraws() {
   // 2. For each draw, fetch matches + picks + lock_schedules in parallel
   const assembled = await Promise.all(drawRows.map(dr => loadDraw(dr)))
   state.draws = assembled
-  state.activeTab = Math.min(state.activeTab, state.draws.length - 1)
+
+  // Set activeTab to the active slam's MS draw (or WS if no MS, or last draw as fallback)
+  const activeMs = state.draws.findIndex(d => d.is_active && d.draw === 'MS')
+  const activeWs = state.draws.findIndex(d => d.is_active && d.draw === 'WS')
+  const activeIdx = activeMs >= 0 ? activeMs : activeWs >= 0 ? activeWs : state.draws.length - 1
+  state.activeTab = Math.max(0, Math.min(activeIdx, state.draws.length - 1))
 
   // Load lock schedules for active draw
   await loadLockSchedules()
@@ -51,7 +56,7 @@ export async function loadDraw(drawRow) {
   if (userId) {
     const { data: pickRows, error: pe } = await supabase
       .from('picks')
-      .select('match_id, pick, original_pick, result, high_confidence, edited_after_lock')
+      .select('match_id, match_pick, original_pick, original_pick_result, match_pick_result, high_confidence, edited_after_lock, notes')
       .eq('draw_id', drawId)
       .eq('user_id', userId)
 
@@ -72,11 +77,13 @@ export async function loadDraw(drawRow) {
       db_id: mr.id,
       p1: { name: mr.p1_name ?? '', seed: mr.p1_seed ?? '' },
       p2: { name: mr.p2_name ?? '', seed: mr.p2_seed ?? '' },
-      pick: pk.pick ?? null,
+      matchPick: pk.match_pick ?? null,
       originalPick: pk.original_pick ?? null,
-      result: pk.result ?? null,
+      originalPickResult: pk.original_pick_result ?? null,
+      matchPickResult: pk.match_pick_result ?? null,
       highConfidence: pk.high_confidence ?? false,
       editedAfterLock: pk.edited_after_lock ?? false,
+      notes: pk.notes ?? '',
       winner: mr.winner ?? null,
       score: mr.score ?? '',
     }
@@ -92,34 +99,29 @@ export async function loadDraw(drawRow) {
     rounds[i].matches = rounds[i].matches.map(m => m || emptyMatch())
   }
 
-  // Re-apply elim markers for any already-confirmed winners
-  rounds.forEach((r, ri) => {
-    r.matches.forEach((m, mi) => {
-      if (m.winner) {
-        const loserName = m.p1.name === m.winner ? m.p2.name : m.p1.name
-        if (loserName) markLoserForward({ rounds }, ri, mi, loserName)
-      }
-    })
-  })
-
-  return {
+  const assembled = {
     db_id: drawRow.id,
     slam: drawRow.slam,
     draw: drawRow.draw_type,
     year: drawRow.year,
     locked: drawRow.original_picks_locked ?? false,
+    is_active: drawRow.is_active ?? false,
     rounds,
   }
+
+  // Derive all round-2+ slots, elimination flags, and displaced-pick labels in
+  // one pure pass. (Replaces the old inline reconstruction + markLoserForward replay.)
+  return buildDrawView(assembled)
 }
 
 export async function loadLockSchedules() {
-  const d = state.draws[state.activeTab]
-  if (!d) { state.lockSchedules = []; return }
+  if (!state.draws?.length) { state.lockSchedules = []; return }
 
+  const drawIds = state.draws.map(d => d.db_id)
   const { data, error } = await supabase
     .from('lock_schedules')
     .select('*')
-    .eq('draw_id', d.db_id)
+    .in('draw_id', drawIds)
 
   if (error) throw error
   state.lockSchedules = data || []
@@ -129,7 +131,7 @@ export async function loadLockSchedules() {
 export async function reloadActiveDraw() {
   const d = state.draws[state.activeTab]
   if (!d) return
-  const drawRow = { id: d.db_id, slam: d.slam, draw_type: d.draw, year: d.year, original_picks_locked: d.locked }
+  const drawRow = { id: d.db_id, slam: d.slam, draw_type: d.draw, year: d.year, original_picks_locked: d.locked, is_active: d.is_active }
   const refreshed = await loadDraw(drawRow)
   state.draws[state.activeTab] = refreshed
   await loadLockSchedules()
@@ -144,8 +146,9 @@ function emptyMatch() {
     db_id: null,
     p1: { name: '', seed: '' },
     p2: { name: '', seed: '' },
-    pick: null, originalPick: null, result: null,
-    highConfidence: false, editedAfterLock: false,
+    matchPick: null, originalPick: null,
+    originalPickResult: null, matchPickResult: null,
+    highConfidence: false, editedAfterLock: false, notes: '',
     winner: null, score: '',
   }
 }

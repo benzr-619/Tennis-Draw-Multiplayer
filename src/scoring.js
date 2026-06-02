@@ -23,7 +23,7 @@ export function calcMatchScore(m, ri) {
 }
 
 export function isBackupPick(m) {
-  return !!m.originalPick && m.pick && m.pick !== m.originalPick
+  return !!m.originalPick && m.matchPick && m.matchPick !== m.originalPick
 }
 
 export function calcStatsAsOf(d, upToRi = null) {
@@ -49,24 +49,27 @@ export function calcStatsAsOf(d, upToRi = null) {
   d.rounds.forEach((r, ri) => r.matches.forEach(m => {
     if (!m.p1.name && !m.p2.name) return
     total++
-    if (m.pick) filled++
+    if (m.matchPick) filled++
 
     if (ri <= filterRi && m.winner) {
       const backup = isBackupPick(m)
-      if (m.result === 'correct') cDrawOrig++
-      else if (m.result === 'wrong') wDrawOrig++
+      // Draw Accuracy — based on original pick result only
+      if (m.originalPickResult === 'correct') cDrawOrig++
+      else if (m.originalPickResult === 'wrong') wDrawOrig++
       if (!backup) {
-        if (m.result === 'correct') {
+        // Scoring — original pick correct = points
+        if (m.originalPickResult === 'correct') {
           cOrig++
           const sc = calcMatchScore(m, ri)
           baseScore += sc.base
           skillBonus += sc.skill
-        } else if (m.result === 'wrong') {
+        } else if (m.originalPickResult === 'wrong') {
           wOrig++
         }
       } else {
-        if (m.pick === m.winner) cBackup++
-        else wBackup++
+        // Match Accuracy for backup picks — use matchPickResult
+        if (m.matchPickResult === 'correct') cBackup++
+        else if (m.matchPickResult === 'wrong') wBackup++
       }
     }
 

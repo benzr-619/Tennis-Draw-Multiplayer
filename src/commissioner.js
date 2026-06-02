@@ -1,32 +1,28 @@
-// Commissioner screen — Chat 2
-// Draw upload/parse/confirm, original picks lock, backup pick locks
+// Commissioner screen — orchestrator + header + Draw Management tab.
+// Results tab lives in commissioner-results.js; Lock Managing tab in commissioner-locks.js.
+// Split 2026-06-01 (audit part E).
 
 import { supabase } from './supabase.js'
-import { state, activeDraw } from './state.js'
-import { loadAllDraws, loadLockSchedules, slamLabel } from './data.js'
-import { renderBracket } from './bracket.js'
-import { renderStats } from './stats.js'
+import { state, activeDraw, applyTheme } from './state.js'
+import { loadAllDraws, slamLabel, slamKey } from './data.js'
 import { extractPdfText, parseTnnsText } from './parser.js'
+import { $c, escHtml } from './commissioner-shared.js'
+import { renderResults } from './commissioner-results.js'
+import { renderLockManaging } from './commissioner-locks.js'
+
+export { renderResults } from './commissioner-results.js'
+export { renderLockManaging } from './commissioner-locks.js'
 
 const ROUND_SIZES = [64, 32, 16, 8, 4, 2, 1]
 
-// ── MODULE STATE ──
+// ── MODULE STATE (draw management only) ──
 let _initialized = false
-let parsedR1 = null            // [{p1_name, p1_seed, p2_name, p2_seed}]
-let selectedLockCards = new Set()  // 'ri_mi'
-
-function $c(id) { return document.getElementById(id) }
-
-function escHtml(s) {
-  return String(s || '')
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-}
+let parsedR1 = null  // [{p1_name, p1_seed, p2_name, p2_seed}]
 
 // ── INIT ──
 export function initCommissioner() {
-  // Refresh dynamic content every visit
-  renderLockManaging()
+  renderCommHeader()
+  renderResults()
 
   if (_initialized) return
   _initialized = true
@@ -40,22 +36,68 @@ export function initCommissioner() {
       .join('')
   }
 
-  // Tab switching
+  // Tab switching — use pane-active class; bracket pane uses flex layout, others block
   document.querySelectorAll('.comm-tab').forEach(btn => {
     btn.addEventListener('click', () => {
       const tab = btn.dataset.tab
       document.querySelectorAll('.comm-tab').forEach(b => b.classList.remove('active'))
       btn.classList.add('active')
-      document.querySelectorAll('.comm-tab-pane').forEach(p => { p.style.display = 'none' })
+      document.querySelectorAll('.comm-tab-pane').forEach(p => p.classList.remove('pane-active'))
       const pane = $c('comm-pane-' + tab)
-      if (pane) pane.style.display = ''
+      if (pane) pane.classList.add('pane-active')
       if (tab === 'lock') renderLockManaging()
+      if (tab === 'results') renderResults()
     })
   })
 
   initDropZone()
   $c('comm-parse-btn')?.addEventListener('click', handleParseClick)
   $c('comm-confirm-btn')?.addEventListener('click', handleConfirmDraw)
+}
+
+// ── COMMISSIONER HEADER ──
+export function renderCommHeader() {
+  const d = activeDraw()
+
+  // Static slam name
+  const nameEl = $c('comm-slam-name')
+  if (nameEl) nameEl.textContent = d ? slamLabel(d) : '—'
+
+  // Apply theme
+  if (d) applyTheme(d.slam)
+
+  // M/W seg control
+  const seg = $c('comm-seg-control')
+  if (!seg) return
+  seg.innerHTML = ''
+  if (!d) return
+
+  const DRAW_TYPES = [{ key: 'MS', label: "Men's", short: 'M' }, { key: 'WS', label: "Women's", short: 'W' }]
+  DRAW_TYPES.forEach(({ key, label, short }) => {
+    const btn = document.createElement('button')
+    btn.className = 'seg-btn'
+    btn.innerHTML = `<span class="seg-full">${label}</span><span class="seg-short">${short}</span>`
+    const match = state.draws.find(x => slamKey(x) === slamKey(d) && x.draw === key)
+    if (!match) { btn.disabled = true }
+    else {
+      if (d.draw === key) btn.classList.add('active')
+      btn.addEventListener('click', () => {
+        const idx = state.draws.indexOf(match)
+        if (idx < 0) return
+        state.activeTab = idx
+        renderCommHeader()
+        const activeTab = document.querySelector('.comm-tab.active')?.dataset.tab
+        if (activeTab === 'lock') renderLockManaging()
+        else renderResults()
+      })
+    }
+    seg.appendChild(btn)
+  })
+
+  // User display
+  const user = state.currentUser
+  const userEl = $c('hdr-user-comm')
+  if (userEl && user) userEl.textContent = user.display_name
 }
 
 // ── DROP ZONE ──
@@ -83,7 +125,6 @@ function handleFileSelected(file) {
   const parseBtn = $c('comm-parse-btn')
   if (parseBtn) parseBtn.style.display = ''
   window._commPendingFile = file
-  // Reset previous parse results
   parsedR1 = null
   const confirmBtn = $c('comm-confirm-btn')
   if (confirmBtn) confirmBtn.style.display = 'none'
@@ -189,7 +230,6 @@ async function handleConfirmDraw() {
 
     let drawId
     if (existing) {
-      // Wipe existing matches, reset lock state
       await supabase.from('matches').delete().eq('draw_id', existing.id)
       await supabase.from('draws')
         .update({ original_picks_locked: false }).eq('id', existing.id)
@@ -203,7 +243,7 @@ async function handleConfirmDraw() {
       drawId = newDraw.id
     }
 
-    // Build 127 match rows: R1 from parsed data, R2–F empty
+    // Build 127 match rows
     const matchInserts = []
     for (let ri = 0; ri < ROUND_SIZES.length; ri++) {
       const size = ROUND_SIZES[ri]
@@ -227,7 +267,13 @@ async function handleConfirmDraw() {
     const { error: me } = await supabase.from('matches').insert(matchInserts)
     if (me) throw me
 
-    // Reload state and switch to new draw
+    // Auto-deactivate all draws, then activate this slam's draws (MS + WS)
+    await supabase.from('draws').update({ is_active: false }).neq('id', 'none')
+    await supabase.from('draws')
+      .update({ is_active: true })
+      .eq('slam', slam).eq('year', year)
+
+    // Reload state and set active tab to this draw
     await loadAllDraws()
     const newIdx = state.draws.findIndex(d => d.db_id === drawId)
     if (newIdx >= 0) state.activeTab = newIdx
@@ -242,11 +288,10 @@ async function handleConfirmDraw() {
     $c('comm-confirm-btn').style.display = 'none'
     $c('comm-parse-btn').style.display = 'none'
 
-    const label = slam + ' ' + year + ' ' + drawType
-    setDrawMsg('Draw saved — ' + label + ' (' + r1.length + ' R1 matches). Navigate to Bracket to view.', 'success')
+    setDrawMsg('Draw saved — ' + slam + ' ' + year + ' ' + drawType + ' (' + r1.length + ' R1 matches).', 'success')
 
-    // Notify main.js so it can refresh the bracket screen header
-    window.dispatchEvent(new CustomEvent('draw-uploaded'))
+    // Update commissioner header to reflect new slam
+    renderCommHeader()
   } catch (err) {
     setDrawMsg('Error saving draw: ' + err.message, 'error')
     btn.disabled = false; btn.textContent = 'Confirm draw'
@@ -256,264 +301,9 @@ async function handleConfirmDraw() {
   btn.disabled = false; btn.textContent = 'Confirm draw'
 }
 
-// ── LOCK MANAGING ──
-export function renderLockManaging() {
-  const d = activeDraw()
-  const wrap = $c('comm-lock-wrap')
-  if (!wrap) return
-
-  if (!d) {
-    wrap.innerHTML = '<div style="color:var(--text3);font-family:var(--mono);font-size:12px;padding:20px 0">No draw loaded. Upload a draw first.</div>'
-    return
-  }
-
-  wrap.innerHTML = `
-    <!-- Original picks lock -->
-    <div class="comm-section">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
-        <div class="comm-section-title" style="margin-bottom:0">Original Picks Lock</div>
-        <span class="lock-status ${d.locked ? 'locked' : 'unlocked'}">
-          ${d.locked ? '🔒 Locked' : '🔓 Unlocked'}
-        </span>
-        <span style="font-family:var(--mono);font-size:11px;color:var(--text3)">${slamLabel(d)} · ${d.draw}</span>
-      </div>
-      <div style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.7">
-        Locking snapshots every player's current picks as their <em>original_pick</em>. All future picks become backup picks. This cannot be undone.
-      </div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        ${!d.locked
-          ? `<button class="comm-btn comm-btn-danger" id="lock-orig-now-btn">Lock original picks now</button>`
-          : `<span style="font-size:12px;color:var(--text3);font-family:var(--mono)">Original picks are locked.</span>`
-        }
-      </div>
-      <div class="comm-msg" id="lock-orig-msg"></div>
-    </div>
-
-    <!-- Backup pick locks -->
-    <div class="comm-section">
-      <div class="comm-section-title">Backup Pick Locks</div>
-      <div style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.7">
-        Click cards to select matches, then lock or unlock them for backup picks. 🔒 = currently locked.
-      </div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
-        <span style="font-family:var(--mono);font-size:11px;color:var(--text3)" id="lock-sel-count">No cards selected</span>
-        <button class="comm-btn comm-btn-primary" id="lock-sel-btn" disabled>Lock selected</button>
-        <button class="comm-btn comm-btn-secondary" id="unlock-sel-btn" disabled>Unlock selected</button>
-        <button class="comm-btn comm-btn-secondary" id="clear-sel-btn">Clear selection</button>
-      </div>
-      <div class="lock-bracket" id="lock-bracket"></div>
-      <div class="comm-msg" id="lock-backup-msg"></div>
-    </div>
-  `
-
-  $c('lock-orig-now-btn')?.addEventListener('click', handleLockOriginalPicks)
-  $c('lock-sel-btn')?.addEventListener('click', () => handleBackupLock(true))
-  $c('unlock-sel-btn')?.addEventListener('click', () => handleBackupLock(false))
-  $c('clear-sel-btn')?.addEventListener('click', () => {
-    selectedLockCards.clear()
-    renderLockBracket()
-    updateLockActionBar()
-  })
-
-  renderLockBracket()
-}
-
-function renderLockBracket() {
-  const d = activeDraw()
-  const container = $c('lock-bracket')
-  if (!d || !container) return
-
-  container.innerHTML = ''
-  d.rounds.forEach((round, ri) => {
-    const col = document.createElement('div')
-    col.className = 'lock-round'
-
-    const lbl = document.createElement('div')
-    lbl.className = 'lock-round-label'
-    lbl.textContent = round.label
-    col.appendChild(lbl)
-
-    round.matches.forEach((m, mi) => {
-      const key = ri + '_' + mi
-      const isLocked = isMatchBackupLocked(ri, mi)
-      const isSelected = selectedLockCards.has(key)
-
-      const card = document.createElement('div')
-      card.className = 'lock-card'
-        + (isLocked ? ' is-locked' : '')
-        + (isSelected ? ' selected' : '')
-
-      card.innerHTML = `
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:4px">
-          <div style="flex:1;min-width:0">
-            <div class="lock-card-p">${escHtml(m.p1.name || '—')}</div>
-            <div class="lock-card-p">${escHtml(m.p2.name || '—')}</div>
-          </div>
-          ${isLocked ? '<span style="font-size:10px;flex-shrink:0">🔒</span>' : ''}
-        </div>`
-
-      card.addEventListener('click', () => {
-        if (selectedLockCards.has(key)) selectedLockCards.delete(key)
-        else selectedLockCards.add(key)
-        renderLockBracket()
-        updateLockActionBar()
-      })
-      col.appendChild(card)
-    })
-
-    container.appendChild(col)
-  })
-}
-
-function isMatchBackupLocked(ri, mi) {
-  return (state.lockSchedules || []).some(ls => {
-    if (ls.lock_type !== 'backup_picks') return false
-    if (!ls.locked_at) return false
-    if (ls.round_index !== ri) return false
-    const start = ls.match_index_start ?? 0
-    const end = ls.match_index_end ?? 999
-    return mi >= start && mi <= end
-  })
-}
-
-function updateLockActionBar() {
-  const count = selectedLockCards.size
-  const countEl = $c('lock-sel-count')
-  const lockBtn = $c('lock-sel-btn')
-  const unlockBtn = $c('unlock-sel-btn')
-  if (countEl) countEl.textContent = count === 0
-    ? 'No cards selected'
-    : count + ' card' + (count > 1 ? 's' : '') + ' selected'
-  if (lockBtn) lockBtn.disabled = count === 0
-  if (unlockBtn) unlockBtn.disabled = count === 0
-}
-
-async function handleLockOriginalPicks() {
-  if (!state.currentUser?.is_commissioner) return
-  const d = activeDraw()
-  if (!d) return
-
-  const confirmed = confirm(
-    'Lock original picks for ' + slamLabel(d) + ' ' + d.draw + '?\n\n' +
-    'This snapshots all current picks as original picks and cannot be undone.'
-  )
-  if (!confirmed) return
-
-  const btn = $c('lock-orig-now-btn')
-  if (btn) { btn.disabled = true; btn.textContent = 'Locking…' }
-  setLockOrigMsg('')
-
-  try {
-    // 1. Set draws.original_picks_locked = true
-    const { error: de } = await supabase
-      .from('draws').update({ original_picks_locked: true }).eq('id', d.db_id)
-    if (de) throw de
-
-    // 2. Snapshot original_pick = pick for all picks in this draw
-    const { data: allPicks, error: pe } = await supabase
-      .from('picks').select('id, pick').eq('draw_id', d.db_id)
-    if (pe) throw pe
-
-    for (const pk of (allPicks || [])) {
-      await supabase.from('picks').update({ original_pick: pk.pick }).eq('id', pk.id)
-    }
-
-    // 3. Update local state
-    d.locked = true
-    d.rounds.forEach(r => r.matches.forEach(m => { m.originalPick = m.pick }))
-
-    // 4. Re-render bracket + stats
-    renderStats()
-    renderBracket()
-    // Refresh lock managing UI
-    renderLockManaging()
-    setLockOrigMsg('Original picks locked.', 'success')
-  } catch (err) {
-    setLockOrigMsg('Error: ' + err.message, 'error')
-    if (btn) { btn.disabled = false; btn.textContent = 'Lock original picks now' }
-  }
-}
-
-async function handleBackupLock(shouldLock) {
-  if (!state.currentUser?.is_commissioner) return
-  const d = activeDraw()
-  if (!d || selectedLockCards.size === 0) return
-
-  // Group by round
-  const byRound = new Map()
-  for (const key of selectedLockCards) {
-    const [ri, mi] = key.split('_').map(Number)
-    if (!byRound.has(ri)) byRound.set(ri, [])
-    byRound.get(ri).push(mi)
-  }
-
-  try {
-    for (const [ri, mis] of byRound) {
-      const sorted = [...mis].sort((a, b) => a - b)
-
-      if (shouldLock) {
-        // Build contiguous ranges and insert one lock_schedules row per range
-        const ranges = []
-        let start = sorted[0], end = sorted[0]
-        for (let i = 1; i < sorted.length; i++) {
-          if (sorted[i] === end + 1) { end = sorted[i] }
-          else { ranges.push([start, end]); start = sorted[i]; end = sorted[i] }
-        }
-        ranges.push([start, end])
-
-        for (const [s, e] of ranges) {
-          const { error } = await supabase.from('lock_schedules').insert({
-            draw_id: d.db_id,
-            round_index: ri,
-            match_index_start: s,
-            match_index_end: e,
-            lock_type: 'backup_picks',
-            locked_at: new Date().toISOString(),
-          })
-          if (error) throw error
-        }
-      } else {
-        // Unlock: null out locked_at on any schedule covering these matches
-        for (const mi of sorted) {
-          const matching = (state.lockSchedules || []).filter(ls =>
-            ls.lock_type === 'backup_picks' && ls.round_index === ri &&
-            (ls.match_index_start ?? 0) <= mi && (ls.match_index_end ?? 999) >= mi
-          )
-          for (const ls of matching) {
-            await supabase.from('lock_schedules')
-              .update({ locked_at: null }).eq('id', ls.id)
-          }
-        }
-      }
-    }
-
-    selectedLockCards.clear()
-    await loadLockSchedules()
-    renderBracket()
-    renderLockManaging()
-    setLockBackupMsg(shouldLock ? 'Selected matches locked.' : 'Selected matches unlocked.', 'success')
-  } catch (err) {
-    setLockBackupMsg('Error: ' + err.message, 'error')
-  }
-}
-
-// ── MSG HELPERS ──
+// ── MSG HELPER ──
 function setDrawMsg(msg, type) {
   const el = $c('comm-draw-msg')
-  if (!el) return
-  el.className = 'comm-msg' + (type ? ' ' + type : '')
-  el.textContent = msg
-}
-
-function setLockOrigMsg(msg, type) {
-  const el = $c('lock-orig-msg')
-  if (!el) return
-  el.className = 'comm-msg' + (type ? ' ' + type : '')
-  el.textContent = msg
-}
-
-function setLockBackupMsg(msg, type) {
-  const el = $c('lock-backup-msg')
   if (!el) return
   el.className = 'comm-msg' + (type ? ' ' + type : '')
   el.textContent = msg

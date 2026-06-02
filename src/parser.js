@@ -27,7 +27,7 @@ export function parseTnnsText(text) {
       const nm = rest.match(/^([A-Z][A-Z\s\-\']+),\s*([A-Za-z][a-zA-Z\-]*)/)
       if (!nm) continue
       const last = nm[1].trim().split(/[\s\-]/).map(w => w[0] + w.slice(1).toLowerCase()).join(' ')
-      byPos[pos] = { seed, name: last + ' ' + nm[2][0] + '.' }
+      byPos[pos] = { seed, name: nm[2].trim() + ' ' + last }
     }
   }
   const matches = []

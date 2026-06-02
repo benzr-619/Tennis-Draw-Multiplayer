@@ -40,13 +40,13 @@ export function buildPrintHTML(d) {
   function nameLineHTML(p, m) {
     if (!p || !p.name) return '<div style="height:' + rowH.toFixed(2) + 'mm"></div>'
     const isOrig = m.originalPick && m.originalPick === p.name
-    const isPick = m.pick && m.pick === p.name
+    const isPick = m.matchPick && m.matchPick === p.name
     const backup = isBackupPick(m)
     const isBackupRow = isPick && backup
     const isElim = m.winner && m.winner !== p.name
-    const isCorrect = isOrig && m.result === 'correct'
-    const isWrong = isOrig && m.result === 'wrong'
-    const isBackupWrong = isBackupRow && m.winner && m.pick !== m.winner
+    const isCorrect = isOrig && m.originalPickResult === 'correct'
+    const isWrong = isOrig && m.originalPickResult === 'wrong'
+    const isBackupWrong = isBackupRow && m.winner && m.matchPick !== m.winner
 
     let ind = '&nbsp;', nameStyle = 'color:#1a1916', seedCol = '#bbb'
     if (isCorrect) { ind = '✓'; nameStyle = 'color:' + accent + ';font-weight:700'; seedCol = accent }
@@ -66,7 +66,7 @@ export function buildPrintHTML(d) {
   function buildPage(startR1, endR1, pageNum, isTopHalf) {
     const r1Slice = r1.slice(startR1, endR1)
     const finMatch = rounds[rounds.length - 1] && rounds[rounds.length - 1].matches[0]
-    const champName = finMatch && (finMatch.winner || finMatch.pick) || '—'
+    const champName = finMatch && (finMatch.winner || finMatch.matchPick) || '—'
     const halfLabel = isTopHalf ? 'Top half' : 'Bottom half'
     const champHTML = isTopHalf
       ? '<span style="font-family:monospace;font-size:7pt;color:#888;margin-left:16pt">Champion: </span>'
