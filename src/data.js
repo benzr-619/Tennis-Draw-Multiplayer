@@ -45,7 +45,7 @@ export async function loadDraw(drawRow) {
   // Fetch matches
   const { data: matchRows, error: me } = await supabase
     .from('matches')
-    .select('id, round_index, match_index, p1_name, p1_seed, p2_name, p2_seed, winner, score')
+    .select('id, round_index, match_index, p1_name, p1_seed, p2_name, p2_seed, winner, score, roster_changed_at')
     .eq('draw_id', drawId)
     .order('round_index', { ascending: true })
 
@@ -56,7 +56,7 @@ export async function loadDraw(drawRow) {
   if (userId) {
     const { data: pickRows, error: pe } = await supabase
       .from('picks')
-      .select('match_id, match_pick, original_pick, original_pick_result, match_pick_result, high_confidence, edited_after_lock, notes')
+      .select('match_id, match_pick, original_pick, original_pick_result, match_pick_result, high_confidence, edited_after_lock, notes, updated_at')
       .eq('draw_id', drawId)
       .eq('user_id', userId)
 
@@ -86,6 +86,7 @@ export async function loadDraw(drawRow) {
       notes: pk.notes ?? '',
       winner: mr.winner ?? null,
       score: mr.score ?? '',
+      roster_changed_at: mr.roster_changed_at ?? null,
     }
     roundsMap[ri].matches[mr.match_index] = match
   })
@@ -107,6 +108,32 @@ export async function loadDraw(drawRow) {
     locked: drawRow.original_picks_locked ?? false,
     is_active: drawRow.is_active ?? false,
     rounds,
+  }
+
+  // For locked draws: detect post-lock round-0 roster changes (in memory, no DB write).
+  // The commissioner's edit stamps the match's roster_changed_at. We reopen that match
+  // for a ONE-TIME repick for every player who hasn't already repicked since the change
+  // (their pick's updated_at predates the change, or they have no pick yet). This reaches
+  // ALL players — including those who picked the player who stayed — not just those whose
+  // pick vanished. A player who repicks advances their updated_at and won't be reopened.
+  if (assembled.locked) {
+    assembled.rounds[0]?.matches.forEach(m => {
+      if (m.winner || !m.roster_changed_at) return
+      const pickUpdatedAt = pickMap[m.db_id]?.updated_at
+      const repickedSinceChange = pickUpdatedAt && new Date(pickUpdatedAt) >= new Date(m.roster_changed_at)
+      if (repickedSinceChange) return
+
+      // Reopen the match for this player.
+      m.editedAfterLock = true
+      const stillInMatch = m.originalPick === m.p1.name || m.originalPick === m.p2.name
+      if (!stillInMatch) {
+        // They picked the removed player (or had no valid pick): clear it — they must repick.
+        m.originalPick = null
+        if (m.matchPick && m.matchPick !== m.p1.name && m.matchPick !== m.p2.name) m.matchPick = null
+      }
+      // If they picked the player who stayed, keep their pick — they may repick, but
+      // won't lose a valid pick by ignoring the prompt.
+    })
   }
 
   // Derive all round-2+ slots, elimination flags, and displaced-pick labels in

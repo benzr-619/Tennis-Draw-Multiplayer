@@ -4,6 +4,8 @@ import { supabase } from './supabase.js'
 import { state } from './state.js'
 import { calcStats } from './scoring.js'
 import { slamKey, SLAM_CONFIG } from './data.js'
+import { buildDrawView } from './draw-view.js'
+import { animateSegThumb } from './seg-thumb.js'
 
 // ── CONSTANTS ──
 
@@ -17,6 +19,7 @@ const SLAM_COLORS = {
 // ── MODULE STATE ──
 
 let lbTab = 'slams'            // 'slams' | 'records' | 'yourdraws'
+let _lbTabPrevIdx = -1         // tracks previous tab index for slide animation
 let lbDetailDraw = null        // Draw | null — when set, show full-width draw detail
 let lbSort = { col: 'score', dir: -1 }
 let statsCache = new Map()     // drawDbId → { userId: stats }
@@ -44,7 +47,7 @@ async function loadAllPicksForDraw(drawDbId) {
   return data || []
 }
 
-// Assembles a draw using the user's current picks (pick field)
+// Assembles a draw using the user's current picks, then re-derives all slot/elim state.
 function assembleDrawForUser(baseDraw, userPickRows) {
   const pickMap = {}
   userPickRows.forEach(p => { pickMap[p.match_id] = p })
@@ -63,10 +66,13 @@ function assembleDrawForUser(baseDraw, userPickRows) {
       }
     }),
   }))
-  return { ...baseDraw, rounds }
+  return buildDrawView({ ...baseDraw, rounds })
 }
 
-// Assembles a draw using original_pick as pick — for the leaderboard bracket viewer
+// Assembles a draw using original_pick as pick — for the leaderboard bracket viewer.
+// Pass 1: stamps pick fields and saves actual p1/p2 per match (viewer-specific).
+// buildDrawView then re-derives all slot/elim/label state from the stamped picks.
+// actualP1/actualP2 survive because buildDrawView never touches custom fields.
 function assembleDrawForUserOriginalPicks(baseDraw, userPickRows) {
   const pickMap = {}
   userPickRows.forEach(p => { pickMap[p.match_id] = p })
@@ -78,16 +84,31 @@ function assembleDrawForUserOriginalPicks(baseDraw, userPickRows) {
     if (m.p2?.name) seedMap[m.p2.name] = m.p2.seed || ''
   })
 
-  // Pass 1: copy pick fields onto each match, save actual p1/p2 from baseDraw
-  const rounds = baseDraw.rounds.map(r => ({
+  // Pass 1: stamp pick fields; save actual p1/p2 from baseDraw; compute actualP1/P2
+  // for ri 1+ from feeder winners (DB doesn't store p1_name/p2_name for R2+).
+  const rounds = baseDraw.rounds.map((r, ri) => ({
     ...r,
-    matches: r.matches.map(m => {
+    matches: r.matches.map((m, mi) => {
       const pk = m.db_id ? (pickMap[m.db_id] || {}) : {}
+      // For ri 1+: actual players are whoever won each feeder match.
+      // For ri 0: actual players are the draw's own p1/p2.
+      let actualP1, actualP2
+      if (ri === 0) {
+        actualP1 = { ...m.p1 }
+        actualP2 = { ...m.p2 }
+      } else {
+        const feeder1 = baseDraw.rounds[ri - 1].matches[mi * 2]
+        const feeder2 = baseDraw.rounds[ri - 1].matches[mi * 2 + 1]
+        const a1 = feeder1?.winner || ''
+        const a2 = feeder2?.winner || ''
+        actualP1 = { name: a1, seed: seedMap[a1] || '' }
+        actualP2 = { name: a2, seed: seedMap[a2] || '' }
+      }
       return {
         ...m,
-        // save actual tournament players before we overwrite p1/p2
-        actualP1: { ...m.p1 },
-        actualP2: { ...m.p2 },
+        actualP1,
+        actualP2,
+        // Use original_pick as the projected pick so buildDrawView slots it correctly.
         matchPick: pk.original_pick ?? pk.match_pick ?? null,
         originalPick: pk.original_pick ?? null,
         originalPickResult: pk.original_pick_result ?? null,
@@ -98,27 +119,10 @@ function assembleDrawForUserOriginalPicks(baseDraw, userPickRows) {
     }),
   }))
 
-  // Pass 2: reconstruct p1/p2 for ri 1+ from the previous round's picks
-  // Each slot is filled with whoever the player predicted would win the feeder match.
-  // actualP1/actualP2 are derived from the feeder match winners (not DB p1_name/p2_name,
-  // which are empty for R2+ because applyWinner doesn't write them back to the DB).
-  for (let ri = 1; ri < rounds.length; ri++) {
-    rounds[ri].matches.forEach((m, mi) => {
-      const feeder1 = rounds[ri - 1].matches[mi * 2]
-      const feeder2 = rounds[ri - 1].matches[mi * 2 + 1]
-      const name1 = feeder1?.originalPick || ''
-      const name2 = feeder2?.originalPick || ''
-      m.p1 = { name: name1, seed: seedMap[name1] || '' }
-      m.p2 = { name: name2, seed: seedMap[name2] || '' }
-      // Actual players: whoever won the feeder matches in the real tournament
-      const actual1 = feeder1?.winner || ''
-      const actual2 = feeder2?.winner || ''
-      m.actualP1 = { name: actual1, seed: seedMap[actual1] || '' }
-      m.actualP2 = { name: actual2, seed: seedMap[actual2] || '' }
-    })
-  }
-
-  return { ...baseDraw, rounds }
+  // Viewer mode: slots derive from the friend's originalPick (NOT the actual
+  // winner), so the card shows who they picked; eliminations still come from real
+  // results via actualP1/actualP2. The real occupant floats outside via placeViewerCard.
+  return buildDrawView({ ...baseDraw, rounds }, { projectFromPick: true })
 }
 
 export async function loadDrawStatsForAllUsers(baseDraw) {
@@ -179,7 +183,11 @@ export async function renderLeaderboard() {
     // Tab bar
     const tabbar = document.createElement('div')
     tabbar.className = 'lb-tabbar'
-    ;[{ key: 'slams', label: 'Slams' }, { key: 'records', label: 'Records' }, { key: 'yourdraws', label: 'Your Draws' }].forEach(({ key, label }) => {
+    const tabseg = document.createElement('div')
+    tabseg.className = 'lb-tabseg'
+    const LB_TABS = [{ key: 'slams', label: 'Slams' }, { key: 'records', label: 'Records' }, { key: 'yourdraws', label: 'Your Draws' }]
+    const activeTabIdx = LB_TABS.findIndex(t => t.key === lbTab)
+    LB_TABS.forEach(({ key, label }) => {
       const btn = document.createElement('button')
       btn.className = 'lb-tab' + (lbTab === key ? ' active' : '')
       btn.textContent = label
@@ -189,9 +197,12 @@ export async function renderLeaderboard() {
         lbSort = { col: 'score', dir: -1 }
         renderLeaderboard()
       })
-      tabbar.appendChild(btn)
+      tabseg.appendChild(btn)
     })
+    tabbar.appendChild(tabseg)
     root.appendChild(tabbar)
+    animateSegThumb(tabseg, _lbTabPrevIdx, activeTabIdx)
+    _lbTabPrevIdx = activeTabIdx
 
     const content = document.createElement('div')
     content.className = 'lb-content'

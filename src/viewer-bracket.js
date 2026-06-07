@@ -55,7 +55,13 @@ function placeViewerCard(draw, m, ri, mi, x, y, wrap) {
 
     // Did the predicted player actually reach this round?
     // For ri 0 the predicted player IS the actual player, so predictedMissed is always false.
-    const predictedMissed = actualP && actualP.name && p.name && actualP.name !== p.name
+    // Two ways the friend was wrong about this slot:
+    //   (a) a different real player actually reached it (actualP differs), or
+    //   (b) the picked player has been eliminated somewhere (p.elim, set by
+    //       buildDrawView's projectFromPick pass) — catches FUTURE rounds whose
+    //       feeders aren't decided yet, which would otherwise still show blue.
+    const predictedMissed =
+      (actualP && actualP.name && p.name && actualP.name !== p.name) || p.elim === true
 
     const isOrigPick = m.originalPick && m.originalPick === p.name
 
@@ -88,15 +94,6 @@ function placeViewerCard(draw, m, ri, mi, x, y, wrap) {
 
     row.appendChild(seedEl)
     row.appendChild(nameEl)
-
-    // If the non-picked player won this match, show a small green checkmark
-    if (!isOrigPick && m.winner && m.winner === p.name) {
-      const ckEl = document.createElement('span')
-      ckEl.style.cssText = 'font-size:9px;color:var(--green);flex-shrink:0;margin-right:2px'
-      ckEl.textContent = '✓'
-      row.appendChild(ckEl)
-    }
-
     row.appendChild(dotEl)
     return row
   }
@@ -108,17 +105,19 @@ function placeViewerCard(draw, m, ri, mi, x, y, wrap) {
   card.appendChild(rowsWrap)
 
   // ── ACTUAL PLAYER LABELS (ri >= 1 only) ──
-  // When reality differed from prediction, show who actually occupied this slot
-  // just above (p1) or below (p2) the card.
+  // Historical context: when the friend mispredicted a slot, float the player who
+  // ACTUALLY reached it (the true winner of the feeder) outside the card.
+  // Neutral styling on purpose — this is a record of what happened, not a pick
+  // result. Green/red is reserved for the friend's pick (right/wrong). No label
+  // when the friend was right (prediction === actual) or the slot is undecided.
   if (hasActuals && ri >= 1) {
     function makeActualLabel(actualP, pos) {
       if (!actualP || !actualP.name) return
       const predictedName = pos === 'top' ? m.p1.name : m.p2.name
-      if (actualP.name === predictedName) return  // matches prediction — no label needed
-      const won = m.winner && m.winner === actualP.name
+      if (actualP.name === predictedName) return  // friend was right about this slot
       const lbl = document.createElement('div')
-      lbl.className = 'mc-actual-' + pos + (won ? ' mc-actual-won' : ' mc-actual-lost')
-      lbl.textContent = (won ? '✓ ' : '') + actualP.name
+      lbl.className = 'mc-actual-' + pos
+      lbl.textContent = actualP.name
       card.appendChild(lbl)
     }
     makeActualLabel(m.actualP1, 'top')

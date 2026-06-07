@@ -22,13 +22,30 @@ class FakeEl {
   set cssText(v) {}
   appendChild(c) { this.children.push(c); return c }
   addEventListener() {}
+  removeEventListener() {}
   setAttribute() {}
   removeAttribute() {}
+}
+// The pick-confirm popup (#pick-confirm-modal etc.) is the only place the real
+// code reads elements back via getElementById. Return stub elements for just
+// those IDs (everything else stays null, so no other code path changes), and
+// auto-fire the confirm button's click so showPickConfirm() resolves true —
+// i.e. the harness "player" always confirms the repick, which is what the
+// S6b scenario expects.
+const _modalIds = ['pick-confirm-modal', 'pcm-name', 'pcm-confirm', 'pcm-cancel']
+const _modalEls = new Map()
+function getModalEl(id) {
+  if (!_modalEls.has(id)) {
+    const el = new FakeEl('div')
+    if (id === 'pcm-confirm') el.addEventListener = (type, fn) => { if (type === 'click') setTimeout(fn, 0) }
+    _modalEls.set(id, el)
+  }
+  return _modalEls.get(id)
 }
 const document = {
   createElement: (t) => new FakeEl(t),
   createElementNS: (_ns, t) => new FakeEl(t),
-  getElementById: () => null,
+  getElementById: (id) => (_modalIds.includes(id) ? getModalEl(id) : null),
   body: new FakeEl('body'),
 }
 globalThis.document = document

@@ -1,11 +1,13 @@
 import { state, activeDraw, applyTheme } from './state.js'
 import { login, signup, logout, restoreSession } from './auth.js'
 import { loadAllDraws, loadLockSchedules, reloadActiveDraw, slamKey, slamLabel, SLAM_CONFIG } from './data.js'
-import { renderBracket, closeModal, confirmEditPlayer } from './bracket.js'
-import { renderStats, resetStatsFilter } from './stats.js'
+import { renderBracket } from './bracket.js'
+import { closeModal, confirmEditPlayer } from './commissioner-results.js'
+import { renderStats, resetStatsFilter, setCountdownClickHandler } from './stats.js'
 import { buildPrintHTML } from './print.js'
-import { initCommissioner } from './commissioner.js'
+import { initCommissioner, renderResults, renderLockManaging } from './commissioner.js'
 import { renderLeaderboard } from './leaderboard.js'
+import { animateSegThumb } from './seg-thumb.js'
 
 // ── INIT ──
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
@@ -16,6 +18,9 @@ function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'))
   $(id).classList.add('active')
 }
+
+// ── SEGMENTED CONTROL STATE ──
+let _segPrevIdx = -1  // tracks previous M/W index for slide animation
 
 // ── AUTH SCREEN ──
 let authMode = 'login' // 'login' | 'signup'
@@ -72,12 +77,12 @@ $('auth-form').addEventListener('submit', async e => {
 
 // ── ROUTING ──
 async function routeAfterAuth() {
-  if (state.currentUser?.is_commissioner) {
-    initCommissioner()
-    showScreen('screen-commissioner')
-  } else {
-    await showBracketScreen()
-  }
+  // Commissioner-capable users land on the normal player view; they reach the
+  // commissioner screen via the account-menu "Commissioner" entry (revealed below).
+  document.querySelectorAll('.commish-nav').forEach(b => {
+    b.hidden = !state.currentUser?.is_commissioner
+  })
+  await showBracketScreen()
 }
 
 // ── HEADER / NAV ──
@@ -97,14 +102,15 @@ function renderHeader() {
   if (seg && d) {
     seg.innerHTML = ''
     const DRAW_TYPES = [{ key: 'MS', label: "Men's", short: 'M' }, { key: 'WS', label: "Women's", short: 'W' }]
-    DRAW_TYPES.forEach(({ key, label, short }) => {
+    let activeSegIdx = 0
+    DRAW_TYPES.forEach(({ key, label, short }, i) => {
       const btn = document.createElement('button')
       btn.className = 'seg-btn'
       btn.innerHTML = `<span class="seg-full">${label}</span><span class="seg-short">${short}</span>`
       const match = state.draws.find(x => slamKey(x) === slamKey(d) && x.draw === key)
       if (!match) { btn.disabled = true }
       else {
-        if (d.draw === key) btn.classList.add('active')
+        if (d.draw === key) { btn.classList.add('active'); activeSegIdx = i }
         btn.addEventListener('click', () => {
           const idx = state.draws.indexOf(match)
           if (idx >= 0) switchTab(idx)
@@ -112,9 +118,11 @@ function renderHeader() {
       }
       seg.appendChild(btn)
     })
+    animateSegThumb(seg, _segPrevIdx, activeSegIdx)
+    _segPrevIdx = activeSegIdx
   }
 
-  // User display
+  // User display + avatar initials
   const user = state.currentUser
   const userEl = $('hdr-user')
   const userLbEl = $('hdr-user-lb')
@@ -132,6 +140,48 @@ async function switchTab(i) {
   renderHeader()
   renderStats()
   renderBracket()
+}
+
+async function handleCountdownClick(lock) {
+  // Switch to the draw that owns this lock if needed
+  const targetIdx = state.draws.findIndex(dr => dr.db_id === lock.draw_id)
+  if (targetIdx >= 0 && targetIdx !== state.activeTab) {
+    await switchTab(targetIdx)
+  }
+  // Find the first unpicked match card in the lock range
+  const d = state.draws[targetIdx >= 0 ? targetIdx : state.activeTab]
+  if (!d) return
+  let targetCard = null
+  if (lock.lock_type === 'backup_picks' && lock.round_index != null) {
+    const ri = lock.round_index
+    const matches = d.rounds[ri]?.matches || []
+    for (let mi = 0; mi < matches.length; mi++) {
+      const inRange = (lock.match_index_start == null || mi >= lock.match_index_start) &&
+                      (lock.match_index_end == null || mi <= lock.match_index_end)
+      if (inRange && !matches[mi].matchPick && !matches[mi].winner) {
+        targetCard = document.querySelector(`.mc[data-ri="${ri}"][data-mi="${mi}"]`)
+        if (targetCard) break
+      }
+    }
+  } else {
+    // original_picks lock — find first match with no matchPick
+    for (let ri = 0; ri < d.rounds.length; ri++) {
+      for (let mi = 0; mi < (d.rounds[ri]?.matches.length || 0); mi++) {
+        const m = d.rounds[ri].matches[mi]
+        if (!m.matchPick && !m.winner) {
+          targetCard = document.querySelector(`.mc[data-ri="${ri}"][data-mi="${mi}"]`)
+          break
+        }
+      }
+      if (targetCard) break
+    }
+  }
+  if (targetCard) {
+    targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    targetCard.style.transition = 'box-shadow 0.2s'
+    targetCard.style.boxShadow = '0 0 0 2px var(--accent)'
+    setTimeout(() => { targetCard.style.boxShadow = '' }, 1200)
+  }
 }
 
 // ── SEARCH ──
@@ -246,7 +296,7 @@ document.addEventListener('keydown', e => {
 })
 
 // ── PRINT ──
-$('print-btn').addEventListener('click', () => {
+function doPrint() {
   const d = activeDraw(); if (!d || !d.rounds || !d.rounds.length) return
   const win = window.open('', '_blank')
   if (!win) { alert('Please allow popups for this site.'); return }
@@ -256,7 +306,8 @@ $('print-btn').addEventListener('click', () => {
   } catch (err) {
     win.document.write('<pre style="padding:20px;color:red">' + err.message + '</pre>'); win.document.close()
   }
-})
+}
+$('print-btn').addEventListener('click', doPrint)
 
 // ── LOGOUT ──
 async function doLogout() {
@@ -274,6 +325,47 @@ $('nav-leaderboard').addEventListener('click', () => { showScreen('screen-leader
 
 $('nav-bracket-from-lb').addEventListener('click', () => showBracketScreen())
 
+// ── COMMISSIONER ENTER / EXIT (combined-role nav) ──
+function enterCommissioner() {
+  if (!state.currentUser?.is_commissioner) return
+  closeAcctMenus()
+  initCommissioner() // idempotent; renders header + Results tab
+  showScreen('screen-commissioner')
+}
+$('commish-btn')?.addEventListener('click', enterCommissioner)
+$('commish-btn-lb')?.addEventListener('click', enterCommissioner)
+$('exit-commish-btn')?.addEventListener('click', () => { closeAcctMenus(); showBracketScreen() })
+
+// Cmd/Ctrl+E toggles between the draw and commissioner views (commissioner-capable only).
+document.addEventListener('keydown', (e) => {
+  if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'e' || e.shiftKey || e.altKey) return
+  if (!state.currentUser?.is_commissioner) return
+  e.preventDefault()
+  if ($('screen-commissioner').classList.contains('active')) showBracketScreen()
+  else enterCommissioner()
+})
+
+// ── ACCOUNT MENU ──
+function wireAcctMenu(chipId, menuId) {
+  const chip = $(chipId), menu = $(menuId)
+  if (!chip || !menu) return
+  chip.addEventListener('click', (e) => {
+    e.stopPropagation()
+    const open = menu.classList.toggle('open')
+    chip.classList.toggle('open', open)
+    chip.setAttribute('aria-expanded', open ? 'true' : 'false')
+  })
+}
+function closeAcctMenus() {
+  document.querySelectorAll('.acct-menu.open').forEach(m => m.classList.remove('open'))
+  document.querySelectorAll('.acct-chip.open').forEach(c => { c.classList.remove('open'); c.setAttribute('aria-expanded', 'false') })
+}
+wireAcctMenu('acct-chip', 'acct-menu')
+wireAcctMenu('acct-chip-lb', 'acct-menu-lb')
+wireAcctMenu('acct-chip-cmsr', 'acct-menu-cmsr')
+document.addEventListener('click', closeAcctMenus)
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAcctMenus() })
+
 // ── VIEWER BACK ──
 $('viewer-back-btn-v').addEventListener('click', async () => {
   showScreen('screen-leaderboard')
@@ -281,19 +373,26 @@ $('viewer-back-btn-v').addEventListener('click', async () => {
 })
 
 // ── REFRESH BUTTON ──
-$('api-sync-btn').addEventListener('click', async () => {
-  const btn = $('api-sync-btn')
+async function doRefresh(btnId, after) {
+  const btn = $(btnId)
+  if (!btn) return
   btn.disabled = true
-  $('api-sync-label').textContent = 'Refreshing…'
+  btn.classList.add('spinning')
   try {
     await reloadActiveDraw()
-    renderStats()
-    renderBracket()
+    after()
   } finally {
     btn.disabled = false
-    $('api-sync-label').textContent = 'Refresh'
+    btn.classList.remove('spinning')
   }
-})
+}
+$('api-sync-btn').addEventListener('click', () => doRefresh('api-sync-btn', () => { renderStats(); renderBracket() }))
+$('api-sync-btn-lb')?.addEventListener('click', () => doRefresh('api-sync-btn-lb', () => renderLeaderboard()))
+$('api-sync-btn-cmsr')?.addEventListener('click', () => doRefresh('api-sync-btn-cmsr', () => {
+  const activeTab = document.querySelector('#comm-hdr-nav .hdr-nav-link.active')?.dataset.tab
+  if (activeTab === 'lock') renderLockManaging()
+  else renderResults()
+}))
 
 // ── COUNTDOWN REFRESH ──
 setInterval(() => {
@@ -333,6 +432,7 @@ async function showBracketScreen() {
 
 // ── BOOT ──
 async function init() {
+  setCountdownClickHandler(handleCountdownClick)
   try {
     const user = await restoreSession()
     if (!user) {

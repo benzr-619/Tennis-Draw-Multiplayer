@@ -96,6 +96,28 @@ async function saveCascadeToSupabase(d, ri, mi) {
   await Promise.all(saves)
 }
 
+// ── PICK CONFIRM MODAL ──
+// Returns a Promise that resolves true (confirmed) or false (cancelled).
+function showPickConfirm(playerName) {
+  return new Promise(resolve => {
+    const modal = document.getElementById('pick-confirm-modal')
+    document.getElementById('pcm-name').textContent = playerName
+    modal.style.display = 'flex'
+    function cleanup(result) {
+      modal.style.display = 'none'
+      confirmBtn.removeEventListener('click', onConfirm)
+      cancelBtn.removeEventListener('click', onCancel)
+      resolve(result)
+    }
+    const confirmBtn = document.getElementById('pcm-confirm')
+    const cancelBtn  = document.getElementById('pcm-cancel')
+    function onConfirm() { cleanup(true) }
+    function onCancel()  { cleanup(false) }
+    confirmBtn.addEventListener('click', onConfirm)
+    cancelBtn.addEventListener('click', onCancel)
+  })
+}
+
 // ── CLICK HANDLER ──
 export async function handlePickClick(ri, mi, p, { renderStats, renderBracket }) {
   const d = activeDraw()
@@ -112,21 +134,46 @@ export async function handlePickClick(ri, mi, p, { renderStats, renderBracket })
   if (drawLocked && !isWithdrawalRepick && isMatchLocked(ri, mi, 'backup_picks')) return
 
   if (isWithdrawalRepick) {
-    m.matchPick = m.matchPick === p.name ? null : p.name
-    m.originalPick = m.matchPick
-    if (m.matchPick) {
-      m.editedAfterLock = false
-      cascadeMatchPickForward(d, ri, mi)
-    }
-  } else if (drawLocked) {
-    // Backup pick: cascade matchPick into future rounds + save all affected matches
-    const prev = m.matchPick
-    m.matchPick = m.matchPick === p.name ? null : p.name
-    if (prev && prev !== m.matchPick) clearMatchPickForward(d, ri, mi, prev)
-    if (m.matchPick) cascadeMatchPickForward(d, ri, mi)
+    // Always show the confirmation popup — Cancel is how the player backs out.
+    // No silent deselect: the match must have an original pick to exit needs-repick state.
+    const confirmed = await showPickConfirm(p.name)
+    if (!confirmed) return
+
+    // What this match previously sent forward, captured before we overwrite it.
+    const prevOrigPick = m.originalPick
+
+    m.matchPick = p.name
+    m.originalPick = p.name
+    m.editedAfterLock = false
+    // No cascadeMatchPickForward — future rounds derive from originalPick via buildDrawView.
+
     buildDrawView(d)
     await savePickToSupabase(m, d.db_id)
-    await saveCascadeToSupabase(d, ri, mi)
+
+    // Reopen the next round only if THIS repick changed who this match sends forward —
+    // i.e. the next-round matchup is now different. Offer the repick whether or not their
+    // existing next-round pick is still technically valid (the opponent may have changed).
+    // Keep that pick if it's still one of the two players (so inaction never loses a valid
+    // pick); clear it only if it's no longer in the matchup. (buildDrawView above already
+    // refreshed nm.p1/p2 to the new projection.)
+    const next = getNextSlot(d, ri, mi)
+    if (next && prevOrigPick !== p.name) {
+      const nm = d.rounds[next.nri].matches[next.nmi]
+      if (!nm.winner && nm.originalPick) {
+        nm.editedAfterLock = true
+        const stillValid = nm.originalPick === nm.p1?.name || nm.originalPick === nm.p2?.name
+        if (!stillValid) { nm.originalPick = null; nm.matchPick = null }
+        if (nm.db_id) await savePickToSupabase(nm, d.db_id)
+      }
+    }
+
+    renderStats(); renderBracket()
+    return
+  } else if (drawLocked) {
+    // Backup pick: cascade matchPick into future rounds + save all affected matches
+    m.matchPick = m.matchPick === p.name ? null : p.name
+    buildDrawView(d)
+    await savePickToSupabase(m, d.db_id)
     renderStats()
     renderBracket()
     return

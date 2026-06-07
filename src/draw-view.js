@@ -19,34 +19,20 @@
 //   2. the markLoserForward elimination replay in data.js / picks.js
 //   3. the Case-1/Case-2 displaced-label feeder lookups in bracket.js
 
-// Walk an eliminated player forward, flagging slots that still project them and
-// clearing any dead backup-pick cascade that referenced them. Mirrors the old
-// markLoserForward exactly, but lives here as derivation (not a runtime mutator).
-function markLoserForward(rounds, ri, mi, loserName) {
-  let r = ri, m = mi
-  while (true) {
-    const nri = r + 1
-    if (nri >= rounds.length) break
-    const nmi = Math.floor(m / 2)
-    const side = m % 2 === 0 ? 'p1' : 'p2'
-    const nm = rounds[nri].matches[nmi]
-    if (!nm || nm.winner) break
-    const slotName = nm[side]?.name
-    const matchPickWasLoser = nm.matchPick === loserName
-    if (slotName === loserName) nm[side] = { ...nm[side], elim: true }
-    if (matchPickWasLoser) nm.matchPick = null
-    if (slotName !== loserName && nm.originalPick !== loserName && !matchPickWasLoser) break
-    r = nri; m = nmi
-  }
-}
-
 /**
  * Derive all slot occupancy, elimination flags, and displaced-pick labels for a
  * draw, in place. Idempotent. Returns the same draw for convenience.
  * Round-0 matches are never touched (they hold the actual draw).
  */
-export function buildDrawView(d) {
+// opts.projectFromPick (VIEWER ONLY): fill round-2+ slots from the user's
+// originalPick/matchPick FIRST (ignore the actual winner) so the friend's
+// projected bracket shows through, and build the eliminated-players set from the
+// REAL results carried on each match's `actualP1`/`actualP2` (attached by
+// assembleDrawForUserOriginalPicks) rather than off the slots. Default mode is
+// unchanged: winner-first slots, eliminations read off the slots.
+export function buildDrawView(d, opts = {}) {
   if (!d || !d.rounds || !d.rounds.length) return d
+  const projectFromPick = opts.projectFromPick === true
   const rounds = d.rounds
 
   // Seed lookup — every player originates in round 0.
@@ -65,31 +51,61 @@ export function buildDrawView(d) {
       const prev = rounds[ri - 1]
       const feedA = prev.matches[mi * 2]
       const feedB = prev.matches[mi * 2 + 1]
-      const nameA = feedA?.winner || feedA?.originalPick || feedA?.matchPick || ''
-      const nameB = feedB?.winner || feedB?.originalPick || feedB?.matchPick || ''
+      const nameA = projectFromPick
+        ? (feedA?.originalPick || feedA?.matchPick || feedA?.winner || '')
+        : (feedA?.winner || feedA?.originalPick || feedA?.matchPick || '')
+      const nameB = projectFromPick
+        ? (feedB?.originalPick || feedB?.matchPick || feedB?.winner || '')
+        : (feedB?.winner || feedB?.originalPick || feedB?.matchPick || '')
       if (nameA) m.p1 = { name: nameA, seed: seedMap[nameA] || '' }
       if (nameB) m.p2 = { name: nameB, seed: seedMap[nameB] || '' }
     })
   }
 
-  // (2) Replay eliminations for every confirmed winner.
-  rounds.forEach((r, ri) => {
-    r.matches.forEach((m, mi) => {
+  // (2) A player is eliminated if they lost ANY confirmed match. Build that set
+  //     once from the actual participants of every decided match (a decided
+  //     match's slots hold the real players, since winners take slot priority
+  //     in step 1).
+  const eliminated = new Set()
+  rounds.forEach(r => {
+    r.matches.forEach(m => {
       if (m.winner) {
-        const loserName = m.p1.name === m.winner ? m.p2.name : m.p1.name
-        if (loserName) markLoserForward(rounds, ri, mi, loserName)
+        // In projectFromPick mode the slots hold PICKS, not real players, so read
+        // the actual participants off actualP1/actualP2 to find the real loser.
+        const realA = projectFromPick ? (m.actualP1?.name || '') : m.p1.name
+        const realB = projectFromPick ? (m.actualP2?.name || '') : m.p2.name
+        const loserName = realA === m.winner ? realB : realA
+        if (loserName) eliminated.add(loserName)
       }
     })
   })
 
-  // (3) Compute displaced-original-pick labels (formerly the bracket.js hack).
+  // (3) Flag every still-undecided slot that projects an eliminated player, and
+  //     clear any dead backup-pick cascade that referenced one. This replaces the
+  //     old single-path markLoserForward walk, which stopped at the first match
+  //     already holding a confirmed winner — and so failed to cross out a pick
+  //     that re-emerged (via originalPick) in slots BEYOND that match.
+  rounds.forEach(r => {
+    r.matches.forEach(m => {
+      if (m.winner) return
+      if (m.matchPick && eliminated.has(m.matchPick)) m.matchPick = null
+      if (m.p1?.name && eliminated.has(m.p1.name)) m.p1 = { ...m.p1, elim: true }
+      if (m.p2?.name && eliminated.has(m.p2.name)) m.p2 = { ...m.p2, elim: true }
+    })
+  })
+
+  // (4) Compute displaced-original-pick labels (formerly the bracket.js hack).
   rounds.forEach((r, ri) => {
     r.matches.forEach((m, mi) => {
       m.elimLabels = []
-      if (m.winner) return
-      // Case 1: a slot still projects the eliminated original pick.
-      if (m.p1?.elim) m.elimLabels.push({ name: m.p1.name, pos: 'top' })
-      if (m.p2?.elim) m.elimLabels.push({ name: m.p2.name, pos: 'bot' })
+      // Viewer floats the actual occupant (mc-actual), not the displaced pick, so
+      // it never consumes elimLabels — skip the whole pass in projectFromPick mode.
+      if (projectFromPick || m.winner) return
+      // Case 1: a slot still projects the eliminated original pick. We do NOT
+      // float a label here — the eliminated name stays INSIDE the card (red,
+      // crossed-out) until a confirmed winner from the feeder match displaces
+      // it (that's Case 2). The slot keeps its name + elim flag; bracket.js
+      // paints it in place.
       // Case 2: the original pick was displaced by a real winner in this slot —
       // it's in neither slot and carries no elim flag. Locate its side via feeders.
       const op = m.originalPick

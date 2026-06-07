@@ -7,8 +7,9 @@ import { state, activeDraw, applyTheme } from './state.js'
 import { loadAllDraws, slamLabel, slamKey } from './data.js'
 import { extractPdfText, parseTnnsText } from './parser.js'
 import { $c, escHtml } from './commissioner-shared.js'
-import { renderResults } from './commissioner-results.js'
+import { renderResults, setPendingSearch } from './commissioner-results.js'
 import { renderLockManaging } from './commissioner-locks.js'
+import { animateSegThumb } from './seg-thumb.js'
 
 export { renderResults } from './commissioner-results.js'
 export { renderLockManaging } from './commissioner-locks.js'
@@ -36,11 +37,11 @@ export function initCommissioner() {
       .join('')
   }
 
-  // Tab switching — use pane-active class; bracket pane uses flex layout, others block
-  document.querySelectorAll('.comm-tab').forEach(btn => {
+  // Tab switching — hdr-nav-link pattern; bracket pane uses flex layout, others block
+  document.querySelectorAll('#comm-hdr-nav .hdr-nav-link').forEach(btn => {
     btn.addEventListener('click', () => {
       const tab = btn.dataset.tab
-      document.querySelectorAll('.comm-tab').forEach(b => b.classList.remove('active'))
+      document.querySelectorAll('#comm-hdr-nav .hdr-nav-link').forEach(b => b.classList.remove('active'))
       btn.classList.add('active')
       document.querySelectorAll('.comm-tab-pane').forEach(p => p.classList.remove('pane-active'))
       const pane = $c('comm-pane-' + tab)
@@ -50,12 +51,31 @@ export function initCommissioner() {
     })
   })
 
+  // Cmd/Ctrl+F → focus the results search bar (and ensure Results tab is shown)
+  document.addEventListener('keydown', e => {
+    if (!(e.metaKey || e.ctrlKey) || e.key !== 'f') return
+    const screen = document.getElementById('screen-commissioner')
+    if (!screen?.classList.contains('active')) return
+    e.preventDefault()
+    const input = document.getElementById('results-search-input')
+    if (!input) return
+    // Switch to results tab first if needed
+    const activeTab = document.querySelector('#comm-hdr-nav .hdr-nav-link.active')?.dataset.tab
+    if (activeTab !== 'results') {
+      document.querySelector('#comm-hdr-nav .hdr-nav-link[data-tab="results"]')?.click()
+    }
+    // Focus after the tab (and any re-render) has settled
+    setTimeout(() => document.getElementById('results-search-input')?.focus(), 50)
+  })
+
   initDropZone()
   $c('comm-parse-btn')?.addEventListener('click', handleParseClick)
   $c('comm-confirm-btn')?.addEventListener('click', handleConfirmDraw)
 }
 
 // ── COMMISSIONER HEADER ──
+let _commSegPrevIdx = -1
+
 export function renderCommHeader() {
   const d = activeDraw()
 
@@ -66,6 +86,11 @@ export function renderCommHeader() {
   // Apply theme
   if (d) applyTheme(d.slam)
 
+  // User display (acct chip)
+  const user = state.currentUser
+  const userEl = $c('hdr-user-comm')
+  if (userEl && user) userEl.textContent = user.display_name
+
   // M/W seg control
   const seg = $c('comm-seg-control')
   if (!seg) return
@@ -73,20 +98,21 @@ export function renderCommHeader() {
   if (!d) return
 
   const DRAW_TYPES = [{ key: 'MS', label: "Men's", short: 'M' }, { key: 'WS', label: "Women's", short: 'W' }]
-  DRAW_TYPES.forEach(({ key, label, short }) => {
+  let newActiveIdx = -1
+  DRAW_TYPES.forEach(({ key, label, short }, i) => {
     const btn = document.createElement('button')
     btn.className = 'seg-btn'
     btn.innerHTML = `<span class="seg-full">${label}</span><span class="seg-short">${short}</span>`
     const match = state.draws.find(x => slamKey(x) === slamKey(d) && x.draw === key)
     if (!match) { btn.disabled = true }
     else {
-      if (d.draw === key) btn.classList.add('active')
+      if (d.draw === key) { btn.classList.add('active'); newActiveIdx = i }
       btn.addEventListener('click', () => {
         const idx = state.draws.indexOf(match)
         if (idx < 0) return
         state.activeTab = idx
         renderCommHeader()
-        const activeTab = document.querySelector('.comm-tab.active')?.dataset.tab
+        const activeTab = document.querySelector('#comm-hdr-nav .hdr-nav-link.active')?.dataset.tab
         if (activeTab === 'lock') renderLockManaging()
         else renderResults()
       })
@@ -94,10 +120,8 @@ export function renderCommHeader() {
     seg.appendChild(btn)
   })
 
-  // User display
-  const user = state.currentUser
-  const userEl = $c('hdr-user-comm')
-  if (userEl && user) userEl.textContent = user.display_name
+  animateSegThumb(seg, _commSegPrevIdx, newActiveIdx)
+  _commSegPrevIdx = newActiveIdx
 }
 
 // ── DROP ZONE ──

@@ -253,3 +253,16 @@ create index on public.lock_schedules (draw_id);
 --   original_pick       — the pre-lock snapshot (unchanged data)
 --   original_pick_result — whatever result was already recorded (unchanged data)
 --   match_pick_result   — null for all existing rows; populated going forward by applyWinner
+
+-- Add label column to lock_schedules for backup pick countdown hint text (Chat 12)
+-- alter table public.lock_schedules add column if not exists label text;
+
+-- Post-lock round-0 roster change marker (Chat 11)
+-- When the commissioner replaces a round-0 player AFTER the original picks lock,
+-- the edited match's row is stamped with the current time here. On load, each
+-- player's app compares this to their own picks.updated_at for that match: if the
+-- roster change is newer, the match is reopened for a one-time repick. Players who
+-- have already repicked since the change (their pick's updated_at is newer) are not
+-- reopened. picks.updated_at is maintained automatically by the picks_updated_at
+-- trigger, so no app change is needed for the timestamp side.
+-- alter table public.matches add column if not exists roster_changed_at timestamptz;

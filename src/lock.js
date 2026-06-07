@@ -1,7 +1,7 @@
 // Lock logic — read lock_schedules, expose isMatchLocked()
 // Lock triggering is built in Chat 2 (commissioner screen)
 
-import { state } from './state.js'
+import { state, activeDraw } from './state.js'
 
 /**
  * Returns true if this match is covered by a triggered (locked_at != null) lock schedule.
@@ -11,7 +11,9 @@ import { state } from './state.js'
  */
 export function isMatchLocked(ri, mi, lockType = 'backup_picks') {
   const schedules = state.lockSchedules || []
+  const d = activeDraw()
   return schedules.some(ls => {
+    if (ls.draw_id !== d?.db_id) return false  // only this draw's locks
     if (ls.lock_type !== lockType) return false
     if (!ls.locked_at) return false  // not yet triggered
     if (ls.round_index !== ri) return false

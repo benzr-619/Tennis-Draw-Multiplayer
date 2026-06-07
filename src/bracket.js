@@ -2,9 +2,8 @@
 
 import { state, activeDraw } from './state.js'
 import { isBackupPick } from './scoring.js'
-import { handlePickClick, savePickToSupabase, withdrawalClearForward, updatePlayerNameForward, findSeed } from './picks.js'
+import { handlePickClick, savePickToSupabase, findSeed } from './picks.js'
 import { isMatchLocked } from './lock.js'
-import { supabase } from './supabase.js'
 import { renderStats } from './stats.js'
 import { renderBracketLayout } from './bracket-layout.js'
 
@@ -39,35 +38,19 @@ export function placeCard(d, m, ri, mi, x, y, wrap) {
 
   function makeRow(p, side) {
     // ── ELIM SLOT: original pick was knocked out in a previous round ──
-    // Show backup matchPick (purple) or empty — not the eliminated player.
-    // The eliminated player is rendered as a floating label outside the card by placeCard.
+    // The eliminated original pick keeps the slot, shown red + crossed-out
+    // (same as a busted round-0 pick), until a confirmed winner from the
+    // feeder match displaces it — at which point buildDrawView rebuilds the
+    // slot with the real winner and floats this name above (Case 2). Backup
+    // picks don't project into future rounds, so the elim name always owns
+    // the row here.
     if (p.elim && !m.winner) {
-      const otherSide = side === 'p1' ? 'p2' : 'p1'
-      const otherName = m[otherSide]?.name
-      // Show backup if matchPick is set and isn't the other slot's player
-      const showBackup = m.matchPick && m.matchPick !== otherName
-      const displayName = showBackup ? m.matchPick : ''
-      const displaySeed = showBackup ? findSeed(d, m.matchPick) : ''
-      const isBackupWrong = showBackup && m.matchPickResult === 'wrong'
-      const isBackupCorrect = showBackup && m.matchPickResult === 'correct'
-
-      let cls = 'pr'
-      if (!displayName) cls += ' no-pick'
-      else if (isBackupWrong) cls += ' s-backup-wrong locked'
-      else cls += ' s-backup'
-
-      const row = document.createElement('div'); row.className = cls; row.style.position = 'relative'
-      const seedEl = document.createElement('span'); seedEl.className = 'pr-seed'; seedEl.textContent = displaySeed
-      const nameEl = document.createElement('span'); nameEl.className = 'pr-name'; nameEl.textContent = displayName || '—'
-      row.appendChild(seedEl); row.appendChild(nameEl)
-      if (isBackupCorrect) {
-        const ck = document.createElement('span'); ck.className = 'pr-backup-ok-icon'; ck.textContent = '✓'
-        row.appendChild(ck)
-      }
+      const row = document.createElement('div'); row.className = 'pr s-orig-wrong'; row.style.position = 'relative'
+      const seedEl = document.createElement('span'); seedEl.className = 'pr-seed'; seedEl.textContent = p.seed || ''
+      const nameEl = document.createElement('span'); nameEl.className = 'pr-name'; nameEl.textContent = p.name || '—'
       const dotEl = document.createElement('div'); dotEl.className = 'pr-dot'
-      row.appendChild(dotEl)
+      row.appendChild(seedEl); row.appendChild(nameEl); row.appendChild(dotEl)
       // No click handler: elim slots aren't directly clickable.
-      // Backup pick comes from cascading the pick made in the round where the original was eliminated.
       return row
     }
 
@@ -130,18 +113,12 @@ export function placeCard(d, m, ri, mi, x, y, wrap) {
     }
     row.appendChild(dotEl)
 
-    // Edit button (R1 only, commissioner only)
-    if (ri === 0 && state.currentUser?.is_commissioner) {
-      const editBtn = document.createElement('button')
-      editBtn.className = 'pr-edit-btn'; editBtn.textContent = '✎'; editBtn.title = 'Edit player'
-      editBtn.addEventListener('click', e => { e.stopPropagation(); openEditPlayerModal(ri, mi, side) })
-      row.appendChild(editBtn)
-    }
-
     const isResolved = cls.includes('locked')
     const backupPickLocked = d.locked && !m.editedAfterLock && isMatchLocked(ri, mi, 'backup_picks')
     if (p.name && !m.winner && (!isResolved || m.editedAfterLock) && !backupPickLocked) {
       row.addEventListener('click', () => handlePickClick(ri, mi, p, { renderStats, renderBracket }))
+    } else if (p.name && backupPickLocked) {
+      row.classList.add('pick-locked')
     }
     return row
   }
@@ -197,62 +174,4 @@ export function placeCard(d, m, ri, mi, x, y, wrap) {
   }
 
   wrap.appendChild(card)
-}
-
-// ── EDIT PLAYER MODAL ──
-let editCtx = null
-
-export function openEditPlayerModal(ri, mi, side) {
-  const d = activeDraw(); if (!d) return
-  const m = d.rounds[ri].matches[mi]
-  editCtx = { ri, mi, side }
-  document.getElementById('epm-title').textContent = 'Edit player — ' + (m[side].name || 'empty slot')
-  document.getElementById('epm-seed').value = m[side].seed || ''
-  document.getElementById('epm-name').value = m[side].name || ''
-  document.getElementById('edit-player-modal').style.display = 'flex'
-  setTimeout(() => document.getElementById('epm-name').focus(), 50)
-}
-
-export async function confirmEditPlayer() {
-  if (!editCtx) return
-  const d = activeDraw(); if (!d) return
-  const { ri, mi, side } = editCtx
-  const m = d.rounds[ri].matches[mi]
-  const oldName = m[side].name
-  const newName = document.getElementById('epm-name').value.trim()
-  const newSeed = document.getElementById('epm-seed').value.trim()
-  m[side] = { name: newName, seed: newSeed }
-  if (m.matchPick === oldName) m.matchPick = null
-  if (m.originalPick === oldName) m.originalPick = null
-
-  // Update match in DB (commissioner only)
-  if (state.currentUser?.is_commissioner && m.db_id) {
-    const update = {}
-    if (side === 'p1') { update.p1_name = newName; update.p1_seed = newSeed }
-    else { update.p2_name = newName; update.p2_seed = newSeed }
-    await supabase.from('matches').update(update).eq('id', m.db_id)
-  }
-
-  if (oldName && oldName !== newName) {
-    if (d.locked) {
-      m.editedAfterLock = true
-      withdrawalClearForward(d, ri, mi, oldName)
-    } else {
-      updatePlayerNameForward(d, ri, mi, oldName, newName, newSeed)
-    }
-  }
-  closeModal(); editCtx = null
-  renderStats(); renderBracket()
-}
-
-export function closeModal() {
-  const modal = document.getElementById('edit-player-modal')
-  modal.style.display = 'none'
-  document.getElementById('epm-inputs').style.display = ''
-  document.getElementById('epm-subtitle').textContent = 'Update name and seed. Picks for this player will be cleared.'
-  document.getElementById('epm-btn-area').innerHTML = `
-    <button id="epm-confirm" style="flex:1;padding:9px;background:var(--accent);color:var(--accent-text);border:none;border-radius:7px;font-family:var(--sans);font-size:13px;font-weight:600;cursor:pointer">Update player</button>
-    <button id="epm-cancel" style="padding:9px 16px;background:var(--surface2);border:1px solid var(--border2);color:var(--text);border-radius:7px;font-family:var(--sans);font-size:13px;cursor:pointer">Cancel</button>`
-  document.getElementById('epm-cancel').addEventListener('click', closeModal)
-  document.getElementById('epm-confirm').addEventListener('click', confirmEditPlayer)
 }

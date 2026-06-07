@@ -14,5 +14,8 @@ dist/
 # Archived data dumps / scratch (kept locally, not in git)
 _archive/
 
+# Local regression harness (kept locally, runnable, not shipped)
+test-harness/
+
 # OS
 .DS_Store

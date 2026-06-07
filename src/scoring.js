@@ -1,5 +1,7 @@
 // Scoring logic — ported verbatim from reference app
 
+import { buildDrawView } from './draw-view.js'
+
 export const ROUND_CONFIG = Array.from({ length: 7 }, (_, i) => ({ base: Math.round(Math.pow(1.78, i)) }))
 
 export function numericSeed(seedStr) {
@@ -26,30 +28,55 @@ export function isBackupPick(m) {
   return !!m.originalPick && m.matchPick && m.matchPick !== m.originalPick
 }
 
+// Draw Health numerator/denominator, "as of" round `filterRi` (Infinity = live).
+//
+// Single source of truth: reachability is read off buildDrawView's slot/elim
+// flags — never a parallel, slot-blind elimination list. To rewind to a round,
+// we clone the draw, forget any winner confirmed AFTER the cutoff, re-derive the
+// view, and read the same flags. When filterRi covers every confirmed result,
+// this returns exactly the live numbers (the two no longer drift apart).
+//
+// Definition: a pick is "reachable" if it's already confirmed correct, or its
+// player still occupies its projected slot and hasn't been eliminated. Numerator
+// = base points of reachable original picks; denominator = base points of ALL
+// original picks (the bracket's full theoretical value, constant across rounds).
+function calcHealthPts(d, filterRi) {
+  let view = d
+  if (filterRi !== Infinity) {
+    view = structuredClone(d)
+    view.rounds.forEach((r, ri) => {
+      if (ri > filterRi) r.matches.forEach(m => { m.winner = null; m.score = null })
+    })
+    buildDrawView(view)
+  }
+
+  let maxHealthPts = 0, reachableHealthPts = 0
+  view.rounds.forEach((r, ri) => r.matches.forEach(m => {
+    if (!m.originalPick) return
+    const pts = ROUND_CONFIG[ri] ? ROUND_CONFIG[ri].base : 0
+    maxHealthPts += pts
+    if (m.winner) {
+      if (m.winner === m.originalPick) reachableHealthPts += pts
+    } else {
+      const slot = m.originalPick === m.p1.name ? m.p1
+        : m.originalPick === m.p2.name ? m.p2 : null
+      if (slot && !slot.elim) reachableHealthPts += pts
+    }
+  }))
+  return { maxHealthPts, reachableHealthPts }
+}
+
 export function calcStatsAsOf(d, upToRi = null) {
   const isLive = upToRi === null
   const filterRi = isLive ? Infinity : upToRi
   let filled = 0, total = 0, cOrig = 0, wOrig = 0, cBackup = 0, wBackup = 0
   let baseScore = 0, skillBonus = 0
   let cDrawOrig = 0, wDrawOrig = 0
-  let maxHealthPts = 0, reachableHealthPts = 0
-
-  const eliminated = new Set()
-  if (!isLive) {
-    d.rounds.forEach((r, ri) => {
-      if (ri > filterRi) return
-      r.matches.forEach(m => {
-        if (!m.winner) return
-        const loser = m.p1.name === m.winner ? m.p2.name : m.p1.name
-        if (loser) eliminated.add(loser)
-      })
-    })
-  }
 
   d.rounds.forEach((r, ri) => r.matches.forEach(m => {
-    if (!m.p1.name && !m.p2.name) return
     total++
     if (m.matchPick) filled++
+    if (!m.p1.name && !m.p2.name) return
 
     if (ri <= filterRi && m.winner) {
       const backup = isBackupPick(m)
@@ -72,26 +99,9 @@ export function calcStatsAsOf(d, upToRi = null) {
         else if (m.matchPickResult === 'wrong') wBackup++
       }
     }
-
-    if (m.originalPick) {
-      const pts = ROUND_CONFIG[ri] ? ROUND_CONFIG[ri].base : 0
-      maxHealthPts += pts
-      if (isLive) {
-        if (m.winner) {
-          if (m.winner === m.originalPick) reachableHealthPts += pts
-        } else {
-          const pickSlot = m.originalPick === m.p1.name ? m.p1 : m.originalPick === m.p2.name ? m.p2 : null
-          if (pickSlot && !pickSlot.elim) reachableHealthPts += pts
-        }
-      } else {
-        if (ri <= filterRi && m.winner) {
-          if (m.winner === m.originalPick) reachableHealthPts += pts
-        } else {
-          if (!eliminated.has(m.originalPick)) reachableHealthPts += pts
-        }
-      }
-    }
   }))
+
+  const { maxHealthPts, reachableHealthPts } = calcHealthPts(d, filterRi)
 
   return { filled, total, cOrig, wOrig, cDrawOrig, wDrawOrig, cBackup, wBackup, baseScore, skillBonus, maxHealthPts, reachableHealthPts }
 }

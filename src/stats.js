@@ -4,9 +4,11 @@ import { activeDraw, state } from './state.js'
 import { calcStatsAsOf, calcChalkScore, isBackupPick } from './scoring.js'
 
 let statsRoundFilter = null
+let _countdownClickHandler = null
 
 export function resetStatsFilter() { statsRoundFilter = null }
 export function getStatsFilter() { return statsRoundFilter }
+export function setCountdownClickHandler(fn) { _countdownClickHandler = fn }
 
 export function renderStats() {
   const strip = document.getElementById('stats-strip')
@@ -49,7 +51,8 @@ export function renderStats() {
     // Countdown to original picks lock if one is scheduled
     const origSched = (state.lockSchedules || []).find(ls =>
       ls.lock_type === 'original_picks' && !ls.locked_at && ls.scheduled_at &&
-      new Date(ls.scheduled_at) > new Date()
+      new Date(ls.scheduled_at) > new Date() &&
+      ls.draw_id === d.db_id
     )
     if (origSched) {
       const msLeft = new Date(origSched.scheduled_at) - Date.now()
@@ -60,8 +63,11 @@ export function renderStats() {
       const countdownPill = document.createElement('div')
       countdownPill.className = 'stat-pill countdown-pill'
       countdownPill.style.marginLeft = 'auto'
+      countdownPill.style.flexDirection = 'row'
+      countdownPill.style.alignItems = 'center'
+      countdownPill.style.gap = '10px'
       countdownPill.innerHTML = `
-        <span class="slbl">picks lock in</span>
+        <span class="slbl" style="margin-bottom:0">picks lock in</span>
         <span class="sval countdown-val${!allFilled ? ' countdown-urgent' : ''}">${hh}:${mm}</span>`
       strip.appendChild(countdownPill)
     }
@@ -162,22 +168,31 @@ export function renderStats() {
   strip.appendChild(healthPill)
 
   // ── LOCK COUNTDOWN ──
-  const upcoming = state.lockSchedules
+  // Find the soonest upcoming lock across ALL draws; tie-break to current draw.
+  const allUpcoming = (state.lockSchedules || [])
     .filter(ls => !ls.locked_at && ls.scheduled_at && new Date(ls.scheduled_at) > new Date())
-    .sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at))[0]
+    .sort((a, b) => {
+      const diff = new Date(a.scheduled_at) - new Date(b.scheduled_at)
+      if (diff !== 0) return diff
+      // Tie: prefer current draw
+      if (a.draw_id === d.db_id && b.draw_id !== d.db_id) return -1
+      if (b.draw_id === d.db_id && a.draw_id !== d.db_id) return 1
+      return 0
+    })
+  const upcoming = allUpcoming[0]
 
   if (upcoming) {
     const msLeft = new Date(upcoming.scheduled_at) - Date.now()
-    const label = 'next lock'
     const totalMins = Math.max(0, Math.floor(msLeft / 60000))
     const hh = String(Math.floor(totalMins / 60)).padStart(2, '0')
     const mm = String(totalMins % 60).padStart(2, '0')
-    const displayTime = `${hh}:${mm}`
+    const displayTime = `${hh}h:${mm}m`
 
-    // Check whether all affected picks in the upcoming lock range are filled
+    // Check whether all affected picks in the upcoming lock's draw are filled
+    const upcomingDraw = state.draws.find(dr => dr.db_id === upcoming.draw_id)
     let allFilled = true
-    if (upcoming.lock_type === 'backup_picks') {
-      const rounds = d.rounds
+    if (upcoming.lock_type === 'backup_picks' && upcomingDraw) {
+      const rounds = upcomingDraw.rounds
       const ri = upcoming.round_index
       if (ri != null && rounds[ri]) {
         rounds[ri].matches.forEach((m, mi) => {
@@ -188,12 +203,23 @@ export function renderStats() {
       }
     }
 
+    const labelText = upcoming.label
+      ? `next lock: <span style="font-style:italic">${upcoming.label}</span>`
+      : 'next lock'
+
     const countdownPill = document.createElement('div')
     countdownPill.className = 'stat-pill countdown-pill'
     countdownPill.style.borderRight = 'none'
     countdownPill.style.marginLeft = 'auto'
+    countdownPill.style.flexDirection = 'row'
+    countdownPill.style.alignItems = 'center'
+    countdownPill.style.gap = '10px'
+    if (!allFilled && _countdownClickHandler) {
+      countdownPill.classList.add('countdown-clickable')
+      countdownPill.addEventListener('click', () => _countdownClickHandler(upcoming))
+    }
     countdownPill.innerHTML = `
-      <span class="slbl">${label}</span>
+      <span class="countdown-lbl${!allFilled ? ' countdown-urgent' : ''}">${labelText}</span>
       <span class="sval countdown-val${!allFilled ? ' countdown-urgent' : ''}">${displayTime}</span>`
     strip.appendChild(countdownPill)
   }

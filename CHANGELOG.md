@@ -1,0 +1,116 @@
+# CHANGELOG — Slam Bracket Multiplayer
+
+Historical record of build steps, refactors, and fixed bugs. **Not loaded into context each session** — this is an archive, not the source of truth. Current state lives in `CLAUDE.md`. Read this only when you specifically need the history of *why* something changed; git is the fuller record.
+
+---
+
+## Refactor (2026-06-01 → 2026-06-02)
+
+### Step 1 — repo hygiene (2026-06-01)
+- `.gitignore` set to cover `node_modules/`, `dist/`, `.env.local`, `*.timestamp-*.mjs`, `_archive/`, `.DS_Store`.
+- `node_modules/`, `dist/`, and `.env.local` removed from git tracking (working copies on disk untouched).
+- Supabase key: `.env.local` had been committed earlier, exposing the legacy `anon` key in git history. Legacy anon keys can no longer be rotated (Supabase deprecated them). Resolved by migrating to a new-style **publishable** key (`sb_publishable_…`) stored in `.env.local`'s `VITE_SUPABASE_ANON_KEY` (var name kept so `supabase.js` is unchanged).
+- One-off SQL data dumps (RG 2026 seed/restore files, `add_is_active.sql`) moved to `_archive/`.
+- Build-session scratch notes (chat*-prompt.md, context.md, project-instructions.md) deleted.
+
+### Step 2 — complexity-wall parts C & E (2026-06-01)
+- **C:** extracted shared bracket geometry into `bracket-layout.js`; removed three verbatim copies from `bracket.js`, `viewer-bracket.js`, `commissioner-results.js`. Verified via `vite build`.
+- **E:** split the ~1000-line `commissioner.js` into `commissioner.js` (orchestrator + Draw Management) + `commissioner-results.js` + `commissioner-locks.js` + `commissioner-shared.js`. No behavior change.
+
+### Step 3 — data-model rewrite, parts A, B & D (2026-06-01)
+Behavior verified against a Node render-facts golden (`test-harness/`).
+
+- **A — explicit derived model.** New `src/draw-view.js` / `buildDrawView(d)` is the SINGLE pure derivation of all non-authoritative bracket state. `data.js` no longer reconstructs `p1`/`p2` inline or replays elimination at load; it loads raw rows and calls `buildDrawView`. Idempotent (rebuilds round-2+ slots from scratch each call).
+- **B — collapsed the forward-walkers.** Six overlapping walkers removed. All slot/elim/label derivation now lives in `buildDrawView`. `picks.js` keeps only two raw-field writers — `cascadeMatchPickForward` / `clearMatchPickForward` (Option 1, no DB change) — plus `withdrawalClearForward` / `updatePlayerNameForward` (authoritative fields only). Deleted: `markLoserForward`, `unmarkLoserForward`, `placePickAllRounds`, `clearPickForward`, `placePickInNextRound`.
+- **D — deleted the displaced-label hack.** `bracket.js` no longer does Case-1/Case-2 feeder lookups. `buildDrawView` computes `m.elimLabels = [{name,pos}]`; `placeCard` just paints them.
+- **Behavior note (approved by Ben):** the pure rebuild removed a latent "stale-until-reload" bug — three render spots now show the correct, reload-consistent state live. New live output == old post-refresh output. Everything else byte-identical.
+- **No DB migration.** Schema and stored data unchanged.
+
+### Leaderboard dedup (2026-06-02)
+`assembleDrawForUser` and `assembleDrawForUserOriginalPicks` in `leaderboard.js` previously hand-rolled their own slot/elim derivation. Both now call `buildDrawView` after stamping pick fields. `assembleDrawForUserOriginalPicks` retains Pass 1 for viewer-specific `actualP1`/`actualP2` fields; its manual Pass 2 slot reconstruction loop was deleted. Verified via harness + `vite build`.
+
+### Harness repair + golden refresh (2026-06-02)
+The DOM stub (`dom-stub.mjs`) gained `removeEventListener` and a minimal stub for the pick-confirm modal IDs (`pick-confirm-modal`/`pcm-name`/`pcm-confirm`/`pcm-cancel`); `#pcm-confirm` auto-fires its click so `showPickConfirm()` resolves true. All other IDs still return null. The harness had been throwing before any output (the stub predated the pick-confirm modal). `GOLDEN.frozen.txt` re-frozen against current code (Ben confirmed the post-golden backup-pick-cascade behavior is intentional) and verified deterministic.
+
+---
+
+## Chat log
+
+### Chat 1 — foundation
+- `src/supabase.js`, `src/state.js`, `src/auth.js`
+- `src/data.js` — `loadAllDraws()`, `loadDraw()`, `loadLockSchedules()`, `reloadActiveDraw()`
+- `src/scoring.js` — full scoring logic ported
+- `src/picks.js` — pick cascade + `savePickToSupabase()` + `applyWinner()`/`undoWinner()`
+- `src/lock.js` — `isMatchLocked()` read-only helper
+- `src/stats.js` — `renderStats()` ported
+- `src/bracket.js` — `renderBracket()`, `placeCard()`, edit player modal
+- `src/print.js` — `buildPrintHTML()` ported verbatim
+- `src/parser.js` — `extractPdfText()`, `parseTnnsText()`, `buildInitialRounds()` ported
+- `src/main.js` — full orchestration: auth, slam nav, search, print, logout
+- `index.html` — full CSS design system + all 5 screen divs
+- `vite.config.js`, `package.json`, `public/manifest.json`, `.env.local` (placeholder)
+
+### Chat 2 — commissioner screen
+- `src/commissioner.js` — `initCommissioner()`, `renderLockManaging()`; Draw Management tab (drop zone, PDF parse → editable R1 table, confirm draw = upsert draws row + 127 matches); Lock Managing tab (original picks lock with snapshot, backup pick locks via lock-bracket card selector, contiguous-range insert into lock_schedules, unlock via locked_at = null)
+- `src/picks.js` — `applyWinner()` / `undoWinner()` write to DB
+- `src/main.js` — wired `initCommissioner()`; `hdr-user-comm` in header; `draw-uploaded` event refreshes header
+- `index.html` — commissioner two-tab layout; CSS for `.comm-*`, `.drop-zone`, `.lock-*`, `.match-edit-row`
+
+### Chat 3 — leaderboard
+- `src/leaderboard.js` — `loadAllProfiles()`, `loadDrawStatsForAllUsers()`, `loadViewerPicks()`, `renderLeaderboard()`; per-slam view (MS+WS, sortable), all-time view, viewer mode, statsCache invalidated each render
+- `src/main.js` — wired `renderLeaderboard()`; viewer back button
+- `index.html` — `.lb-*` CSS
+
+### Chat 4 — polish
+- `src/stats.js` — lock countdown pill; pulses accent when affected picks unfilled
+- `src/bracket.js` — `needs-backup-pick` class; informative empty state
+- `src/main.js` — `setInterval` refreshes `renderStats()` every 60s on bracket screen
+- `index.html` — Refresh button; CSS for `.needs-backup-pick`, `.countdown-urgent`, `.bracket-empty`; mobile fixes
+
+### Chat 5 — leaderboard redesign + brand colors
+- `index.html` — real slam accent colors (AO `#2d7ab8`, RG `#BD5627`, WIM `#275F3D`, USO `#071C63`); USO distinct bg/border; leaderboard title uses `var(--text)`
+- `src/leaderboard.js` — two-tab structure (Slams / Records); draw detail view; original-picks viewer entry; `lbDetailDraw` nav state; `assembleDrawForUserOriginalPicks()` reconstructs p1/p2 for ri 1+, saves `actualP1`/`actualP2`
+- `src/bracket.js` — original-picks viewer mode styling (now removed in Chat 6)
+- `index.html` — `.viewer-hdr`; CSS for `.mc-actual-*`, `.mc-viewer`, `.viewer-hdr-*`
+
+### Chat 6 — viewer split into its own renderer
+- `src/viewer-bracket.js` — new file; `renderViewerBracket(draw)` + `placeViewerCard()`, fully independent read-only renderer
+- `src/bracket.js` — stripped of all viewer logic; live-bracket only
+- `src/leaderboard.js` — `openViewerOriginalPicks()` assembles viewer draw without touching `state.draws`
+- `src/main.js` — viewer back button simplified
+- `index.html` — `screen-viewer` fleshed out with own header/labels/body; dead viewer elements removed from `screen-bracket`
+
+### Chat 7 — commissioner lock bug fixes
+- `src/commissioner.js` — `getOrigPicksSchedule()`, `isMatchBackupLocked()`, `getMatchScheduledLock()` now filter by `ls.draw_id === d.db_id` (fixes MS/WS lock bleed)
+- `handleBackupLock()` deletes overlapping lock_schedules rows before inserting (fixes schedule-vs-lock-now conflict)
+- `renderLockBracket()` checks feeder match winner before showing names (slots without winner show `—`); inserts horizontal divider between top/bottom halves
+
+### Chat 8 — notes field, remove player result UI
+- `src/bracket.js` — removed ✓/✗ result buttons + score input from `placeCard()`; added per-user notes input (`.mc-notes`) on locked matches with a pick; removed `openWinnerPicker()` and `applyWinner`/`undoWinner` imports
+- `src/picks.js` — `savePickToSupabase()` includes `notes`; removed non-commissioner path from `applyWinner`/`undoWinner`
+- `src/data.js` — picks SELECT + assembly + `emptyMatch()` include `notes`
+- `src/main.js` — api-sync toggle replaced with real Refresh button
+- `src/state.js` — removed `apiSyncEnabled`
+- `index.html` — sync→Refresh; removed sync CSS; simplified `.mc-footer` + `.mc-notes`
+- `migrations.sql` — added `notes text` to picks
+
+### Chat 9 — pick/result field rename
+- `migrations.sql` — rename `pick`→`match_pick`, `result`→`original_pick_result`, add `match_pick_result`
+- `src/data.js`, `src/picks.js`, `src/scoring.js`, `src/bracket.js`, `src/stats.js`, `src/leaderboard.js`, `src/viewer-bracket.js`, `src/print.js`, `src/commissioner.js` — all updated to new field names; `applyWinner()` sets `originalPickResult` and `matchPickResult` independently per pick row; `undoWinner()` clears both
+
+### Chat 10 — post-lock backup-pick cascade
+- `src/picks.js` — `placePickAllRounds()` split into pre-lock (slot cascade) and post-lock (matchPick-only cascade); post-lock cascades `matchPick` forward without touching `p1`/`p2`, through elim'd slots; `clearPickForward()` post-lock clears only `matchPick`; `handlePickClick()` locked path cascades + `saveCascadeToSupabase()`; `markLoserForward()` clears `matchPick` for backup cascade
+- `src/bracket.js` — elim slots render backup matchPick (purple) or empty; eliminated player as floating label; correct backup gets `✓` (`pr-backup-ok-icon`); floating labels for case 1 + case 2; `findSeed` imported from picks.js
+- `src/commissioner.js` — undo handler calls `reloadActiveDraw()` after `undoWinner`
+- `index.html` — CSS for `.mc-orig-elim*`, `.pr-backup-ok-icon`
+- *(Note: parts of Chat 10's slot/label behavior were later superseded by Refactor Step 3's `buildDrawView` and the Chat 12 elim fix. See current CLAUDE.md for live behavior.)*
+
+### Chat 11 — lock countdown draw-scope fix + scheduled-locks list (2026-06-02)
+- `src/stats.js` — backup-pick lock countdown `upcoming` filter was missing `ls.draw_id === d.db_id`, letting a lock on one M/W draw drive the other draw's countdown. Added the draw filter (one line).
+- `src/commissioner-locks.js` — new "Scheduled Locks" list in Lock Managing → Backup Pick Locks: lists pending (not-yet-fired) backup locks for the active draw, soonest first, with Cancel (deletes row) and Reschedule (reuses `lock-sched-modal`). Helpers: `pendingBackupLocks`, `lockRangeLabel`, `renderScheduledLocksList`, `handleCancelScheduledLock`, `openRescheduleModal`, `updateScheduledLock`, `toLocalInputValue`. Wired via event delegation on `#lock-sched-list`.
+- **File-size split:** `commissioner-locks.js` (~700 lines) split into `commissioner-locks.js` (~100, orchestrator + shared msg/modal helpers), `commissioner-locks-orig.js` (~190, original-picks lock), `commissioner-locks-backup.js` (~445, backup-pick locks + scheduled-locks list). Imports form an intentional runtime cycle, safe because nothing runs at module-load time. Verified via `vite build`.
+
+### Chat 12 — eliminated pick not crossed out in later rounds (FIX, 2026-06-02)
+- **Bug:** an eliminated original pick showed un-crossed in rounds *beyond* a match that already had a confirmed winner. Cause: the old `markLoserForward` walked the loser forward one path at a time and broke at the first downstream match holding a `winner` (`if (nm.winner) break`). The loser's `originalPick` re-emerges via slot reconstruction in still-undecided matches past that winner, and those slots were never flagged `elim`.
+- **Fix:** deleted `markLoserForward`. Elimination is now derived from one global fact — **a player is eliminated if they lost any confirmed match.** `buildDrawView` builds one `eliminated` Set from the losers of every decided match, then flags `elim` on every still-undecided slot whose occupant is in the set (and nulls any dead backup `matchPick`). No early break, no single-path walk. Step order in the function: (1) slots, (2) eliminated set, (3) flag/clear, (4) displaced labels.
+- No DB/schema change. `vite build` clean; `test-harness` byte-identical to golden.
