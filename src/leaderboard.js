@@ -149,6 +149,8 @@ export async function loadDrawStatsForAllUsers(baseDraw) {
     const allRes = s.cOrig + s.wOrig + s.cBackup + s.wBackup
     result[prof.id] = {
       score: Math.round(s.baseScore + s.skillBonus),
+      baseScore: Math.round(s.baseScore),
+      upsetScore: parseFloat(s.skillBonus.toFixed(1)),
       drawAcc: origRes > 0 ? s.cDrawOrig / origRes : null,
       matchAcc: allRes > 0 ? (s.cOrig + s.cBackup) / allRes : null,
       drawHealth: s.maxHealthPts > 0 ? s.reachableHealthPts / s.maxHealthPts : null,
@@ -259,9 +261,11 @@ async function renderDrawDetail(root, profs, draw) {
 
   const cols = [
     { key: 'score',      label: 'Score',      sortable: true },
-    { key: 'drawAcc',    label: 'Draw %',      sortable: true },
-    { key: 'drawHealth', label: 'Health',      sortable: true },
-    { key: 'matchAcc',   label: 'Match %',     sortable: true },
+    { key: 'baseScore',  label: 'Base Pts',   sortable: true },
+    { key: 'upsetScore', label: 'Upset Pts',  sortable: true },
+    { key: 'drawAcc',    label: 'Draw %',     sortable: true },
+    { key: 'drawHealth', label: 'Health',     sortable: true },
+    { key: 'matchAcc',   label: 'Match %',    sortable: true },
   ]
 
   const tableWrap = document.createElement('div')
@@ -851,6 +855,8 @@ async function openViewerOriginalPicks(prof, draw) {
 function formatStat(key, val) {
   if (val === null || val === undefined) return '—'
   if (key === 'score' || key === 'avgScore') return val
+  if (key === 'baseScore') return val
+  if (key === 'upsetScore') return val % 1 === 0 ? val : val.toFixed(1)
   if (key === 'drawsPlayed') return val
   if (key === 'drawAcc' || key === 'matchAcc') return Math.round(val * 100) + '%'
   if (key === 'drawHealth') return Math.round(val * 100) + '%'
