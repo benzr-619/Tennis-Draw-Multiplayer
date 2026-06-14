@@ -20,6 +20,7 @@ Current rules files:
 - `.claude/rules/lock-conventions.md` — lock scoping function names, countdown details, scheduled locks list
 - `.claude/rules/leaderboard-detail.md` — SLAM_COLORS, grid values, tab internals, viewer entry point
 - `.claude/rules/supabase-mcp.md` — Supabase MCP connector: project ID, table schemas, how to run migrations/SQL without manual dashboard work
+- `.claude/rules/betting.md` — Match Yield betting layer: scoring formula, odds lifecycle, sport keys, name matching, DB objects, first-slam troubleshooting
 
 ---
 
@@ -204,13 +205,15 @@ Player clicks a flagged match → **confirmation modal** (`#pick-confirm-modal`;
 
 **Draw Health:** share of bracket's full point value still in play. `maxHealthPts` = base points of ALL original picks (constant). `reachableHealthPts` = picks confirmed correct OR still in slot and not `elim` (per `buildDrawView` flags). `calcHealthPts(d, filterRi)` clones draw, nulls winners after `filterRi`, re-runs `buildDrawView`. Leaderboard stats: Score, Draw Accuracy, Match Accuracy, Draw Health — no chalk comparison.
 
+**Slam Index:** pool-adjusted composite — `100 + 15 × avg(z_DrawYield, z_MatchYield)`. Population z-scores within players with ≥1 pick for that draw. Pool < 2 or stddev = 0 → z = 0 (index = 100). Pure function `calcSlamIndex(entries)` in `scoring.js`. On draw load/refresh, `fetchPoolSlamIndex()` in `stats.js` fetches all picks via `loadDrawStatsForAllUsers`, extracts current user's value, and re-renders the stats bar.
+
 ---
 
 ## 10. Leaderboard
 
-**Per-slam view:** Score, Draw Accuracy %, Match Accuracy %, Draw Health % per player. Separate MS/WS rows. Sortable.
-**Year-to-date / all-time:** Average score, overall Draw/Match Accuracy. Not split by MS/WS.
-Three tabs: `slams`, `records`, `yourdraws`. See `.claude/rules/leaderboard-detail.md` for SLAM_COLORS, grid values, tab internals, and viewer entry point.
+**Per-slam view:** Score, Draw Accuracy %, Match Accuracy %, Draw Health %, Slam Index per player. Separate MS/WS rows. Sortable.
+**Year-to-date / all-time:** Average score, overall Draw/Match Accuracy, avg Slam Index. Not split by MS/WS.
+Three tabs: `slams`, `records`, `yourdraws`. Records tab has four cards per period: Avg Score | Match Yield | Slam Index | Top Draws. See `.claude/rules/leaderboard-detail.md` for SLAM_COLORS, grid values, tab internals, and viewer entry point.
 
 ---
 
@@ -255,8 +258,11 @@ Reached via account-menu "Commissioner" entry (`enterCommissioner()`); exited vi
 
 ## 13. Feature Status
 
-**Built:** foundation, commissioner screen, leaderboard, polish, viewer, lock architecture (incl. scheduled-locks list), post-lock backup-pick cascade, `buildDrawView` derived-state model.
+**Built:** foundation, commissioner screen, leaderboard, polish, viewer, lock architecture (incl. scheduled-locks list), post-lock backup-pick cascade, `buildDrawView` derived-state model, Match Yield betting layer (odds polling, name matching, commissioner Odds tab, bracket card odds display), Records tab trophy-room redesign, Slams tab live-board redesign (stage 3: live slam header + sortable M/W cards + movement arrows + health underlines + storyline chips + past-slam compact/expand + generic list modal).
+
+**Naming note:** "Score" is labelled **Draw Yield** everywhere in the UI (stats bar, leaderboard). Internal key remains `score` in JS stats objects. Chalk display removed from UI; code retained in `scoring.js` / `stats.js` (commented out) for future re-enable.
 
 **Not yet built:**
 - Push/email notifications (not planned for v1)
 - Automated tests (`test-harness/` golden exists; see §0)
+- Mobile layout (desktop-only; mobile version is a future phase)

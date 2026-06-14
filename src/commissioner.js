@@ -9,6 +9,7 @@ import { extractPdfText, parseTnnsText } from './parser.js'
 import { $c, escHtml } from './commissioner-shared.js'
 import { renderResults, setPendingSearch } from './commissioner-results.js'
 import { renderLockManaging } from './commissioner-locks.js'
+import { renderOddsTab } from './commissioner-odds.js'
 import { animateSegThumb } from './seg-thumb.js'
 
 export { renderResults } from './commissioner-results.js'
@@ -37,17 +38,21 @@ export function initCommissioner() {
       .join('')
   }
 
-  // Tab switching — hdr-nav-link pattern; bracket pane uses flex layout, others block
-  document.querySelectorAll('#comm-hdr-nav .hdr-nav-link').forEach(btn => {
+  // Tab switching — wired on both desktop (#comm-hdr-nav) and mobile (#comm-mobile-hdr-nav)
+  const _allCommNavBtns = () => document.querySelectorAll('#comm-hdr-nav .hdr-nav-link, #comm-mobile-hdr-nav .hdr-nav-link')
+  document.querySelectorAll('#comm-hdr-nav .hdr-nav-link, #comm-mobile-hdr-nav .hdr-nav-link').forEach(btn => {
     btn.addEventListener('click', () => {
       const tab = btn.dataset.tab
-      document.querySelectorAll('#comm-hdr-nav .hdr-nav-link').forEach(b => b.classList.remove('active'))
-      btn.classList.add('active')
+      _allCommNavBtns().forEach(b => b.classList.remove('active'))
+      document.querySelectorAll(`[data-tab="${tab}"]`).forEach(b => {
+        if (b.closest('#comm-hdr-nav, #comm-mobile-hdr-nav')) b.classList.add('active')
+      })
       document.querySelectorAll('.comm-tab-pane').forEach(p => p.classList.remove('pane-active'))
       const pane = $c('comm-pane-' + tab)
       if (pane) pane.classList.add('pane-active')
       if (tab === 'lock') renderLockManaging()
       if (tab === 'results') renderResults()
+      if (tab === 'odds') renderOddsTab()
     })
   })
 
@@ -99,14 +104,14 @@ export function renderCommHeader() {
 
   const DRAW_TYPES = [{ key: 'MS', label: "Men's", short: 'M' }, { key: 'WS', label: "Women's", short: 'W' }]
   let newActiveIdx = -1
-  DRAW_TYPES.forEach(({ key, label, short }, i) => {
+
+  function _buildSegBtn(key, label, short, i, match, targetSeg) {
     const btn = document.createElement('button')
     btn.className = 'seg-btn'
     btn.innerHTML = `<span class="seg-full">${label}</span><span class="seg-short">${short}</span>`
-    const match = state.draws.find(x => slamKey(x) === slamKey(d) && x.draw === key)
     if (!match) { btn.disabled = true }
     else {
-      if (d.draw === key) { btn.classList.add('active'); newActiveIdx = i }
+      if (d.draw === key) btn.classList.add('active')
       btn.addEventListener('click', () => {
         const idx = state.draws.indexOf(match)
         if (idx < 0) return
@@ -114,14 +119,32 @@ export function renderCommHeader() {
         renderCommHeader()
         const activeTab = document.querySelector('#comm-hdr-nav .hdr-nav-link.active')?.dataset.tab
         if (activeTab === 'lock') renderLockManaging()
+        else if (activeTab === 'odds') renderOddsTab()
         else renderResults()
       })
     }
-    seg.appendChild(btn)
+    targetSeg.appendChild(btn)
+  }
+
+  DRAW_TYPES.forEach(({ key, label, short }, i) => {
+    const match = state.draws.find(x => slamKey(x) === slamKey(d) && x.draw === key)
+    if (d.draw === key) newActiveIdx = i
+    _buildSegBtn(key, label, short, i, match, seg)
   })
 
   animateSegThumb(seg, _commSegPrevIdx, newActiveIdx)
   _commSegPrevIdx = newActiveIdx
+
+  // Also populate mobile seg control (inside comm results pane bottom bar)
+  const segMobile = document.getElementById('comm-seg-control-mobile')
+  if (segMobile) {
+    segMobile.innerHTML = ''
+    DRAW_TYPES.forEach(({ key, label, short }, i) => {
+      const match = state.draws.find(x => slamKey(x) === slamKey(d) && x.draw === key)
+      _buildSegBtn(key, label, short, i, match, segMobile)
+    })
+    animateSegThumb(segMobile, -1, newActiveIdx)
+  }
 }
 
 // ── DROP ZONE ──

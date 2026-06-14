@@ -4,6 +4,8 @@ import { buildDrawView } from './draw-view.js'
 
 export const ROUND_CONFIG = Array.from({ length: 7 }, (_, i) => ({ base: Math.round(Math.pow(1.78, i)) }))
 
+export const STAKE_BY_ROUND = [10, 10, 20, 20, 30, 40, 50]
+
 export function numericSeed(seedStr) {
   const n = parseInt(seedStr)
   return (n >= 1 && n <= 32) ? n : 33
@@ -72,6 +74,7 @@ export function calcStatsAsOf(d, upToRi = null) {
   let filled = 0, total = 0, cOrig = 0, wOrig = 0, cBackup = 0, wBackup = 0
   let baseScore = 0, skillBonus = 0
   let cDrawOrig = 0, wDrawOrig = 0
+  let matchYield = 0, matchYieldResolved = 0
 
   d.rounds.forEach((r, ri) => r.matches.forEach(m => {
     total++
@@ -98,15 +101,62 @@ export function calcStatsAsOf(d, upToRi = null) {
         if (m.matchPickResult === 'correct') cBackup++
         else if (m.matchPickResult === 'wrong') wBackup++
       }
+
+      // Match Yield — all resolved matches with locked odds
+      const pickName = m.matchPick || m.originalPick
+      if (pickName && m.matchPickResult) {
+        const lockedOdds = pickName === m.p1?.name ? m.odds_p1_locked
+          : pickName === m.p2?.name ? m.odds_p2_locked : null
+        if (lockedOdds) {
+          const stake = STAKE_BY_ROUND[ri] ?? 10
+          matchYield += m.matchPickResult === 'correct'
+            ? Math.round(stake * (lockedOdds - 1))
+            : -stake
+          matchYieldResolved++
+        }
+      } else if (!pickName && m.odds_p1_locked && m.odds_p2_locked) {
+        // Auto-pick: no pick set → score as if player had picked the odds favourite
+        const favIsP1 = parseFloat(m.odds_p1_locked) <= parseFloat(m.odds_p2_locked)
+        const favOdds = favIsP1 ? parseFloat(m.odds_p1_locked) : parseFloat(m.odds_p2_locked)
+        const favWon = m.winner === (favIsP1 ? m.p1?.name : m.p2?.name)
+        const stake = STAKE_BY_ROUND[ri] ?? 10
+        matchYield += favWon ? Math.round(stake * (favOdds - 1)) : -stake
+        matchYieldResolved++
+      }
     }
   }))
 
   const { maxHealthPts, reachableHealthPts } = calcHealthPts(d, filterRi)
 
-  return { filled, total, cOrig, wOrig, cDrawOrig, wDrawOrig, cBackup, wBackup, baseScore, skillBonus, maxHealthPts, reachableHealthPts }
+  return { filled, total, cOrig, wOrig, cDrawOrig, wDrawOrig, cBackup, wBackup, baseScore, skillBonus, maxHealthPts, reachableHealthPts, matchYield, matchYieldResolved }
 }
 
 export function calcStats(d) { return calcStatsAsOf(d, null) }
+
+// Health hue: remap 25-90% → red-to-green. Shared by stats bar and leaderboard rows.
+export function healthHue(pct) {
+  return 4 + Math.max(0, Math.min(100, (pct - 25) * 100 / 65)) * 1.4
+}
+
+// Pool-adjusted composite metric.
+// entries = [{score, matchYield}] — one per player with ≥1 pick.
+// Returns array of SlamIndex integers in the same order.
+// Guards: pool < 2 or stddev = 0 → that z = 0 for everyone (index = 100).
+export function calcSlamIndex(entries) {
+  const n = entries.length
+  if (n < 2) return entries.map(() => 100)
+  const scores = entries.map(e => e.score ?? 0)
+  const yields = entries.map(e => e.matchYield ?? 0)
+  const meanS = scores.reduce((a, b) => a + b, 0) / n
+  const meanM = yields.reduce((a, b) => a + b, 0) / n
+  const stdS = Math.sqrt(scores.reduce((s, v) => s + (v - meanS) ** 2, 0) / n)
+  const stdM = Math.sqrt(yields.reduce((s, v) => s + (v - meanM) ** 2, 0) / n)
+  return entries.map(e => {
+    const zS = stdS > 0 ? ((e.score ?? 0) - meanS) / stdS : 0
+    const zM = stdM > 0 ? ((e.matchYield ?? 0) - meanM) / stdM : 0
+    return Math.round(100 + 15 * (zS + zM) / 2)
+  })
+}
 
 export function calcChalkScore(d) {
   let chalkBase = 0, chalkSkill = 0

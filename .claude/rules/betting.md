@@ -1,0 +1,104 @@
+# Betting Layer — Match Yield
+
+Read this when working on odds, Match Yield scoring, the Odds tab, or name mappings.
+
+## Scoring Formula
+
+`stakeByRound = [10, 10, 20, 20, 30, 40, 50]` (ri 0–6)
+
+- **Win:** `round(stake × (oddsDecimal − 1))`
+- **Loss:** `−stake`
+
+`oddsDecimal` = consensus decimal odds of the picked player, **frozen at pick-lock** (backup_picks lock fire time).
+
+Match Yield scores against `matchPickResult` (same as Match Accuracy), not `originalPickResult`. Covers all resolved matches where `odds_p1_locked` / `odds_p2_locked` is set.
+
+## Odds Lifecycle
+
+1. **Live odds:** `fetch_all_active_odds()` PL/pgSQL runs every 3 hours via pg_cron (`fetch-odds` job). Fetches h2h from The Odds API, computes consensus = avg decimal across bookmakers, upserts into `odds_raw`, then pushes matched consensus to `matches.odds_p1_live` / `odds_p2_live` where `name_mappings` exist.
+2. **Locked odds:** `fire_scheduled_locks()` (extended) snapshots `odds_p*_live → odds_p*_locked` when a `backup_picks` lock fires. Condition: `odds_p1_live IS NOT NULL AND odds_p1_locked IS NULL` (no overwrites).
+3. **Display:** Cards show American odds (live until locked, locked after). Post-result shows earned/lost yield.
+
+## API Details
+
+- **Key:** stored in Supabase Vault as `ODDS_API_KEY`. Never client-side.
+- **Endpoint:** `/v4/sports/{sport_key}/odds?regions=uk,eu&markets=h2h&oddsFormat=decimal`
+- **Budget:** ~2 credits/run × 8 runs/day × 14 days = 224 credits/slam (500/month free tier).
+
+## Sport Keys
+
+| Slam | MS | WS |
+|---|---|---|
+| AO | `tennis_atp_aus_open_singles` | `tennis_wta_aus_open_singles` |
+| RG | `tennis_atp_french_open` | `tennis_wta_french_open` |
+| WIM | `tennis_atp_wimbledon` | `tennis_wta_wimbledon` |
+| USO | `tennis_atp_us_open` | `tennis_wta_us_open` |
+
+AO uses `_singles` suffix; others do not.
+
+## Name Matching
+
+Odds API delivers full names: `"Carlos Alcaraz"`. Draw players also stored as full names from TNNS PDFs.
+
+Auto-match: `normaliseName()` strips diacritics (NFD + Unicode combining chars), lowercases, collapses spaces. Mirrors `normalise_player_name()` SQL function. If normalised strings match, the SQL poller writes consensus odds to the match row automatically.
+
+Unmatched names (normalised strings don't match) appear in Commissioner → Odds tab for manual triage. Mappings saved to `name_mappings` table (api_name PK, draw_player_name). Persist across slams for returning players.
+
+## DB Objects
+
+| Object | Purpose |
+|---|---|
+| `odds_raw` | Raw API event rows (home/away names, consensus decimals, fetched_at) |
+| `name_mappings` | api_name → draw_player_name, persists across slams |
+| `matches.odds_p1_live/p2_live` | Live consensus decimal, updated each fetch |
+| `matches.odds_p1_locked/p2_locked` | Frozen at backup-picks lock time |
+| `fetch_all_active_odds()` | SQL poller, SECURITY DEFINER, reads vault key |
+| `refresh_odds_now()` | Commissioner RPC, calls fetch_all_active_odds(), enforces is_commissioner |
+| `normalise_player_name(text)` | SQL helper, mirrors JS normaliseName() |
+| pg_cron `fetch-odds` | `0 */3 * * *` — every 3 hours |
+
+## JS Modules
+
+- `src/odds.js` — `STAKE_BY_ROUND`, `normaliseName`, `decimalToAmerican`, `formatAmerican`, `formatYield`, `pickedLockedOdds`, `liveOdds`, data access functions
+- `src/scoring.js` — `STAKE_BY_ROUND` export, `matchYield` / `matchYieldResolved` added to `calcStatsAsOf` return
+- `src/stats.js` — Match Yield pill (post Draw Yield, before Draw Accuracy)
+- `src/leaderboard.js` — slam card has Match Yield column; detail view columns match stats bar order; records tab Match Yield card replaces Match Accuracy
+- `src/bracket.js` — odds/yield footer on match cards
+- `src/commissioner-odds.js` — Odds tab: status/refresh, unmatched triage, saved mappings
+
+## Leaderboard Column Order
+
+**Stats bar (post-lock):** Draw Yield → Match Yield → Draw Accuracy → Match Accuracy → Draw Health
+
+**Slam summary card:** Player / Draw Yield / Match Yield / Health
+
+**Detail view:** Player / Draw Yield / Base Pts / Upset Pts / Match Yield / Draw % / Match % / Health
+
+**Records tab:** Avg Score card | Match Yield card (Avg/Best toggle) | Top Brackets card
+
+## Auto-Pick Favourite (BUILT — scoring.js ~line 117)
+
+When a player has no `matchPick` AND `odds_p1_locked` / `odds_p2_locked` exist AND the match has a result → scored for Match Yield as if they picked the **odds favourite** (lower decimal = favourite).
+
+- **Scoring only** — no DB row created, purely computed in `calcStatsAsOf`
+- **Match Yield only** — Draw Yield / Draw Accuracy / Match Accuracy unaffected
+- **Overridden by any real pick** — if `matchPick` is set, real pick wins
+- **Favourite determination:** `odds_p1_locked < odds_p2_locked` → p1 is favourite; otherwise p2
+- Tracked in the same `matchYield` accumulator and increments `matchYieldResolved`
+
+**Bracket card display** (`bracket.js` `placeCard`): When no pick + locked odds exist on an undecided match → shows favourite name with a grey-purple "auto" badge (`.mc-odds-auto`). Post-result → shows yield with "auto" label.
+
+## First-Slam Troubleshooting
+
+- Commissioner → Odds tab shows fetch status and last fetch time.
+- "Force refresh now" calls `refresh_odds_now()` RPC immediately.
+- If sport key is wrong (data returns empty), check The Odds API `/v4/sports` list and update the CASE statement in `fetch_all_active_odds()`.
+- If names don't auto-match, they appear in the "Unmatched API Names" section for manual assignment.
+- `odds_raw` table can be inspected directly via Supabase MCP `execute_sql` to debug what the API returned.
+
+## Display: American Odds
+
+- Underdog (decimal ≥ 2.0): `+round((decimal − 1) × 100)` → e.g. `+150`
+- Favourite (decimal < 2.0): `round(−100 / (decimal − 1))` → e.g. `−200`
+
+Chalk code (`calcChalkScore`) is retained in `scoring.js` / `stats.js` but not rendered. Uncommenting the `chalkHTML` lines in `stats.js` re-enables it.

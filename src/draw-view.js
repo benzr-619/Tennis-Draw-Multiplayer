@@ -100,20 +100,19 @@ export function buildDrawView(d, opts = {}) {
       m.elimLabels = []
       // Viewer floats the actual occupant (mc-actual), not the displaced pick, so
       // it never consumes elimLabels — skip the whole pass in projectFromPick mode.
-      if (projectFromPick || m.winner) return
-      // Case 1: a slot still projects the eliminated original pick. We do NOT
-      // float a label here — the eliminated name stays INSIDE the card (red,
-      // crossed-out) until a confirmed winner from the feeder match displaces
-      // it (that's Case 2). The slot keeps its name + elim flag; bracket.js
-      // paints it in place.
-      // Case 2: the original pick was displaced by a real winner in this slot —
-      // it's in neither slot and carries no elim flag. Locate its side via feeders.
-      const op = m.originalPick
-      if (op && !m.p1?.elim && !m.p2?.elim && op !== m.p1?.name && op !== m.p2?.name) {
-        const feederP1 = ri > 0 ? rounds[ri - 1]?.matches[mi * 2] : null
-        const feederP2 = ri > 0 ? rounds[ri - 1]?.matches[mi * 2 + 1] : null
-        if (feederP1?.originalPick === op) m.elimLabels.push({ name: op, pos: 'top' })
-        else if (feederP2?.originalPick === op) m.elimLabels.push({ name: op, pos: 'bot' })
+      if (projectFromPick) return
+      // For each slot, check the feeder match's originalPick against whoever
+      // actually occupies the slot. If they differ, the pick was displaced — float
+      // it outside in red+crossed. Both slots are checked independently so a match
+      // can show displaced picks from both halves (e.g. the Final shows the top-half
+      // pick above AND the bottom-half pick below if both were eliminated before the Final).
+      if (ri > 0) {
+        const feeder1 = rounds[ri - 1].matches[mi * 2]
+        const feeder2 = rounds[ri - 1].matches[mi * 2 + 1]
+        const op1 = feeder1?.originalPick
+        const op2 = feeder2?.originalPick
+        if (op1 && op1 !== m.p1?.name) m.elimLabels.push({ name: op1, pos: 'top' })
+        if (op2 && op2 !== m.p2?.name) m.elimLabels.push({ name: op2, pos: 'bot' })
       }
     })
   })

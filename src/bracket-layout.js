@@ -26,7 +26,7 @@ const DEFAULT_EMPTY = `
  * @param {string}   [opts.emptyHTML]   markup shown when there is no draw
  * @returns {Element|null} the `.bracket-svg-wrap` element, or null if empty
  */
-export function renderBracketLayout({ draw, body, labelsInner, placeCard, championName, emptyHTML }) {
+export function renderBracketLayout({ draw, body, labelsInner, placeCard, championName, championClass, renderChampion, emptyHTML }) {
   if (!body) return null
   body.innerHTML = ''
   if (!draw || !draw.rounds || !draw.rounds.length) {
@@ -125,13 +125,21 @@ export function renderBracketLayout({ draw, body, labelsInner, placeCard, champi
 
   // Champion box
   const champX = finX + CW + GAP, champY = finCY - 36
-  const champDiv = document.createElement('div'); champDiv.className = 'champ-box'
-  champDiv.style.cssText = `left:${champX}px;top:${champY}px;position:absolute`
-  const champLbl = document.createElement('div'); champLbl.className = 'champ-label'; champLbl.textContent = 'Champion'
-  const champNm = document.createElement('div'); champNm.className = 'champ-name'
-  const nameFn = championName || (f => (f && f.winner) || '—')
-  champNm.textContent = (finMatch && nameFn(finMatch)) || '—'
-  champDiv.appendChild(champLbl); champDiv.appendChild(champNm); wrap.appendChild(champDiv)
+  if (finMatch && renderChampion) {
+    renderChampion(finMatch, champX, champY, wrap)
+  } else {
+    const champDiv = document.createElement('div'); champDiv.className = 'champ-box'
+    champDiv.style.cssText = `left:${champX}px;top:${champY}px;position:absolute`
+    const champLbl = document.createElement('div'); champLbl.className = 'champ-label'; champLbl.textContent = 'Champion'
+    const champNm = document.createElement('div'); champNm.className = 'champ-name'
+    const nameFn = championName || (f => (f && f.winner) || '—')
+    champNm.textContent = (finMatch && nameFn(finMatch)) || '—'
+    if (finMatch && championClass) {
+      const cls = championClass(finMatch)
+      if (cls) champDiv.classList.add(cls)
+    }
+    champDiv.appendChild(champLbl); champDiv.appendChild(champNm); wrap.appendChild(champDiv)
+  }
   addLine(finX + CW, finCY, champX, finCY)
 
   // Round labels

@@ -14,3 +14,5 @@ export function activeDraw() {
 export function applyTheme(slam) {
   document.body.className = slam ? 'theme-' + slam : ''
 }
+
+export const isMobile = () => window.matchMedia('(max-width: 768px)').matches

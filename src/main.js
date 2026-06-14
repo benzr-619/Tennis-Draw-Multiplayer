@@ -1,9 +1,10 @@
-import { state, activeDraw, applyTheme } from './state.js'
+import { state, activeDraw, applyTheme, isMobile } from './state.js'
 import { login, signup, logout, restoreSession } from './auth.js'
-import { loadAllDraws, loadLockSchedules, reloadActiveDraw, slamKey, slamLabel, SLAM_CONFIG } from './data.js'
-import { renderBracket } from './bracket.js'
-import { closeModal, confirmEditPlayer } from './commissioner-results.js'
-import { renderStats, resetStatsFilter, setCountdownClickHandler } from './stats.js'
+import { loadAllDraws, reloadActiveDraw, slamKey, slamLabel } from './data.js'
+import { renderBracket, renderBracketDirect, placeCard, setRenderBracketFn } from './bracket.js'
+import { renderBracketList } from './bracket-list.js'
+import { closeModal, confirmEditPlayer, renderCommRoundSelector } from './commissioner-results.js'
+import { renderStats, resetStatsFilter, setCountdownClickHandler, fetchPoolSlamIndex } from './stats.js'
 import { buildPrintHTML } from './print.js'
 import { initCommissioner, renderResults, renderLockManaging } from './commissioner.js'
 import { renderLeaderboard } from './leaderboard.js'
@@ -20,10 +21,50 @@ function showScreen(id) {
 }
 
 // ── SEGMENTED CONTROL STATE ──
-let _segPrevIdx = -1  // tracks previous M/W index for slide animation
+let _segPrevIdx = -1
+
+// ── MOBILE BRACKET STATE ──
+let _mobileActiveRound = 0
+
+function defaultMobileRound(d) {
+  if (!d) return 0
+  for (let ri = 0; ri < d.rounds.length; ri++) {
+    if (d.rounds[ri].matches.some(m => !m.winner && (m.p1?.name || m.p2?.name))) return ri
+  }
+  return Math.max(0, d.rounds.length - 1)
+}
+
+// Smart dispatcher: list on mobile, layout on desktop.
+// Registered with setRenderBracketFn so placeCard click callbacks call this too.
+function renderBracketDisplay() {
+  const d = activeDraw()
+  if (isMobile()) {
+    renderBracketList(d, _mobileActiveRound, $('bracket-body'), placeCard)
+    renderRoundSelector(d)
+  } else {
+    renderBracketDirect()
+  }
+}
+
+function renderRoundSelector(d) {
+  const bar = $('round-selector-bar')
+  if (!bar) return
+  bar.innerHTML = ''
+  if (!d) return
+  d.rounds.forEach((r, ri) => {
+    const btn = document.createElement('button')
+    btn.className = 'round-sel-btn' + (ri === _mobileActiveRound ? ' active' : '')
+    btn.textContent = r.label
+    btn.addEventListener('click', () => {
+      _mobileActiveRound = ri
+      renderBracketDisplay()
+    })
+    bar.appendChild(btn)
+  })
+}
 
 // ── AUTH SCREEN ──
-let authMode = 'login' // 'login' | 'signup'
+let authMode = 'login'
 
 function setAuthMode(mode) {
   authMode = mode
@@ -77,8 +118,6 @@ $('auth-form').addEventListener('submit', async e => {
 
 // ── ROUTING ──
 async function routeAfterAuth() {
-  // Commissioner-capable users land on the normal player view; they reach the
-  // commissioner screen via the account-menu "Commissioner" entry (revealed below).
   document.querySelectorAll('.commish-nav').forEach(b => {
     b.hidden = !state.currentUser?.is_commissioner
   })
@@ -89,19 +128,18 @@ async function routeAfterAuth() {
 function renderHeader() {
   const d = activeDraw()
 
-  // Static slam name label (bracket screen)
   const nameEl = $('slam-name-label')
   if (nameEl) nameEl.textContent = d ? slamLabel(d) : '—'
 
-  // Leaderboard slam name label
   const lbNameEl = $('lb-slam-name-label')
   if (lbNameEl) lbNameEl.textContent = d ? slamLabel(d) : '—'
 
-  // Segmented control (bracket screen M/W switcher)
-  const seg = $('seg-control')
-  if (seg && d) {
-    seg.innerHTML = ''
-    const DRAW_TYPES = [{ key: 'MS', label: "Men's", short: 'M' }, { key: 'WS', label: "Women's", short: 'W' }]
+  // Populate M/W seg (desktop row 2 and mobile bottom bar share the same build logic)
+  const DRAW_TYPES = [{ key: 'MS', label: "Men's", short: 'M' }, { key: 'WS', label: "Women's", short: 'W' }]
+
+  function _buildSeg(segEl) {
+    if (!segEl || !d) return
+    segEl.innerHTML = ''
     let activeSegIdx = 0
     DRAW_TYPES.forEach(({ key, label, short }, i) => {
       const btn = document.createElement('button')
@@ -116,13 +154,26 @@ function renderHeader() {
           if (idx >= 0) switchTab(idx)
         })
       }
-      seg.appendChild(btn)
+      segEl.appendChild(btn)
     })
-    animateSegThumb(seg, _segPrevIdx, activeSegIdx)
-    _segPrevIdx = activeSegIdx
+    return activeSegIdx
   }
 
-  // User display + avatar initials
+  const seg = $('seg-control')
+  const activeIdx = _buildSeg(seg)
+  if (seg && d) {
+    animateSegThumb(seg, _segPrevIdx, activeIdx)
+    _segPrevIdx = activeIdx
+  }
+
+  // Mobile bottom bar M/W seg — same logic, no animation tracking needed
+  const segMobile = $('seg-control-mobile')
+  if (segMobile && d) {
+    _buildSeg(segMobile)
+    animateSegThumb(segMobile, -1, activeIdx)
+  }
+
+  // User display
   const user = state.currentUser
   const userEl = $('hdr-user')
   const userLbEl = $('hdr-user-lb')
@@ -137,21 +188,15 @@ async function switchTab(i) {
   if (!d) return
   applyTheme(d.slam)
   await reloadActiveDraw()
+  if (isMobile()) _mobileActiveRound = defaultMobileRound(activeDraw())
   renderHeader()
   renderStats()
-  renderBracket()
+  renderBracketDisplay()
+  fetchPoolSlamIndex(activeDraw(), state.currentUser?.id).then(() => renderStats())
 }
 
-async function handleCountdownClick(lock) {
-  // Switch to the draw that owns this lock if needed
-  const targetIdx = state.draws.findIndex(dr => dr.db_id === lock.draw_id)
-  if (targetIdx >= 0 && targetIdx !== state.activeTab) {
-    await switchTab(targetIdx)
-  }
-  // Find the first unpicked match card in the lock range
-  const d = state.draws[targetIdx >= 0 ? targetIdx : state.activeTab]
-  if (!d) return
-  let targetCard = null
+// ── FIND UNPICKED CARD HELPER ──
+function _findUnpickedCard(d, lock) {
   if (lock.lock_type === 'backup_picks' && lock.round_index != null) {
     const ri = lock.round_index
     const matches = d.rounds[ri]?.matches || []
@@ -159,29 +204,57 @@ async function handleCountdownClick(lock) {
       const inRange = (lock.match_index_start == null || mi >= lock.match_index_start) &&
                       (lock.match_index_end == null || mi <= lock.match_index_end)
       if (inRange && !matches[mi].matchPick && !matches[mi].winner) {
-        targetCard = document.querySelector(`.mc[data-ri="${ri}"][data-mi="${mi}"]`)
-        if (targetCard) break
+        const card = document.querySelector(`.mc[data-ri="${ri}"][data-mi="${mi}"]`)
+        if (card) return card
       }
     }
   } else {
-    // original_picks lock — find first match with no matchPick
     for (let ri = 0; ri < d.rounds.length; ri++) {
       for (let mi = 0; mi < (d.rounds[ri]?.matches.length || 0); mi++) {
         const m = d.rounds[ri].matches[mi]
         if (!m.matchPick && !m.winner) {
-          targetCard = document.querySelector(`.mc[data-ri="${ri}"][data-mi="${mi}"]`)
-          break
+          const card = document.querySelector(`.mc[data-ri="${ri}"][data-mi="${mi}"]`)
+          if (card) return card
         }
       }
-      if (targetCard) break
     }
   }
-  if (targetCard) {
-    targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    targetCard.style.transition = 'box-shadow 0.2s'
-    targetCard.style.boxShadow = '0 0 0 2px var(--accent)'
-    setTimeout(() => { targetCard.style.boxShadow = '' }, 1200)
+  return null
+}
+
+function _flashCard(card) {
+  if (!card) return
+  card.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  card.style.transition = 'box-shadow 0.2s'
+  card.style.boxShadow = '0 0 0 2px var(--accent)'
+  setTimeout(() => { card.style.boxShadow = '' }, 1200)
+}
+
+async function handleCountdownClick(lock) {
+  const targetIdx = state.draws.findIndex(dr => dr.db_id === lock.draw_id)
+  if (targetIdx >= 0 && targetIdx !== state.activeTab) {
+    await switchTab(targetIdx)
   }
+  const d = state.draws[targetIdx >= 0 ? targetIdx : state.activeTab]
+  if (!d) return
+
+  if (isMobile()) {
+    // Switch to the correct round in list view first
+    if (lock.lock_type === 'backup_picks' && lock.round_index != null) {
+      _mobileActiveRound = lock.round_index
+    } else {
+      for (let ri = 0; ri < d.rounds.length; ri++) {
+        if (d.rounds[ri].matches.some(m => !m.matchPick && !m.winner && (m.p1?.name || m.p2?.name))) {
+          _mobileActiveRound = ri; break
+        }
+      }
+    }
+    renderBracketDisplay()
+    setTimeout(() => _flashCard(_findUnpickedCard(d, lock)), 80)
+    return
+  }
+
+  _flashCard(_findUnpickedCard(d, lock))
 }
 
 // ── SEARCH ──
@@ -201,8 +274,8 @@ function allMatchesForSearch() {
   return results
 }
 
-function runSearch(q) {
-  const res = $('search-results')
+function runSearch(q, resultsEl) {
+  const res = resultsEl || $('search-results')
   if (!q || q.length < 2) { res.classList.remove('open'); return }
   const lower = q.toLowerCase()
   const all = allMatchesForSearch()
@@ -231,12 +304,17 @@ function runSearch(q) {
       item.addEventListener('click', async () => {
         closeSearch()
         if (x.drawIdx !== state.activeTab) await switchTab(x.drawIdx)
-        const card = document.querySelector(`.mc[data-ri="${x.ri}"][data-mi="${x.mi}"]`)
-        if (card) {
-          card.scrollIntoView({ behavior: 'smooth', block: 'center' })
-          card.style.transition = 'box-shadow 0.2s'
-          card.style.boxShadow = '0 0 0 2px var(--accent)'
-          setTimeout(() => { card.style.boxShadow = '' }, 1200)
+        // On mobile, jump to the right round first
+        if (isMobile()) {
+          _mobileActiveRound = x.ri
+          renderBracketDisplay()
+          setTimeout(() => {
+            const card = document.querySelector(`.mc[data-ri="${x.ri}"][data-mi="${x.mi}"]`)
+            _flashCard(card)
+          }, 80)
+        } else {
+          const card = document.querySelector(`.mc[data-ri="${x.ri}"][data-mi="${x.mi}"]`)
+          _flashCard(card)
         }
       })
       res.appendChild(item)
@@ -246,19 +324,25 @@ function runSearch(q) {
 }
 
 function closeSearch() {
-  $('search-results').classList.remove('open')
-  $('search-input').value = ''
-  $('search-clear').classList.remove('visible')
+  ;[$('search-results'), $('mobile-search-results')].forEach(el => el?.classList.remove('open'))
+  ;[$('search-input'), $('mobile-search-input')].forEach(el => { if (el) el.value = '' })
+  ;[$('search-clear'), $('mobile-search-clear')].forEach(el => el?.classList.remove('visible'))
 }
 
+// Desktop search
 $('search-input').addEventListener('input', e => {
   const q = e.target.value.trim()
   $('search-clear').classList.toggle('visible', q.length > 0)
-  runSearch(q)
+  runSearch(q, $('search-results'))
 })
-$('search-input').addEventListener('focus', e => { if (e.target.value.trim().length >= 2) runSearch(e.target.value.trim()) })
+$('search-input').addEventListener('focus', e => { if (e.target.value.trim().length >= 2) runSearch(e.target.value.trim(), $('search-results')) })
 $('search-clear').addEventListener('click', closeSearch)
-document.addEventListener('click', e => { if (!$('search-wrap')?.contains(e.target)) $('search-results').classList.remove('open') })
+document.addEventListener('click', e => {
+  if (!$('search-wrap')?.contains(e.target) && !$('mobile-search-wrap')?.contains(e.target)) {
+    $('search-results')?.classList.remove('open')
+    $('mobile-search-results')?.classList.remove('open')
+  }
+})
 
 $('search-input').addEventListener('keydown', e => {
   if (e.key === 'Escape') { closeSearch(); return }
@@ -286,9 +370,28 @@ $('search-input').addEventListener('keydown', e => {
   }
 })
 
+// Mobile search
+const _msi = $('mobile-search-input')
+const _msc = $('mobile-search-clear')
+if (_msi) {
+  _msi.addEventListener('input', e => {
+    const q = e.target.value.trim()
+    _msc?.classList.toggle('visible', q.length > 0)
+    runSearch(q, $('mobile-search-results'))
+  })
+  _msi.addEventListener('focus', e => {
+    if (e.target.value.trim().length >= 2) runSearch(e.target.value.trim(), $('mobile-search-results'))
+  })
+  _msc?.addEventListener('click', () => {
+    _msi.value = ''
+    _msc.classList.remove('visible')
+    $('mobile-search-results')?.classList.remove('open')
+  })
+}
+
 document.addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
-    const input = $('search-input')
+    const input = isMobile() ? $('mobile-search-input') : $('search-input')
     if (input && $('screen-bracket').classList.contains('active')) {
       e.preventDefault(); input.focus(); input.select()
     }
@@ -319,24 +422,37 @@ $('logout-btn').addEventListener('click', doLogout)
 $('logout-btn-lb').addEventListener('click', doLogout)
 $('logout-btn-comm').addEventListener('click', doLogout)
 
+// ── NAV ACTIVE STATE ──
+function _setNavActive(page) {
+  const isBracket = page === 'bracket'
+  $('nav-bracket')?.classList.toggle('active', isBracket)
+  $('nav-leaderboard')?.classList.toggle('active', !isBracket)
+  $('mobile-nav-bracket')?.classList.toggle('active', isBracket)
+  $('mobile-nav-leaderboard')?.classList.toggle('active', !isBracket)
+  $('lb-mobile-nav-bracket')?.classList.toggle('active', isBracket)
+  $('lb-mobile-nav-leaderboard')?.classList.toggle('active', !isBracket)
+}
+
 // ── NAV LINKS ──
-$('nav-bracket').addEventListener('click', () => showBracketScreen())
-$('nav-leaderboard').addEventListener('click', () => { showScreen('screen-leaderboard'); renderLeaderboard() })
+$('nav-bracket').addEventListener('click', () => { _setNavActive('bracket'); showBracketScreen() })
+$('nav-leaderboard').addEventListener('click', () => { _setNavActive('leaderboard'); showScreen('screen-leaderboard'); renderLeaderboard() })
+$('nav-bracket-from-lb').addEventListener('click', () => { _setNavActive('bracket'); showBracketScreen() })
+$('mobile-nav-bracket')?.addEventListener('click', () => { _setNavActive('bracket'); showBracketScreen() })
+$('mobile-nav-leaderboard')?.addEventListener('click', () => { _setNavActive('leaderboard'); showScreen('screen-leaderboard'); renderLeaderboard() })
+$('lb-mobile-nav-bracket')?.addEventListener('click', () => { _setNavActive('bracket'); showBracketScreen() })
+$('lb-mobile-nav-leaderboard')?.addEventListener('click', () => { _setNavActive('leaderboard'); showScreen('screen-leaderboard'); renderLeaderboard() })
 
-$('nav-bracket-from-lb').addEventListener('click', () => showBracketScreen())
-
-// ── COMMISSIONER ENTER / EXIT (combined-role nav) ──
+// ── COMMISSIONER ENTER / EXIT ──
 function enterCommissioner() {
   if (!state.currentUser?.is_commissioner) return
   closeAcctMenus()
-  initCommissioner() // idempotent; renders header + Results tab
+  initCommissioner()
   showScreen('screen-commissioner')
 }
 $('commish-btn')?.addEventListener('click', enterCommissioner)
 $('commish-btn-lb')?.addEventListener('click', enterCommissioner)
 $('exit-commish-btn')?.addEventListener('click', () => { closeAcctMenus(); showBracketScreen() })
 
-// Cmd/Ctrl+E toggles between the draw and commissioner views (commissioner-capable only).
 document.addEventListener('keydown', (e) => {
   if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'e' || e.shiftKey || e.altKey) return
   if (!state.currentUser?.is_commissioner) return
@@ -386,10 +502,15 @@ async function doRefresh(btnId, after) {
     btn.classList.remove('spinning')
   }
 }
-$('api-sync-btn').addEventListener('click', () => doRefresh('api-sync-btn', () => { renderStats(); renderBracket() }))
+$('api-sync-btn').addEventListener('click', () => doRefresh('api-sync-btn', () => {
+  renderStats()
+  renderBracketDisplay()
+  fetchPoolSlamIndex(activeDraw(), state.currentUser?.id).then(() => renderStats())
+}))
 $('api-sync-btn-lb')?.addEventListener('click', () => doRefresh('api-sync-btn-lb', () => renderLeaderboard()))
 $('api-sync-btn-cmsr')?.addEventListener('click', () => doRefresh('api-sync-btn-cmsr', () => {
-  const activeTab = document.querySelector('#comm-hdr-nav .hdr-nav-link.active')?.dataset.tab
+  const activeTab = (document.querySelector('#comm-hdr-nav .hdr-nav-link.active') ||
+                     document.querySelector('#comm-mobile-hdr-nav .hdr-nav-link.active'))?.dataset.tab
   if (activeTab === 'lock') renderLockManaging()
   else renderResults()
 }))
@@ -406,7 +527,7 @@ $('epm-cancel').addEventListener('click', closeModal)
 $('epm-confirm').addEventListener('click', confirmEditPlayer)
 $('edit-player-modal').addEventListener('click', e => { if (e.target === $('edit-player-modal')) closeModal() })
 
-// ── ROUND LABELS SCROLL SYNC ──
+// ── ROUND LABELS SCROLL SYNC (desktop only) ──
 const bb = $('bracket-body'), li = $('round-labels-inner')
 if (bb && li) {
   bb.addEventListener('scroll', function () { li.style.transform = 'translateX(-' + this.scrollLeft + 'px)' })
@@ -418,21 +539,26 @@ async function showBracketScreen() {
     applyTheme('')
     renderHeader()
     renderStats()
-    renderBracket()
+    renderBracketDisplay()
     showScreen('screen-bracket')
     return
   }
   const d = activeDraw()
-  if (d) applyTheme(d.slam)
+  if (d) {
+    applyTheme(d.slam)
+    if (isMobile() && _mobileActiveRound === 0) _mobileActiveRound = defaultMobileRound(d)
+  }
   renderHeader()
   renderStats()
-  renderBracket()
+  renderBracketDisplay()
   showScreen('screen-bracket')
+  fetchPoolSlamIndex(activeDraw(), state.currentUser?.id).then(() => renderStats())
 }
 
 // ── BOOT ──
 async function init() {
   setCountdownClickHandler(handleCountdownClick)
+  setRenderBracketFn(renderBracketDisplay)
   try {
     const user = await restoreSession()
     if (!user) {

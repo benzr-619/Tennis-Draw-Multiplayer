@@ -45,7 +45,7 @@ export async function loadDraw(drawRow) {
   // Fetch matches
   const { data: matchRows, error: me } = await supabase
     .from('matches')
-    .select('id, round_index, match_index, p1_name, p1_seed, p2_name, p2_seed, winner, score, roster_changed_at')
+    .select('id, round_index, match_index, p1_name, p1_seed, p2_name, p2_seed, winner, score, roster_changed_at, odds_p1_live, odds_p2_live, odds_fetched_at, odds_p1_locked, odds_p2_locked, odds_locked_at')
     .eq('draw_id', drawId)
     .order('round_index', { ascending: true })
 
@@ -87,6 +87,12 @@ export async function loadDraw(drawRow) {
       winner: mr.winner ?? null,
       score: mr.score ?? '',
       roster_changed_at: mr.roster_changed_at ?? null,
+      odds_p1_live: mr.odds_p1_live ?? null,
+      odds_p2_live: mr.odds_p2_live ?? null,
+      odds_fetched_at: mr.odds_fetched_at ?? null,
+      odds_p1_locked: mr.odds_p1_locked ?? null,
+      odds_p2_locked: mr.odds_p2_locked ?? null,
+      odds_locked_at: mr.odds_locked_at ?? null,
     }
     roundsMap[ri].matches[mr.match_index] = match
   })
@@ -176,11 +182,20 @@ function emptyMatch() {
     matchPick: null, originalPick: null,
     originalPickResult: null, matchPickResult: null,
     highConfidence: false, editedAfterLock: false, notes: '',
-    winner: null, score: '',
+    winner: null, score: '', roster_changed_at: null,
+    odds_p1_live: null, odds_p2_live: null, odds_fetched_at: null,
+    odds_p1_locked: null, odds_p2_locked: null, odds_locked_at: null,
   }
 }
 
 // ── SLAM HELPERS ──
+export const SLAM_COLORS = {
+  AO:  '#2d7ab8',
+  RG:  '#BD5627',
+  WIM: '#275F3D',
+  USO: '#071C63',
+}
+
 export const SLAM_CONFIG = {
   AO: { name: 'Australian Open', surface: 'Hard' },
   RG: { name: 'Roland Garros', surface: 'Clay' },

@@ -1,11 +1,12 @@
 // Commissioner — Results tab. Match-by-match winner confirmation + undo + search.
 // Split from commissioner.js on 2026-06-01 (audit part E).
 
-import { activeDraw, state } from './state.js'
+import { activeDraw, state, isMobile } from './state.js'
 import { reloadActiveDraw } from './data.js'
 import { applyWinner, undoWinner, clearMatchPickForward } from './picks.js'
 import { buildDrawView } from './draw-view.js'
 import { renderBracketLayout } from './bracket-layout.js'
+import { renderBracketList } from './bracket-list.js'
 import { $c } from './commissioner-shared.js'
 import { supabase } from './supabase.js'
 
@@ -14,9 +15,40 @@ import { supabase } from './supabase.js'
 let _pendingSearch = null
 export function setPendingSearch(q) { _pendingSearch = q }
 
+// ── MOBILE ROUND STATE ──
+let _commMobileRound = 0
+export function getCommMobileRound() { return _commMobileRound }
+export function setCommMobileRound(ri) { _commMobileRound = ri }
+
+export function renderCommRoundSelector() {
+  const bar = document.getElementById('comm-round-selector-bar')
+  if (!bar) return
+  bar.innerHTML = ''
+  const d = activeDraw()
+  if (!d) return
+  d.rounds.forEach((r, ri) => {
+    const btn = document.createElement('button')
+    btn.className = 'round-sel-btn' + (ri === _commMobileRound ? ' active' : '')
+    btn.textContent = r.label
+    btn.addEventListener('click', () => {
+      _commMobileRound = ri
+      renderCommRoundSelector()
+      renderResults()
+    })
+    bar.appendChild(btn)
+  })
+}
+
 export function renderResults() {
   const body = $c('results-bracket-body')
   if (!body) return
+
+  if (isMobile()) {
+    renderBracketList(activeDraw(), _commMobileRound, body, _placeResultCard)
+    renderCommRoundSelector()
+    _wireResultsSearch(body, true)
+    return
+  }
 
   const labelsInner = $c('results-round-labels-inner')
   const wrap = renderBracketLayout({
@@ -35,7 +67,7 @@ export function renderResults() {
     }, { passive: true })
   }
 
-  _wireResultsSearch(wrap)
+  _wireResultsSearch(wrap, false)
 }
 
 // Results-only occupant: a future-round slot is filled ONLY by the feeder match's
@@ -123,9 +155,12 @@ function _placeResultCard(d, m, ri, mi, x, y, wrap) {
   wrap.appendChild(card)
 }
 
-function _wireResultsSearch(wrap) {
-  const input = $c('results-search-input')
-  const clearBtn = $c('results-search-clear')
+function _wireResultsSearch(wrap, mobile) {
+  const inputId = mobile ? 'comm-mobile-search-input' : 'results-search-input'
+  const clearId = mobile ? 'comm-mobile-search-clear' : 'results-search-clear'
+  const resultsId = mobile ? 'comm-mobile-search-results' : null
+  const input = document.getElementById(inputId)
+  const clearBtn = document.getElementById(clearId)
   if (!input) return
 
   // Remove old listeners by replacing elements
@@ -144,9 +179,9 @@ function _wireResultsSearch(wrap) {
   }
 
   function _switchGender(gender) {
-    // gender: 'MS' | 'WS'. Clicks the correct seg button (index 0 = MS, 1 = WS).
     const idx = gender === 'MS' ? 0 : 1
-    const btns = document.querySelectorAll('#comm-seg-control .seg-btn')
+    const segId = mobile ? 'comm-seg-control-mobile' : 'comm-seg-control'
+    const btns = document.querySelectorAll(`#${segId} .seg-btn`)
     btns[idx]?.click()
   }
 

@@ -6,14 +6,50 @@ import { handlePickClick, savePickToSupabase, findSeed } from './picks.js'
 import { isMatchLocked } from './lock.js'
 import { renderStats } from './stats.js'
 import { renderBracketLayout } from './bracket-layout.js'
+import { formatAmerican } from './odds.js'
 
+let _renderOverride = null
+export function setRenderBracketFn(fn) { _renderOverride = fn }
+
+// Called by pick-click callbacks — dispatches to mobile renderer when override is set.
 export function renderBracket() {
+  if (_renderOverride) return _renderOverride()
+  _doRenderBracket()
+}
+
+// Called by renderBracketDisplay directly to avoid the circular: display→renderBracket→override→display.
+export function renderBracketDirect() { _doRenderBracket() }
+
+function _doRenderBracket() {
   renderBracketLayout({
     draw: activeDraw(),
     body: document.getElementById('bracket-body'),
     labelsInner: document.getElementById('round-labels-inner'),
     placeCard,
-    championName: f => f.winner || f.matchPick || '—',
+    renderChampion: (f, x, y, wrap) => {
+      const pick = f.originalPick || f.matchPick || null
+      const isCorrect = !!(f.winner && pick && f.winner === pick)
+      const isWrong   = !!(f.winner && pick && f.winner !== pick)
+      const champDiv = document.createElement('div')
+      champDiv.className = 'champ-box' + (isCorrect ? ' champ-correct' : isWrong ? ' champ-wrong' : '')
+      champDiv.style.cssText = `left:${x}px;top:${y}px;position:absolute`
+      const champLbl = document.createElement('div'); champLbl.className = 'champ-label'; champLbl.textContent = 'Champion'
+      const champNm = document.createElement('div'); champNm.className = 'champ-name'
+      if (isWrong) {
+        champNm.textContent = f.winner
+        const displaced = document.createElement('div')
+        displaced.className = 'mc-champ-elim'
+        displaced.textContent = pick
+        champDiv.appendChild(displaced)
+      } else if (isCorrect) {
+        champNm.textContent = pick
+        champNm.style.color = 'var(--green)'
+      } else {
+        champNm.textContent = pick || f.winner || '—'
+        if (pick && !f.winner) champNm.style.color = 'var(--accent)'
+      }
+      champDiv.appendChild(champLbl); champDiv.appendChild(champNm); wrap.appendChild(champDiv)
+    },
     emptyHTML: `
       <div class="bracket-empty">
         <div class="bracket-empty-icon">🎾</div>
@@ -48,8 +84,7 @@ export function placeCard(d, m, ri, mi, x, y, wrap) {
       const row = document.createElement('div'); row.className = 'pr s-orig-wrong'; row.style.position = 'relative'
       const seedEl = document.createElement('span'); seedEl.className = 'pr-seed'; seedEl.textContent = p.seed || ''
       const nameEl = document.createElement('span'); nameEl.className = 'pr-name'; nameEl.textContent = p.name || '—'
-      const dotEl = document.createElement('div'); dotEl.className = 'pr-dot'
-      row.appendChild(seedEl); row.appendChild(nameEl); row.appendChild(dotEl)
+      row.appendChild(seedEl); row.appendChild(nameEl)
       // No click handler: elim slots aren't directly clickable.
       return row
     }
@@ -85,14 +120,7 @@ export function placeCard(d, m, ri, mi, x, y, wrap) {
     const row = document.createElement('div'); row.className = cls; row.style.position = 'relative'
     const seedEl = document.createElement('span'); seedEl.className = 'pr-seed'; seedEl.textContent = p.seed || ''
     const nameEl = document.createElement('span'); nameEl.className = 'pr-name'; nameEl.textContent = p.name || '—'
-    const dotEl = document.createElement('div'); dotEl.className = 'pr-dot'
     row.appendChild(seedEl); row.appendChild(nameEl)
-
-    // Checkmark for correct backup pick
-    if (backupCorrect) {
-      const ck = document.createElement('span'); ck.className = 'pr-backup-ok-icon'; ck.textContent = '✓'
-      row.appendChild(ck)
-    }
 
     // High-confidence star
     const bothConfirmed = ri === 0
@@ -111,7 +139,17 @@ export function placeCard(d, m, ri, mi, x, y, wrap) {
       })
       row.appendChild(starEl)
     }
-    row.appendChild(dotEl)
+
+    // Inline odds — replaces the dot; shown when any odds are available for this slot
+    const slotOdds = side === 'p1' ? (m.odds_p1_locked ?? m.odds_p1_live ?? null)
+      : (m.odds_p2_locked ?? m.odds_p2_live ?? null)
+    const oddsLocked = side === 'p1' ? !!m.odds_p1_locked : !!m.odds_p2_locked
+    if (slotOdds) {
+      const oddsSpan = document.createElement('span')
+      oddsSpan.className = 'pr-odds' + (oddsLocked ? ' pr-odds-locked' : '')
+      oddsSpan.textContent = formatAmerican(slotOdds)
+      row.appendChild(oddsSpan)
+    }
 
     const isResolved = cls.includes('locked')
     const backupPickLocked = d.locked && !m.editedAfterLock && isMatchLocked(ri, mi, 'backup_picks')

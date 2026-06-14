@@ -4,6 +4,63 @@ Historical record of build steps, refactors, and fixed bugs. **Not loaded into c
 
 ---
 
+## 2026-06-11 — Slam Index composite metric
+
+Added a pool-adjusted composite score that merges Draw Yield and Match Yield into a single normalised value.
+
+**Formula:** `SlamIndex = round(100 + 15 × avg(z_DrawYield, z_MatchYield))`. Population z-scores within the draw's pool of players with ≥1 pick. Guard: pool < 2 or stddev = 0 → z = 0 → index = 100.
+
+**`scoring.js`:** new pure export `calcSlamIndex(entries)` — takes `[{score, matchYield}]`, returns integer index array in same order.
+
+**`leaderboard.js`:**
+- `loadDrawStatsForAllUsers`: computes `slamIndex` per player after pool is assembled; stores in statsMap
+- `buildAllTimeAgg`: aggregates as `avgSlamIndex` (plain avg of per-draw values — never re-pooled)
+- `buildAllBrackets`: includes `slamIndex` per bracket entry
+- Slams card: Health column replaced by Index column
+- Detail view: Index added as 9th stat column (after Health)
+- Records tab: now **four cards** per period — Avg Score | Match Yield | Slam Index | Top Draws
+- New `buildSlamIndexCard`: mirrors Avg Score card, ranked by `avgSlamIndex`, subtitle "DRAW + MATCH · POOL-ADJUSTED"
+- Top Draws card: Index column added; grid updated to `18px 1fr 68px 68px 68px`
+
+**`stats.js`:** imports `loadDrawStatsForAllUsers` from leaderboard.js; adds `fetchPoolSlamIndex(draw, userId)` (fire-and-forget, re-renders stats bar on completion); post-lock Draw Yield + Match Yield pills replaced by single `sc-composite` cell with stacked rows + bracket-elbow SVG + tinted Index block.
+
+**`main.js`:** `fetchPoolSlamIndex` called fire-and-forget in `showBracketScreen()`, `switchTab()`, and bracket refresh callback.
+
+**`index.html` CSS:** composite cell classes (`.sc-composite` et al.); `.lb-row-detail` gains 9th column; `.lb-records-cards` updated to `repeat(4,1fr)`; `.lb-rec-td-row` gains 3rd stat col; mobile detail table min-width updated to 714px.
+
+---
+
+## 2026-06-09 — Match Yield betting layer
+
+Added an odds-based Match Yield scoring system layered on top of the existing draw-prediction game.
+
+**DB (via Supabase MCP migrations):**
+- Enabled `http` (synchronous HTTP from PL/pgSQL) and `unaccent` extensions
+- New `odds_raw` table — raw API event rows (home/away names, consensus decimals, bookmaker count)
+- New `name_mappings` table — persists API name → draw player name across slams; RLS commissioner-write
+- New columns on `matches`: `odds_p1_live`, `odds_p2_live`, `odds_fetched_at`, `odds_p1_locked`, `odds_p2_locked`, `odds_locked_at`
+- New `fetch_all_active_odds()` PL/pgSQL function (SECURITY DEFINER): reads ODDS_API_KEY from Vault, calls The Odds API h2h for each active draw, upserts `odds_raw`, pushes matched consensus to match rows via `name_mappings` join
+- New `refresh_odds_now()` RPC: commissioner-only on-demand refresh
+- New `normalise_player_name(text)` SQL helper (mirrors JS `normaliseName()`)
+- New pg_cron job `fetch-odds`: `0 */3 * * *`
+- Extended `fire_scheduled_locks()`: when a `backup_picks` lock fires, snapshots `odds_p*_live → odds_p*_locked` for affected matches
+- ODDS_API_KEY stored in Supabase Vault
+
+**JS:**
+- New `src/odds.js`: `STAKE_BY_ROUND`, `normaliseName`, `decimalToAmerican`, `formatAmerican`, `formatYield`, `pickedLockedOdds`, data access functions
+- `scoring.js`: added `STAKE_BY_ROUND` export, `matchYield`/`matchYieldResolved` to `calcStatsAsOf`
+- `data.js`: odds columns added to match SELECT query and `emptyMatch()` defaults
+- `stats.js`: reordered pills (Draw Yield → Match Yield → Draw Accuracy → Match Accuracy → Draw Health); "Score" renamed "Draw Yield"; chalk line removed from UI (code kept)
+- `leaderboard.js`: slam card gains Match Yield column; detail view column order matches stats bar + adds Match Yield; records tab Match Accuracy card replaced by sortable Match Yield card (Avg/Draw vs Best Ever toggle); `formatStat` handles `matchYield`/`avgMatchYield`
+- `bracket.js`: odds/yield footer on match cards (American odds pre-result, earned yield post-result)
+- New `src/commissioner-odds.js`: Odds tab with fetch status, force-refresh button, unmatched name triage UI, saved mappings list
+- `commissioner.js`: wired Odds tab
+- `index.html`: Odds tab button + pane; `.mc-odds` CSS; `.lb-cell-matchYield` CSS
+- Fixed stale "Edge Function" comments in `commissioner-locks.js` / `commissioner-locks-backup.js` → pg_cron/PL/pgSQL
+- Test harness golden: zero diff confirmed
+
+---
+
 ## Refactor (2026-06-01 → 2026-06-02)
 
 ### Step 1 — repo hygiene (2026-06-01)
@@ -31,6 +88,23 @@ Behavior verified against a Node render-facts golden (`test-harness/`).
 
 ### Harness repair + golden refresh (2026-06-02)
 The DOM stub (`dom-stub.mjs`) gained `removeEventListener` and a minimal stub for the pick-confirm modal IDs (`pick-confirm-modal`/`pcm-name`/`pcm-confirm`/`pcm-cancel`); `#pcm-confirm` auto-fires its click so `showPickConfirm()` resolves true. All other IDs still return null. The harness had been throwing before any output (the stub predated the pick-confirm modal). `GOLDEN.frozen.txt` re-frozen against current code (Ben confirmed the post-golden backup-pick-cascade behavior is intentional) and verified deterministic.
+
+---
+
+## 2026-06-11 — Mobile layout phase 2 (bracket list + leaderboard)
+
+### Mobile bracket list (`src/bracket-list.js`)
+New module: renders one round's matches as a vertical scrollable list using the same `placeCard` callback as the desktop renderer (identical card painting). Key features:
+- **Pair connectors:** consecutive match pairs wrapped in `.mc-pair`; a `.mc-pair-connector` arm is positioned via `requestAnimationFrame` using `getBoundingClientRect` midpoints after layout
+- **Section dividers:** mirrors desktop Q1/Q2/Q3/Q4 separators — Bottom Half divider for rounds ≥16, Q2/Q4 dashed dividers added for rounds ≥32 (`_buildSectionDividers(total)`)
+- Uniform 42px inter-card gaps (intra-pair and inter-pair match)
+
+### Mobile leaderboard
+- **Tab bar to bottom:** `.lb-tabbar` reordered below `.lb-content` via CSS `order:2` on `.lb-root{display:flex;flex-direction:column}` — no JS changes to `leaderboard.js`
+- **Draw/Leaderboard nav row:** `.lb-hdr-nav` hidden on mobile; new `#lb-mobile-hdr-row2` bar mirrors the bracket/commissioner mobile nav pattern
+- **"All stats" detail table horizontally scrollable:** fixed a CSS cascade bug where `.lb-detail-table-wrap{overflow:hidden}` (line ~545) silently overrode the mobile `overflow-x:auto` rule (line ~220) because base rules at higher line numbers win over earlier media-query rules with equal specificity. Fix: mobile scroll override added in a late block just before `@media print`
+- **Sticky player column backgrounds:** each row type needs its own background — header row: `var(--surface2)`, alt row: `var(--surface2)`, self row: `var(--accent-dim)`, normal row: `var(--surface)`. See `.claude/rules/leaderboard-detail.md` for the full mapping.
+- **Mobile search fix:** added `transform:none!important` to `.mobile-search-row .search-results` to override the base `transform:translateX(-50%)` that caused results to render off-screen left
 
 ---
 

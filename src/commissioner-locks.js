@@ -7,9 +7,9 @@
 //
 // Lock philosophy (rebuilt 2026-06-02):
 //   Scheduling IS the lock commitment — no further confirmation at fire time.
-//   A Supabase Edge Function (fire-scheduled-locks) fires overdue rows server-side
-//   every minute, regardless of whether any browser is open.
-//   "Lock now" inserts a row with scheduled_at = now; the Edge Function fires it
+//   A PL/pgSQL function (fire_scheduled_locks) fires overdue rows server-side
+//   every minute via pg_cron, regardless of whether any browser is open.
+//   "Lock now" inserts a row with scheduled_at = now; pg_cron fires it
 //   within ~1 minute, OR the commissioner can use the direct client path for
 //   truly immediate locking.
 

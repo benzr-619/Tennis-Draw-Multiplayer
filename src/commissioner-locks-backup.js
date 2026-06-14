@@ -346,7 +346,7 @@ async function handleBackupLockInsert(scheduledAt, label = null) {
         }
         if (label) row.label = label
         if (scheduledAt) {
-          row.scheduled_at = scheduledAt
+          row.scheduled_at = scheduledAt  // pg_cron fires fire_scheduled_locks every minute
         } else {
           row.locked_at = new Date().toISOString()
         }

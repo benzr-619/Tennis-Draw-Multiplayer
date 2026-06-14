@@ -169,6 +169,11 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .mc-notes::placeholder{color:var(--text3)}
 .mc-notes:focus{background:var(--surface3,var(--surface2));color:var(--text)}
 
+/* ── ODDS ON BRACKET CARDS ── */
+.pr-odds{font-family:var(--mono);font-size:11px;color:var(--text2);flex-shrink:0;margin-left:3px}
+.pr-odds-locked{color:var(--text)}
+.lb-cell-matchYield{width:72px;text-align:right}
+
 /* ── RESPONSIVE ── */
 @media(max-width:720px){
   .seg-btn{padding:4px 8px}
@@ -183,34 +188,244 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
   .stats-strip{overflow-x:auto;-webkit-overflow-scrolling:touch}
   .hdr-row2{overflow:hidden}
 }
+@media(max-width:768px){
+  /* Hide the health underline and details drawer on mobile — strip scrolls horizontally */
+  .health-underline{display:none!important}
+  .stats-drawer{display:none!important}
+  /* Post-lock bar elements: remove bottom reserve (no underline on mobile) */
+  .sc-hero,.sc-yield-cell,.sc-countdown{padding-bottom:9px}
+  .sc-guide-btn{display:none!important}
+}
+
+/* ── MOBILE LAYOUT (≤768px) ── */
+@media(max-width:768px){
+  /* Hide desktop-only elements */
+  .desktop-only{display:none!important}
+  .mobile-only{display:flex!important}
+  #hdr-row1 .hdr-center{display:none}
+  /* Pin refresh + account to the far right of row 1 (hdr-center is hidden, so needs explicit push) */
+  #hdr-row1 .hdr-right,#screen-commissioner .hdr-row1 .hdr-right{margin-left:auto}
+  /* Hide nav tabs from row 1 — they move to mobile row 2 */
+  #hdr-nav{display:none!important}
+  #comm-hdr-nav{display:none!important}
+  .row2-seg{display:none!important}
+  /* Hide entire comm hdr-row2 on mobile (M/W moves to bottom bar) */
+  #screen-commissioner .hdr-row2{display:none!important}
+  .round-labels-bar{display:none!important}
+  /* Stats strip scrolls horizontally, pills don't shrink */
+  .stats-strip{overflow-x:auto;scrollbar-width:none}
+  .stats-strip::-webkit-scrollbar{display:none}
+  .stat-pill{flex-shrink:0}
+  /* Bracket body hides overflow (list view) */
+  #bracket-body{overflow-x:hidden;padding:8px 0}
+  /* Round-selector bars show */
+  #round-selector-bar{display:flex!important}
+  #comm-round-selector-bar{display:flex!important}
+  /* Mobile bottom bars show */
+  #mobile-bottom-bar{display:flex!important}
+  #comm-mobile-bottom-bar{display:flex!important}
+  /* Leaderboard detail table scrolls on mobile */
+  .lb-detail-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  /* Hide desktop nav tabs from leaderboard row 1 — they live in lb-mobile-hdr-row2 */
+  #lb-hdr-nav{display:none}
+  /* Leaderboard bottom bar: reorder tabbar below content */
+  .lb-root{display:flex;flex-direction:column;flex:1;min-height:0}
+  .lb-content{order:1;flex:1;min-height:0}
+  .lb-tabbar{order:2;border-top:1px solid var(--border);border-bottom:none;padding:10px 16px 14px;background:var(--surface);flex-shrink:0}
+  .lb-tabseg{width:100%}
+  .lb-tab{flex:1;text-align:center;padding:8px 12px}
+}
+
+/* ── MOBILE HDR ROW 2 (nav tabs + countdown) ── */
+#mobile-hdr-row2{
+  background:var(--surface);border-bottom:1px solid var(--border);
+  display:none;align-items:center;flex-shrink:0;height:44px;
+  padding:0 4px 0 12px;position:relative;z-index:15
+}
+@media(max-width:768px){#mobile-hdr-row2{display:flex}}
+#mobile-hdr-row2 .hdr-nav{display:flex;flex:1}
+#mobile-countdown-wrap{
+  flex:0 0 auto;margin-left:auto;display:flex;align-items:center;
+  overflow:hidden;padding:0 8px;font-size:12px
+}
+#mobile-countdown-wrap .stat-pill{
+  border-right:none;padding:0;height:auto;background:none;cursor:default;
+  flex-direction:row;align-items:center;gap:8px
+}
+#mobile-countdown-wrap .slbl{margin-bottom:0;font-size:9px}
+#mobile-countdown-wrap .sval{font-size:14px}
+#mobile-countdown-wrap .countdown-val{font-size:14px}
+/* ── COMMISSIONER MOBILE HDR ROW 2 (tab nav) ── */
+#comm-mobile-hdr-row2{
+  background:var(--surface);border-bottom:1px solid var(--border);
+  display:none;align-items:center;flex-shrink:0;height:44px;padding:0 12px
+}
+@media(max-width:768px){#comm-mobile-hdr-row2{display:flex}}
+#comm-mobile-hdr-row2 .hdr-nav{display:flex}
+/* ── LEADERBOARD MOBILE HDR ROW 2 (Draw / Leaderboard nav) ── */
+#lb-mobile-hdr-row2{
+  background:var(--surface);border-bottom:1px solid var(--border);
+  display:none;align-items:center;flex-shrink:0;height:44px;padding:0 4px 0 12px;
+  position:relative;z-index:15
+}
+@media(max-width:768px){#lb-mobile-hdr-row2{display:flex}}
+#lb-mobile-hdr-row2 .hdr-nav{display:flex;flex:1}
+/* ── LEADERBOARD DETAIL TABLE — sticky player name column on mobile ── */
+@media(max-width:768px){
+  .lb-row-detail{grid-template-columns:130px 72px 68px 68px 72px 72px 72px 72px 72px}
+  .lb-detail-table{min-width:714px}
+  .lb-row-detail .lb-cell-name{position:sticky;left:0;background:var(--surface);z-index:2}
+  .lb-header-row.lb-row-detail .lb-cell-name{z-index:3;background:var(--surface)}
+  /* Alternate rows need their own bg for sticky to not be transparent */
+  .lb-row-alt .lb-cell-name{background:var(--surface2)}
+}
+
+/* ── ROUND SELECTOR BAR ── */
+.round-selector-bar{
+  display:none;align-items:center;padding:6px 10px;gap:5px;
+  overflow-x:auto;flex-shrink:0;scrollbar-width:none;
+  background:var(--bg);border-bottom:1px solid var(--border)
+}
+.round-selector-bar::-webkit-scrollbar{display:none}
+.round-sel-btn{
+  font-family:var(--mono);font-size:11px;text-transform:uppercase;
+  letter-spacing:0.08em;padding:4px 11px;border-radius:20px;
+  border:1px solid var(--border2);background:var(--surface);
+  color:var(--text2);cursor:pointer;white-space:nowrap;
+  transition:all 0.12s;flex-shrink:0
+}
+.round-sel-btn.active{
+  background:var(--accent);color:var(--accent-text);border-color:var(--accent)
+}
+
+/* ── MOBILE BOTTOM BAR ── */
+.mobile-bottom-bar{
+  display:none;flex-direction:column;flex-shrink:0;
+  background:var(--surface);border-top:1px solid var(--border)
+}
+.mobile-search-row{
+  display:flex;align-items:center;padding:8px 12px;position:relative
+}
+/* M/W seg takes full width with full labels and breathing room */
+.mobile-seg-row{
+  display:flex;align-items:center;justify-content:center;
+  padding:10px 16px 14px;border-top:1px solid var(--border)
+}
+.mobile-seg-row .seg-control{width:100%}
+.mobile-seg-row .seg-btn{flex:1;justify-content:center;padding:10px 12px}
+.mobile-seg-row .seg-btn .seg-full{display:inline!important}
+.mobile-seg-row .seg-btn .seg-short{display:none!important}
+
+/* Mobile search results open UPWARD, full-width of row */
+/* Must override transform:translateX(-50%) from the base .search-results rule */
+.mobile-search-row .search-results{
+  position:absolute;bottom:calc(100% + 4px)!important;
+  top:auto!important;left:0!important;right:0!important;
+  transform:none!important;width:auto!important;min-width:0!important;
+  max-height:280px;overflow-y:auto
+}
+
+/* ── MATCH LIST ITEMS (mobile bracket) ── */
+.bl-round-hdr{
+  font-family:var(--mono);font-size:10px;text-transform:uppercase;
+  letter-spacing:0.1em;color:var(--text3);padding:10px 16px 4px
+}
+.mc-list-item{
+  padding:0 12px;margin-top:16px;overflow:visible;position:relative
+}
+/* First card / pair after round header — extra top margin for displaced elim labels */
+.bl-round-hdr + .mc-list-item,.bl-round-hdr + .mc-pair{margin-top:22px}
+.mc-list-item:last-child,.mc-pair:last-child{margin-bottom:20px}
+.mc-list-item .mc{
+  position:relative!important;left:auto!important;top:auto!important;
+  width:100%!important
+}
+/* Pair wrappers — each pair = two matches + right bracket arm */
+/* margin-top: 42px on ALL pairs keeps card-to-card spacing uniform throughout */
+.mc-pair{position:relative;margin-top:42px}
+/* Within a pair: top item flush, bottom item same 42px gap (room for displaced elim labels) */
+.mc-pair .mc-list-item.mc-pair-top{margin-top:0;padding-right:30px}
+.mc-pair .mc-list-item.mc-pair-bot{margin-top:42px;padding-right:30px}
+/* Bracket connector arm — top/height set by JS after render */
+.mc-pair-connector{
+  position:absolute;right:8px;width:14px;
+  border-right:1.5px solid var(--border2);
+  border-top:1.5px solid var(--border2);
+  border-bottom:1.5px solid var(--border2);
+  border-radius:0 3px 3px 0;pointer-events:none;z-index:1
+}
+/* Section dividers — mirror Q2 / Bottom Half / Q4 from desktop bracket */
+/* Consume the same visual slot as the 42px card gap: 12px above + ~16px line + 14px below ≈ 42px */
+.bl-section-divider{display:flex;align-items:center;gap:8px;margin:12px 12px 0;height:16px}
+.bl-section-divider + .mc-pair{margin-top:14px}
+.bl-sdiv-line{flex:1;height:0;border-top:1px solid var(--border2)}
+.bl-section-divider.dashed .bl-sdiv-line{border-top-style:dashed}
+.bl-sdiv-lbl{
+  font-family:var(--mono);font-size:8px;text-transform:uppercase;
+  letter-spacing:0.1em;color:var(--text3);white-space:nowrap;flex-shrink:0
+}
+.bl-section-divider:not(.dashed) .bl-sdiv-lbl{color:var(--text2)}
 
 /* ── HEADER ROW 2 (stats) ── */
-.hdr-row2{background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:stretch;flex-shrink:0;height:44px;overflow:visible;position:relative;z-index:10}
-.stats-strip{display:flex;align-items:stretch;gap:0;flex:1;min-width:0}
+.hdr-row2{background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:stretch;flex-shrink:0;height:56px;overflow:visible;position:relative;z-index:10}
+.stats-strip{display:flex;align-items:stretch;gap:16px;flex:1;min-width:0;position:relative}
+/* pre-lock pills (unchanged) */
 .stat-pill{display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;padding:7px 16px 0;border-right:1px solid var(--border);height:100%;flex-shrink:0;position:relative;cursor:default;transition:background 0.1s;box-sizing:border-box}
 .stat-pill:hover{background:var(--surface2)}
 .slbl{color:var(--accent);font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.1em;white-space:nowrap;line-height:1;margin-bottom:3px}
 .sval{font-family:var(--mono);font-size:17px;font-weight:500;line-height:1}
 .vg{color:var(--green)}.vr{color:var(--red)}
-.score-pill-row{display:flex;align-items:baseline;gap:6px;white-space:nowrap}
-.score-main{font-family:var(--mono);font-size:17px;font-weight:500;color:var(--text);line-height:1}
-.score-eq{font-family:var(--mono);font-size:11px;color:var(--text3);line-height:1}
-.score-base{font-family:var(--mono);font-size:13px;color:var(--text2);line-height:1}
-.score-lbl{font-family:var(--mono);font-size:9px;color:var(--text3);line-height:1}
-.score-plus{font-family:var(--mono);font-size:11px;color:var(--text3);line-height:1}
-.score-chalk-sep{font-family:var(--mono);font-size:11px;color:var(--border2);margin:0 2px;line-height:1}
-.score-chalk-num{font-family:var(--mono);font-size:13px;font-weight:500;color:var(--text2);line-height:1}
-.score-chalk-lbl{font-family:var(--mono);font-size:9px;color:var(--text3);line-height:1}
-.health-val-row{display:flex;align-items:center;gap:7px}
-.health-bar-track{width:44px;height:5px;border-radius:3px;background:var(--surface3);overflow:hidden;flex-shrink:0}
-.health-bar-fill{height:100%;border-radius:3px;transition:width 0.3s,background 0.3s}
-.health-pct{font-family:var(--mono);font-size:17px;font-weight:500;white-space:nowrap;line-height:1}
-.stat-desc-bar{position:absolute;top:100%;left:0;right:0;background:var(--surface);border-bottom:1px solid var(--border);padding:0 22px;max-height:0;overflow:hidden;display:flex;align-items:center;gap:10px;transition:max-height 0.15s,padding 0.15s}
-.stat-desc-bar.visible{max-height:200px;padding:6px 22px}
+/* ── POST-LOCK STATS BAR ── */
+/* Slam Index hero */
+.sc-hero{display:flex;align-items:baseline;gap:8px;padding:9px 0 18px 16px;flex-shrink:0}
+.sc-hero-val{font-family:var(--serif);font-size:30px;font-weight:600;color:var(--text);line-height:1}
+.sc-hero-lbl{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--accent);white-space:nowrap;line-height:1}
+/* Yield mini-cells */
+.sc-yields{display:flex;align-items:stretch;flex-shrink:0;gap:26px;padding:9px 0 18px}
+.sc-yield-cell{display:flex;flex-direction:column;justify-content:flex-start;gap:3px}
+.sc-yield-lbl{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);line-height:1;white-space:nowrap}
+.sc-yield-val{font-family:var(--mono);font-size:16px;font-weight:500;color:var(--text);line-height:1}
+.sc-yield-val.sc-dim{color:var(--text3)}
+/* Compact countdown in post-lock bar */
+.sc-countdown{display:flex;flex-direction:row;align-items:center;gap:6px;padding:9px 0 18px;flex-shrink:0;cursor:default}
+.sc-countdown-txt{font-family:var(--mono);font-size:11px;color:var(--accent);white-space:nowrap;line-height:1;letter-spacing:0.03em}
+.sc-countdown-txt.countdown-urgent{animation:countdown-pulse 2s ease-in-out infinite}
+.sc-countdown.countdown-clickable{cursor:pointer}
+.sc-countdown.countdown-clickable:hover{background:var(--accent-dim)}
+.sc-countdown.countdown-clickable .sc-countdown-txt{text-decoration-line:underline;text-decoration-color:transparent;text-underline-offset:2px;transition:text-decoration-color 0.15s}
+.sc-countdown.countdown-clickable:hover .sc-countdown-txt{text-decoration-color:var(--accent)}
+/* DETAILS pill button */
+.sc-guide-btn{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);background:transparent;border:1px solid var(--border2);border-radius:13px;padding:4px 10px;cursor:pointer;display:flex;align-items:center;gap:5px;flex-shrink:0;white-space:nowrap;transition:background 0.15s,color 0.15s,border-color 0.15s;align-self:center;outline:none}
+.sc-guide-btn:hover,.sc-guide-btn.open{background:var(--surface2);color:var(--text2)}
+.sc-guide-btn:focus-visible{border-color:var(--accent)}
+.sc-guide-chevron{display:inline-block;transition:transform 0.2s;font-size:12px;color:var(--text3);line-height:1}
+.sc-guide-btn:hover .sc-guide-chevron,.sc-guide-btn.open .sc-guide-chevron{color:var(--text2)}
+.sc-guide-btn.open .sc-guide-chevron{transform:rotate(180deg)}
+/* Health underline — bottom 18px of stats-strip */
+.health-underline{position:absolute;bottom:0;left:0;right:0;pointer-events:none;z-index:2}
+.health-ul-labels-row{display:flex;align-items:flex-end;position:relative;height:13px;padding:0 16px}
+.health-ul-pct{position:absolute;font-family:var(--mono);font-size:10px;font-weight:500;line-height:1;transform:translateX(-50%)}
+.health-ul-drw-lbl{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);line-height:1;margin-left:auto;white-space:nowrap}
+.health-ul-track{height:3px;background:var(--surface3)}
+.health-ul-fill{height:100%;transition:width 0.4s,background 0.4s}
+/* Stats details drawer */
+.stats-drawer{position:absolute;top:100%;left:0;right:0;background:var(--surface);border-bottom:0.5px solid var(--border2);max-height:0;overflow:hidden;transition:max-height 0.2s ease;z-index:100}
+.stats-drawer.open{max-height:700px}
+.sd-inner{padding:0 20px 4px 16px}
+.sd-row{display:grid;grid-template-columns:140px 90px 1fr;column-gap:14px;align-items:baseline;padding:9px 0;border-bottom:0.5px dashed var(--border2)}
+.sd-row:last-child{border-bottom:none}
+.sd-row.sd-math-open{background:var(--accent-dim);border-radius:6px 6px 0 0;padding:9px 8px}
+.sd-lbl{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.07em;color:var(--text3);white-space:nowrap;line-height:1.5}
+.sd-val{font-family:var(--mono);font-size:14px;font-weight:500;color:var(--text);line-height:1.5;text-align:right}
+.sd-def{font-family:var(--sans);font-size:12px;color:var(--text2);line-height:1.5}
+.sd-info-btn{background:none;border:none;cursor:pointer;color:var(--text3);font-size:13px;padding:0;margin-left:5px;transition:color 0.12s;line-height:1;vertical-align:middle;display:inline}
+.sd-info-btn:hover{color:var(--accent)}
+.sd-math{overflow:hidden;transition:max-height 0.18s ease;max-height:0;background:var(--accent-dim);border-radius:0 0 6px 6px}
+.sd-math.open{max-height:200px}
+.sd-math-inner{padding:0 8px 10px 8px;font-family:var(--sans);font-size:12px;color:var(--text2);line-height:1.6}
+.sd-math-title{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--accent);padding:6px 0 4px;display:block}
 .round-labels-bar{background:var(--bg);border-bottom:1px solid var(--border);flex-shrink:0;overflow:hidden;height:26px;display:flex;align-items:center;z-index:8}
 .round-labels-inner{display:flex;align-items:center;padding-left:24px;min-width:max-content;will-change:transform}
-.stat-desc-label{font-family:var(--mono);font-size:10px;font-weight:500;color:var(--accent);text-transform:uppercase;letter-spacing:0.08em;white-space:nowrap;flex-shrink:0}
-.stat-desc-text{font-family:var(--sans);font-size:11px;color:var(--text2);white-space:normal;overflow:hidden}
 
 /* ── BRACKET BODY ── */
 .bracket-body{flex:1;overflow:auto;padding:24px;background:var(--bg)}
@@ -273,6 +488,10 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .champ-box{position:absolute;background:var(--surface);border:1.5px solid var(--accent);border-radius:8px;padding:10px 14px;text-align:center;min-width:130px}
 .champ-label{font-family:var(--mono);font-size:9px;color:var(--accent);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:5px}
 .champ-name{font-family:var(--serif);font-size:13px;color:var(--text)}
+.champ-box.champ-correct{border-color:var(--green-border)}
+.champ-box.champ-wrong{border-color:var(--red-border)}
+.mc-champ-elim{position:absolute;font-family:var(--mono);font-size:11px;color:var(--red);text-decoration:line-through;white-space:nowrap;text-align:center;width:100%;left:0;top:-16px;pointer-events:none}
+.mc-champ-actual{position:absolute;font-family:var(--mono);font-size:11px;color:var(--text3);white-space:nowrap;text-align:center;width:100%;left:0;top:-16px;pointer-events:none}
 
 /* ── LEADERBOARD ── */
 /* ── LEADERBOARD ── */
@@ -291,8 +510,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .lb-content{flex:1;overflow-y:auto;padding:24px 20px;display:flex;flex-direction:column;gap:28px}
 /* Slam group (year header + M/W row) */
 .lb-slam-group{}
-.lb-slam-header{display:flex;align-items:baseline;gap:10px;margin-bottom:12px}
-.lb-slam-name{font-family:var(--serif);font-size:17px;font-weight:600;color:var(--text)}
+.lb-slam-section{margin-bottom:4px}
+.lb-slam-header{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.lb-slam-name{font-family:var(--serif);font-size:22px;font-weight:600;color:var(--text)}
 .lb-slam-year{font-family:var(--mono);font-size:11px;color:var(--text3);letter-spacing:0.06em}
 .lb-mw-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media(max-width:640px){.lb-mw-row{grid-template-columns:1fr}}
@@ -304,16 +524,17 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .lb-draw-expand{font-family:var(--mono);font-size:10px;color:var(--text3)}
 /* Table */
 .lb-table{width:100%}
-.lb-row{display:grid;grid-template-columns:1fr 72px 80px 80px;align-items:center;padding:0 14px;min-height:36px;border-bottom:1px solid var(--border)}
+.lb-row{display:grid;grid-template-columns:1fr 72px 80px 80px;align-items:center;padding:0 14px;min-height:36px;border-bottom:1px solid var(--border);column-gap:12px;position:relative}
 .lb-row:last-child{border-bottom:none}
 .lb-header-row{background:var(--surface2);min-height:30px}
 .lb-row-alt{background:var(--surface2)}
 .lb-row-self{background:var(--accent-dim)}
-.lb-cell{font-family:var(--mono);font-size:12px;color:var(--text2);padding:2px 0}
-.lb-cell-name{font-family:var(--sans);font-size:13px;color:var(--text);display:flex;align-items:center;gap:8px}
+.lb-cell{font-family:var(--mono);font-size:12px;color:var(--text2);padding:2px 0;text-align:right}
+.lb-cell-name{font-family:var(--sans);font-size:13px;color:var(--text);display:flex;align-items:center;gap:8px;text-align:left}
 .lb-cell-score{font-weight:600;color:var(--text)}
-.lb-header-row .lb-cell{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);font-weight:500}
-.lb-sortable{cursor:pointer;user-select:none;display:flex;align-items:center;gap:2px}
+.lb-header-row .lb-cell{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);font-weight:500;white-space:nowrap}
+
+.lb-sortable{cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:flex-end;gap:2px}
 .lb-sortable:hover{color:var(--text)}
 .lb-sort-active{color:var(--accent)!important}
 .lb-sort-arrow{font-size:9px;color:var(--text3);flex-shrink:0}
@@ -322,16 +543,10 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .lb-player-link{cursor:pointer;text-decoration:underline;text-decoration-color:var(--border2);text-underline-offset:2px}
 .lb-player-link:hover{color:var(--accent);text-decoration-color:var(--accent)}
 .lb-rank{font-family:var(--mono);font-size:10px;color:var(--text3)}
-/* Records tab */
-.lb-records-section{display:flex;flex-direction:column;gap:10px}
-.lb-records-section-label{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text3)}
-.lb-records-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-@media(max-width:640px){.lb-records-cards{grid-template-columns:1fr}}
-.lb-rec-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;cursor:pointer}
-.lb-rec-card:hover .lb-rec-card-header{background:var(--surface2)}
+/* ── Records tab — trophy room ── */
+.lb-rec-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden}
 .lb-rec-card-header{padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
 .lb-rec-card-title{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text3)}
-.lb-rec-card-expand{font-family:var(--mono);font-size:10px;color:var(--text3)}
 .lb-rec-row{display:grid;grid-template-columns:20px 1fr auto;align-items:center;gap:8px;padding:7px 14px;border-bottom:1px solid var(--border)}
 .lb-rec-row:last-child{border-bottom:none}
 .lb-rec-pos{font-family:var(--mono);font-size:10px;color:var(--text3)}
@@ -339,17 +554,65 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .lb-rec-val{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--text)}
 .lb-rec-sub{font-family:var(--mono);font-size:10px;color:var(--text3)}
 .lb-rec-row-self{background:var(--accent-dim)}
-/* Year divider */
-.lb-year-divider{display:flex;align-items:center;gap:10px;margin:4px 0}
-.lb-year-label{font-family:var(--mono);font-size:11px;font-weight:500;color:var(--text2);white-space:nowrap;letter-spacing:0.06em}
-.lb-year-line{flex:1;height:1px;background:var(--border)}
-/* Card grid: name + score + health (3 cols) */
-.lb-row-card{grid-template-columns:1fr 72px 72px}
-/* Detail table grid: name + 4 stat cols */
-.lb-row-detail{grid-template-columns:1fr 72px 68px 68px 72px 72px 80px}
+/* Period picker */
+.rec-period-row{display:flex;gap:6px;padding:4px 0 18px;flex-wrap:wrap}
+.rec-period-pill{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.1em;padding:3px 10px;border-radius:4px;border:1px solid var(--border2);background:none;color:var(--text3);cursor:pointer;transition:all 0.12s}
+.rec-period-pill:hover{color:var(--text2);border-color:var(--text3)}
+.rec-period-pill.active{background:var(--accent);color:var(--accent-text);border-color:var(--accent)}
+/* Podium */
+.rec-podium{display:flex;justify-content:center;align-items:flex-end;gap:4px;margin:0 0 24px}
+.rec-pod-block{display:flex;flex-direction:column;justify-content:flex-end;align-items:center;width:140px;min-height:80px;background:var(--surface);border:1px solid var(--border);border-radius:8px 8px 0 0;padding:10px 10px 12px;text-align:center;position:relative}
+.rec-pod-block.rec-pod-top{min-height:112px;background:var(--surface2);border-color:var(--border2)}
+.rec-pod-name{font-family:var(--serif);font-size:14px;font-weight:600;color:var(--text);line-height:1.2;will-change:transform}
+.rec-pod-you{color:var(--accent)}
+.rec-pod-stat{font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.rec-pod-rank{font-family:var(--mono);font-size:10px;color:var(--text3);margin-top:3px}
+.rec-pod-rank-1{color:var(--accent)}
+/* Standings table */
+.rec-standings-wrap{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:20px}
+.lb-row-standings{grid-template-columns:22px 1fr 44px 72px 72px 72px}
+.lb-cell-srank{font-family:var(--mono);font-size:10px;color:var(--text3);text-align:right}
+.lb-cell-draws{font-family:var(--mono);font-size:11px;color:var(--text3);text-align:right}
+/* YOU badge */
+.rec-you-badge{font-family:var(--mono);font-size:9px;letter-spacing:0.08em;color:var(--accent);background:var(--accent-dim);border:1px solid var(--accent);border-radius:3px;padding:1px 5px;margin-left:7px;vertical-align:middle}
+/* Honors row */
+.rec-honors-row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:4px}
+@media(max-width:640px){.rec-honors-row{grid-template-columns:1fr}}
+.rec-honor-chip{overflow:visible!important}
+.rec-honor-body{padding:10px 14px}
+.rec-honor-main{font-family:var(--serif);font-size:13px;color:var(--text);line-height:1.4}
+.rec-honor-expand-btn{font-family:var(--mono);font-size:10px;color:var(--accent);cursor:pointer;margin-top:6px;display:inline-block}
+.rec-honor-expand-btn:hover{text-decoration:underline}
+.rec-honor-clickable{cursor:pointer}
+.rec-honor-clickable:hover .rec-honor-main{color:var(--accent)}
+.rec-honor-empty{padding:12px 14px;font-family:var(--mono);font-size:13px;color:var(--text3)}
+.rec-honor-detail{margin-top:8px;padding-top:8px;border-top:1px solid var(--border)}
+.rec-honor-detail-line{font-family:var(--mono);font-size:11px;color:var(--text3);line-height:1.6}
+/* Micro toggle (sharpest bettor chip) */
+.rec-micro-toggle{display:flex;gap:4px}
+.rec-micro-btn{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:0.08em;padding:2px 6px;border-radius:3px;border:1px solid var(--border2);background:none;color:var(--text3);cursor:pointer;transition:all 0.1s}
+.rec-micro-btn.active{background:var(--accent);color:var(--accent-text);border-color:var(--accent)}
+/* Top draws expansion table (in best draw chip) */
+.lb-rec-td-row{display:grid;grid-template-columns:18px 1fr 68px 68px 68px;align-items:center;row-gap:0;column-gap:12px;padding:6px 14px;border-bottom:1px solid var(--border)}
+.lb-rec-tbl-hdr{background:var(--surface2);min-height:28px;padding-top:5px;padding-bottom:5px}
+.lb-rec-tbl-hdr-cell{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);text-align:right;display:flex;align-items:center;justify-content:flex-end;gap:2px;cursor:pointer;user-select:none;white-space:nowrap}
+.lb-rec-tbl-hdr-cell.lb-tbl-left{text-align:left;justify-content:flex-start}
+.lb-rec-tbl-hdr-cell.lb-sort-active{color:var(--accent)}
+.lb-rec-tbl-hdr-cell.lb-sort-active .lb-sort-arrow{color:var(--accent)}
+/* Card grid: name + draw yield + match yield + index (4 cols) */
+.lb-row-card{grid-template-columns:1fr 72px 72px 72px}
+/* Active-sort column = prominent; inactive = muted. Scoped to card and standings rows. */
+.lb-row-card .lb-cell-active-col,.lb-row-standings .lb-cell-active-col{color:var(--text)!important;font-weight:600!important}
+.lb-row-card .lb-cell:not(.lb-cell-name):not(.lb-cell-active-col),
+.lb-row-standings .lb-cell:not(.lb-cell-name):not(.lb-cell-active-col){color:var(--text3)!important;font-weight:normal!important}
+/* Detail table grid: name + 8 stat cols (Draw Yld/Base/Upset/Match Yld/Draw%/Match%/Health/Index) */
+.lb-row-detail{grid-template-columns:1fr 72px 68px 68px 72px 72px 72px 72px 72px}
 /* Clickable draw card */
 .lb-draw-card-clickable{cursor:pointer}
 .lb-draw-card-clickable:hover .lb-draw-card-header{background:var(--surface2)}
+/* Clickable records rows */
+.lb-rec-row-clickable{cursor:pointer}
+.lb-rec-row-clickable:hover{background:var(--surface2)}
 /* Draw detail view */
 .lb-detail-header{display:flex;align-items:center;gap:14px;padding:12px 20px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0;border-top:3px solid var(--lb-slam-color,var(--border))}
 .lb-detail-back{background:none;border:none;font-family:var(--mono);font-size:11px;color:var(--text3);cursor:pointer;padding:4px 8px;border-radius:4px;transition:all 0.15s}
@@ -381,6 +644,46 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .mc.mc-viewer .pr{pointer-events:none}
 .mc.mc-viewer:hover{border-color:var(--border)!important}
 
+/* Status pill */
+.lb-status-pill{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:var(--lb-slam-color,var(--accent));border:1px solid var(--lb-slam-color,var(--border2));border-radius:3px;padding:2px 7px;white-space:nowrap}
+/* Movement arrows */
+.lb-arrow-up{color:#4c9968;font-size:9px}
+.lb-arrow-dn{color:#d9534f;font-size:9px}
+/* Health bar (3px bottom of row) */
+.lb-health-bar{position:absolute;left:0;bottom:0;height:3px;pointer-events:none;border-radius:0 2px 0 0;min-width:2px}
+/* Storyline chips */
+.lb-chip-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px}
+.lb-slam-chip{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.lb-chip-hdr{padding:8px 14px;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text3)}
+.lb-chip-body{padding:10px 14px;cursor:pointer}
+.lb-chip-body:hover .lb-chip-val{color:var(--accent)}
+.lb-chip-val{font-family:var(--serif);font-size:13px;color:var(--text);line-height:1.4}
+.lb-chip-empty{padding:10px 14px;font-family:var(--mono);font-size:13px;color:var(--text3)}
+/* Past slams */
+.lb-past-section-label{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text3);padding:4px 0 8px}
+.lb-past-card{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--lb-slam-color,var(--border));border-radius:8px;padding:12px 16px;display:flex;align-items:center;gap:16px;cursor:pointer}
+.lb-past-card:hover{background:var(--surface2)}
+.lb-past-name{font-family:var(--serif);font-size:16px;font-weight:600;color:var(--text);white-space:nowrap}
+.lb-past-top3{display:flex;gap:10px;flex:1;flex-wrap:wrap}
+.lb-past-entry{font-family:var(--mono);font-size:10px;color:var(--text3)}
+.lb-past-entry-rank1{color:var(--text2);font-weight:500}
+.lb-past-view{font-family:var(--mono);font-size:10px;color:var(--accent);cursor:pointer;margin-left:auto;white-space:nowrap}
+/* Generic list modal */
+.lb-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000;opacity:0;transition:opacity 0.15s}
+.lb-modal-overlay.open{opacity:1}
+.lb-modal{background:var(--surface);border:1px solid var(--border);border-radius:10px;width:min(480px,92vw);max-height:80vh;display:flex;flex-direction:column;overflow:hidden}
+.lb-modal-hdr{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border);flex-shrink:0}
+.lb-modal-title{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text)}
+.lb-modal-close{background:none;border:none;font-size:16px;color:var(--text3);cursor:pointer;padding:4px 6px;line-height:1}
+.lb-modal-close:hover{color:var(--text)}
+.lb-modal-list{overflow-y:auto}
+.lb-modal-row{display:grid;grid-template-columns:22px 1fr auto;align-items:center;gap:10px;padding:10px 18px;border-bottom:1px solid var(--border)}
+.lb-modal-row:last-child{border-bottom:none}
+.lb-modal-rank{font-family:var(--mono);font-size:10px;color:var(--text3);text-align:right}
+.lb-modal-name{font-family:var(--serif);font-size:13px;color:var(--text)}
+.lb-modal-sub{font-family:var(--mono);font-size:10px;color:var(--text3);margin-top:2px}
+.lb-modal-val{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--text);text-align:right;white-space:nowrap}
+.lb-modal-val-pos{color:#4c9968}
 /* ── COMMISSIONER ── */
 #screen-commissioner{flex-direction:column}
 .comm-placeholder{flex:1;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:13px;color:var(--text3)}
@@ -446,6 +749,17 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 /* ── VIEWER ── */
 #screen-viewer{flex-direction:column;background:var(--bg)}
 #screen-viewer .viewer-hdr{display:flex}
+.viewer-row2{background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;flex-shrink:0;height:44px;padding:0 16px;gap:14px}
+.viewer-stats-strip{display:flex;align-items:center;gap:14px;flex:1;overflow:hidden}
+.viewer-stat-pill{display:flex;flex-direction:column;align-items:flex-start;flex-shrink:0}
+.viewer-stat-pill .vslbl{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:0.06em;color:var(--text3);line-height:1.2}
+.viewer-stat-pill .vsval{font-family:var(--mono);font-size:13px;font-weight:500;color:var(--text);line-height:1.2}
+.mc-yield-footer{text-align:center;font-family:var(--mono);font-size:11px;font-weight:500;padding:3px 6px;border-top:1px solid var(--border)}
+.mc-yield-footer.yield-pos{color:var(--green)}
+.mc-yield-footer.yield-neg{color:var(--red)}
+.pr.mp-loser .pr-name{text-decoration:line-through;opacity:0.45}
+.pr.mp-loser .pr-seed{opacity:0.45}
+.pr-check{font-family:var(--mono);font-size:11px;color:var(--purple);margin-left:auto;padding-left:4px;flex-shrink:0}
 
 /* ── MODAL ── */
 #edit-player-modal,#pick-confirm-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:200;align-items:center;justify-content:center}
@@ -454,6 +768,25 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 ::-webkit-scrollbar-track{background:var(--surface2)}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
 #epm-seed:focus,#epm-name:focus{border-color:var(--accent)!important;outline:none}
+/* Mobile detail-table scroll fix — must come AFTER .lb-detail-table-wrap{overflow:hidden} above */
+@media(max-width:768px){
+  .lb-detail-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:6px 6px 8px 8px}
+  .lb-row-detail .lb-cell-name{background:var(--surface)}
+  .lb-header-row.lb-row-detail .lb-cell-name{background:var(--surface2)}
+  .lb-row-alt .lb-cell-name{background:var(--surface2)}
+  .lb-row-self .lb-cell-name{background:var(--accent-dim)}
+  /* Leaderboard Slams + Records mobile layout */
+  .lb-content{padding:16px 12px}
+  .lb-row-card{grid-template-columns:1fr 56px 56px 56px;column-gap:8px}
+  .lb-chip-row{grid-template-columns:1fr}
+  .lb-past-card{flex-wrap:wrap;row-gap:6px}
+  .lb-past-top3{flex-basis:100%;order:3}
+  .rec-pod-block{width:auto;flex:1;min-width:0}
+  .rec-pod-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+  .lb-row-standings{grid-template-columns:18px 1fr 56px 56px 56px;column-gap:8px}
+  .lb-cell-draws{display:none}
+  .lb-rec-td-row{grid-template-columns:18px 1fr 56px 56px 56px;column-gap:8px}
+}
 @media print{body{display:none!important}}
 </style>
 </head>
@@ -515,19 +848,40 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
       </div>
     </div>
   </div>
+  <!-- Mobile Row 2: nav tabs (left) + countdown (right) -->
+  <div id="mobile-hdr-row2">
+    <div class="hdr-nav" id="mobile-hdr-nav">
+      <button class="hdr-nav-link active" id="mobile-nav-bracket">Draw</button>
+      <button class="hdr-nav-link" id="mobile-nav-leaderboard">Leaderboard</button>
+    </div>
+    <div id="mobile-countdown-wrap"></div>
+  </div>
   <!-- Row 2: M/W toggle + stats -->
   <div class="hdr-row2">
     <div class="row2-seg"><div class="seg-control" id="seg-control"></div></div>
     <div class="stats-strip" id="stats-strip"></div>
-    <div class="stat-desc-bar" id="stat-desc-bar">
-      <span class="stat-desc-label" id="stat-desc-label"></span>
-      <span class="stat-desc-text" id="stat-desc-text"></span>
-    </div>
+    <div class="stats-drawer" id="stats-drawer"></div>
   </div>
+  <!-- Mobile round selector (hidden on desktop) -->
+  <div id="round-selector-bar" class="round-selector-bar"></div>
   <div class="round-labels-bar" id="round-labels-bar">
     <div class="round-labels-inner" id="round-labels-inner"></div>
   </div>
   <div class="bracket-body" id="bracket-body"></div>
+  <!-- Mobile bottom bar: search + M/W seg -->
+  <div id="mobile-bottom-bar" class="mobile-bottom-bar">
+    <div class="mobile-search-row">
+      <div class="search-input-wrap">
+        <span class="search-input-icon">🔍</span>
+        <input class="search-input" id="mobile-search-input" type="text" placeholder="Search players…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+        <button class="search-clear" id="mobile-search-clear">×</button>
+      </div>
+      <div class="search-results" id="mobile-search-results"></div>
+    </div>
+    <div class="mobile-seg-row">
+      <div class="seg-control" id="seg-control-mobile"></div>
+    </div>
+  </div>
 </div>
 
 <!-- ── LEADERBOARD ── -->
@@ -535,7 +889,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
   <div class="hdr-row1">
     <div class="hdr-left">
       <span class="slam-name-label" id="lb-slam-name-label">—</span>
-      <div class="hdr-nav">
+      <div class="hdr-nav" id="lb-hdr-nav">
         <button class="hdr-nav-link" id="nav-bracket-from-lb">Draw</button>
         <button class="hdr-nav-link active">Leaderboard</button>
       </div>
@@ -555,6 +909,13 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
       </div>
     </div>
   </div>
+  <!-- Mobile-only row 2: Draw / Leaderboard nav tabs (mirrors bracket screen's mobile-hdr-row2) -->
+  <div id="lb-mobile-hdr-row2">
+    <div class="hdr-nav" id="lb-mobile-hdr-nav">
+      <button class="hdr-nav-link" id="lb-mobile-nav-bracket">Draw</button>
+      <button class="hdr-nav-link active" id="lb-mobile-nav-leaderboard">Leaderboard</button>
+    </div>
+  </div>
   <div class="lb-root" id="lb-root">
     <div class="lb-loading">Loading…</div>
   </div>
@@ -569,6 +930,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
         <button class="hdr-nav-link" data-tab="draw">Draw Management</button>
         <button class="hdr-nav-link active" data-tab="results">Results</button>
         <button class="hdr-nav-link" data-tab="lock">Lock Managing</button>
+        <button class="hdr-nav-link" data-tab="odds">Odds</button>
       </div>
     </div>
     <div class="hdr-center">
@@ -592,6 +954,14 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
           <button class="acct-mi acct-mi-danger" id="logout-btn-comm">Sign out</button>
         </div>
       </div>
+    </div>
+  </div>
+  <!-- Commissioner Mobile Row 2: tab nav -->
+  <div id="comm-mobile-hdr-row2">
+    <div class="hdr-nav" id="comm-mobile-hdr-nav">
+      <button class="hdr-nav-link active" data-tab="results">Results</button>
+      <button class="hdr-nav-link" data-tab="lock">Locks</button>
+      <button class="hdr-nav-link" data-tab="odds">Odds</button>
     </div>
   </div>
   <!-- Row 2: M/W toggle -->
@@ -639,15 +1009,32 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
     </div>
     <!-- ── RESULTS PANE ── -->
     <div class="comm-tab-pane comm-tab-pane-bracket pane-active" id="comm-pane-results">
+      <!-- Mobile round selector (hidden on desktop) -->
+      <div id="comm-round-selector-bar" class="round-selector-bar"></div>
       <div class="round-labels-bar">
         <div class="round-labels-inner" id="results-round-labels-inner"></div>
       </div>
       <div class="bracket-body" id="results-bracket-body"></div>
+      <!-- Commissioner mobile bottom bar: search + M/W seg -->
+      <div id="comm-mobile-bottom-bar" class="mobile-bottom-bar">
+        <div class="mobile-search-row">
+          <div class="search-input-wrap">
+            <span class="search-input-icon">🔍</span>
+            <input class="search-input" id="comm-mobile-search-input" type="text" placeholder="Search players…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+            <button class="search-clear" id="comm-mobile-search-clear">×</button>
+          </div>
+          <div class="search-results" id="comm-mobile-search-results"></div>
+        </div>
+        <div class="mobile-seg-row">
+          <div class="seg-control" id="comm-seg-control-mobile"></div>
+        </div>
+      </div>
     </div>
     <!-- ── LOCK MANAGING PANE ── -->
     <div class="comm-tab-pane" id="comm-pane-lock">
       <div id="comm-lock-wrap"></div>
     </div>
+    <div class="comm-tab-pane" id="comm-pane-odds"></div>
   </div>
 </div>
 
@@ -680,6 +1067,13 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
       <span class="viewer-hdr-name" id="viewer-hdr-name-v"></span>
       <span class="viewer-hdr-draw" id="viewer-hdr-draw-v"></span>
     </div>
+  </div>
+  <div class="viewer-row2">
+    <div class="seg-control" id="viewer-seg-control">
+      <button class="seg-btn active" data-mode="original">Original Draw</button>
+      <button class="seg-btn" data-mode="match">Match Picks</button>
+    </div>
+    <div class="viewer-stats-strip" id="viewer-stats-strip"></div>
   </div>
   <div class="round-labels-bar" id="viewer-round-labels-bar">
     <div class="round-labels-inner" id="viewer-round-labels-inner"></div>
