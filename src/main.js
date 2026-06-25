@@ -625,6 +625,7 @@ async function init() {
   try {
     const user = await restoreSession()
     if (!user) {
+      if (new URLSearchParams(window.location.search).has('signup')) setAuthMode('signup')
       showScreen('screen-auth')
       return
     }
