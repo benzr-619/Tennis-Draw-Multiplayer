@@ -25,6 +25,7 @@ A Supabase MCP connector is connected. Use it for schema changes, data inspectio
 | `matches` | ~254 | `id`, `draw_id`, `round_index` (0–6), `match_index`, `p1_name`, `p1_seed`, `p2_name`, `p2_seed`, `winner`, `score`, `roster_changed_at` |
 | `picks` | ~254 | `id`, `user_id`, `draw_id`, `match_id`, `match_pick`, `original_pick`, `original_pick_result` (correct/wrong), `match_pick_result` (correct/wrong), `high_confidence`, `edited_after_lock`, `notes` |
 | `lock_schedules` | ~13 | `id`, `draw_id`, `round_index`, `match_index_start`, `match_index_end`, `lock_type` (original_picks/backup_picks), `label`, `scheduled_at`, `locked_at` |
+| `app_settings` | 1 (singleton) | `id` (int PK, always 1), `next_slam_label` (text), `next_slam_starts_at` (timestamptz) — between-slams state |
 
 ## MCP Tool Usage
 

@@ -428,7 +428,10 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .round-labels-inner{display:flex;align-items:center;padding-left:24px;min-width:max-content;will-change:transform}
 
 /* ── BRACKET BODY ── */
+#bracket-area{flex:1;position:relative;overflow:hidden;display:flex;flex-direction:column}
 .bracket-body{flex:1;overflow:auto;padding:24px;background:var(--bg)}
+.getting-ready-overlay{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}
+.getting-ready-overlay::before{content:'';position:absolute;inset:0;background:var(--bg);opacity:0.70;z-index:-1}
 .bracket-svg-wrap{position:relative;display:inline-block}
 .bracket-svg-wrap svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visible}
 
@@ -867,7 +870,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
   <div class="round-labels-bar" id="round-labels-bar">
     <div class="round-labels-inner" id="round-labels-inner"></div>
   </div>
-  <div class="bracket-body" id="bracket-body"></div>
+  <div id="bracket-area">
+    <div class="bracket-body" id="bracket-body"></div>
+  </div>
   <!-- Mobile bottom bar: search + M/W seg -->
   <div id="mobile-bottom-bar" class="mobile-bottom-bar">
     <div class="mobile-search-row">
@@ -1008,6 +1013,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
       <div class="comm-section" id="comm-r1-wrap" style="display:none"></div>
       <!-- Existing draws list -->
       <div class="comm-section" id="comm-existing-draws-wrap"></div>
+      <!-- Getting Ready Mode -->
+      <div class="comm-section" id="comm-getting-ready-wrap"></div>
     </div>
     <!-- ── RESULTS PANE ── -->
     <div class="comm-tab-pane comm-tab-pane-bracket pane-active" id="comm-pane-results">

@@ -21,6 +21,7 @@ Current rules files:
 - `.claude/rules/leaderboard-detail.md` — SLAM_COLORS, grid values, tab internals, viewer entry point
 - `.claude/rules/supabase-mcp.md` — Supabase MCP connector: project ID, table schemas, how to run migrations/SQL without manual dashboard work
 - `.claude/rules/betting.md` — Match Yield betting layer: scoring formula, odds lifecycle, sport keys, name matching, DB objects, first-slam troubleshooting
+- `.claude/rules/between-slams.md` — app_settings table, hasActiveDraw(), getting-ready screen, commissioner form
 
 ---
 

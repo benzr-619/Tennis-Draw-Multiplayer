@@ -266,3 +266,21 @@ create index on public.lock_schedules (draw_id);
 -- reopened. picks.updated_at is maintained automatically by the picks_updated_at
 -- trigger, so no app change is needed for the timestamp side.
 -- alter table public.matches add column if not exists roster_changed_at timestamptz;
+
+-- app_settings table — singleton row for between-slams getting-ready state (2026-06-25)
+-- create table public.app_settings (
+--   id                   int primary key,
+--   next_slam_label      text,
+--   next_slam_starts_at  timestamptz
+-- );
+-- alter table public.app_settings enable row level security;
+-- create policy "Authenticated users can read app_settings"
+--   on public.app_settings for select
+--   using (auth.role() = 'authenticated');
+-- create policy "Commissioner can update app_settings"
+--   on public.app_settings for update
+--   using ((select is_commissioner from public.profiles where id = auth.uid()));
+-- create policy "Commissioner can insert app_settings"
+--   on public.app_settings for insert
+--   with check ((select is_commissioner from public.profiles where id = auth.uid()));
+-- insert into public.app_settings (id) values (1) on conflict do nothing;

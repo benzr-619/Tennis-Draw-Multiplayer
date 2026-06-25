@@ -4,6 +4,12 @@ Historical record of build steps, refactors, and fixed bugs. **Not loaded into c
 
 ---
 
+## 2026-06-25 — Getting-ready screen between slams
+
+When all draws have `is_active = false`, the bracket screen now shows a "getting ready" page instead of a stale finished bracket. New `app_settings` Supabase table (singleton row id=1) stores `next_slam_label` and `next_slam_starts_at`. `hasActiveDraw()` added to `state.js`. `showBracketScreen()` branches on `!hasActiveDraw()` rather than `draws.length === 0`. In the between-slams state, the M/W seg control, search bar, print button, and mobile bottom bar are hidden; page-level nav and leaderboard remain fully functional. Commissioner → Draw Management has a new "Getting Ready Mode" section: pre-fill next slam label + start date ("Save next slam info"), or "Switch to getting-ready mode" to save settings and deactivate all draws in one step.
+
+---
+
 ## 2026-06-11 — Slam Index composite metric
 
 Added a pool-adjusted composite score that merges Draw Yield and Match Yield into a single normalised value.

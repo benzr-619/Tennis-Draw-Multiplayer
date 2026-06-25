@@ -11,6 +11,10 @@ export function activeDraw() {
   return state.draws[state.activeTab] || null
 }
 
+export function hasActiveDraw() {
+  return state.draws.some(d => d.is_active)
+}
+
 export function applyTheme(slam) {
   document.body.className = slam ? 'theme-' + slam : ''
 }

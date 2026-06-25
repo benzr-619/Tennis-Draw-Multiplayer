@@ -77,6 +77,7 @@ export function initCommissioner() {
   $c('comm-parse-btn')?.addEventListener('click', handleParseClick)
   $c('comm-confirm-btn')?.addEventListener('click', handleConfirmDraw)
   renderExistingDraws()
+  renderGettingReadySection()
 }
 
 // ── COMMISSIONER HEADER ──
@@ -348,6 +349,118 @@ async function handleConfirmDraw() {
   }
 
   btn.disabled = false; btn.textContent = 'Confirm draw'
+}
+
+// ── GETTING READY MODE ──
+function _readNextSlamForm() {
+  const labelVal = $c('comm-next-slam-label')?.value.trim() || null
+  const dtVal    = $c('comm-next-slam-starts-at')?.value || null
+  return { labelVal, startsAt: dtVal ? new Date(dtVal).toISOString() : null }
+}
+
+async function fetchAppSettings() {
+  try {
+    const { data } = await supabase
+      .from('app_settings')
+      .select('next_slam_label, next_slam_starts_at')
+      .eq('id', 1)
+      .maybeSingle()
+    return data || {}
+  } catch (_) { return {} }
+}
+
+async function renderGettingReadySection() {
+  const wrap = $c('comm-getting-ready-wrap')
+  if (!wrap) return
+  const settings = await fetchAppSettings()
+
+  let dtValue = ''
+  if (settings.next_slam_starts_at) {
+    const d = new Date(settings.next_slam_starts_at)
+    const pad = n => String(n).padStart(2, '0')
+    dtValue = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  }
+
+  wrap.innerHTML = `
+    <div class="comm-section-title" style="margin-bottom:10px">Getting Ready Mode</div>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.6">
+      Pre-fill the next slam details so players see a countdown as soon as the current slam ends.
+      Use <strong>Switch to getting-ready mode</strong> to deactivate the current slam and show the waiting screen to everyone.
+    </p>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
+      <div>
+        <label style="font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);display:block;margin-bottom:5px">Next slam label</label>
+        <input type="text" id="comm-next-slam-label"
+          value="${settings.next_slam_label ? escHtml(settings.next_slam_label) : ''}"
+          placeholder="e.g. Wimbledon 2026"
+          style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid var(--border);border-radius:5px;background:var(--surface);color:var(--text);font-family:var(--sans);font-size:13px">
+      </div>
+      <div>
+        <label style="font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);display:block;margin-bottom:5px">Matches start (your local time)</label>
+        <input type="datetime-local" id="comm-next-slam-starts-at"
+          value="${dtValue}"
+          style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid var(--border);border-radius:5px;background:var(--surface);color:var(--text);font-family:var(--mono);font-size:12px">
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="comm-btn comm-btn-secondary" id="comm-save-next-slam-btn">Save next slam info</button>
+      <button class="comm-btn comm-btn-danger" id="comm-switch-getting-ready-btn">Switch to getting-ready mode</button>
+    </div>
+    <div class="comm-msg" id="comm-getting-ready-msg"></div>`
+
+  $c('comm-save-next-slam-btn')?.addEventListener('click', handleSaveNextSlam)
+  $c('comm-switch-getting-ready-btn')?.addEventListener('click', handleSwitchToGettingReady)
+}
+
+async function handleSaveNextSlam() {
+  const msg = $c('comm-getting-ready-msg')
+  const btn = $c('comm-save-next-slam-btn')
+  if (btn) btn.disabled = true
+  const { labelVal, startsAt } = _readNextSlamForm()
+  try {
+    const { error } = await supabase
+      .from('app_settings')
+      .upsert({ id: 1, next_slam_label: labelVal, next_slam_starts_at: startsAt })
+    if (error) throw error
+    if (msg) { msg.className = 'comm-msg success'; msg.textContent = 'Next slam info saved.' }
+  } catch (err) {
+    if (msg) { msg.className = 'comm-msg error'; msg.textContent = 'Error: ' + err.message }
+  } finally {
+    if (btn) btn.disabled = false
+  }
+}
+
+async function handleSwitchToGettingReady() {
+  if (!state.currentUser?.is_commissioner) return
+  if (!window.confirm('This will deactivate the current slam and show a getting-ready screen to all players. Continue?')) return
+
+  const msg = $c('comm-getting-ready-msg')
+  const btn = $c('comm-switch-getting-ready-btn')
+  if (btn) btn.disabled = true
+
+  try {
+    const { labelVal, startsAt } = _readNextSlamForm()
+    const { error: se } = await supabase
+      .from('app_settings')
+      .upsert({ id: 1, next_slam_label: labelVal, next_slam_starts_at: startsAt })
+    if (se) throw se
+
+    const { error: de } = await supabase
+      .from('draws')
+      .update({ is_active: false })
+      .neq('id', 'none')
+    if (de) throw de
+
+    await loadAllDraws()
+    renderCommHeader()
+    renderExistingDraws()
+    await renderGettingReadySection()
+    if (msg) { msg.className = 'comm-msg success'; msg.textContent = 'Getting-ready mode active. All draws deactivated.' }
+  } catch (err) {
+    if (msg) { msg.className = 'comm-msg error'; msg.textContent = 'Error: ' + err.message }
+  } finally {
+    if (btn) btn.disabled = false
+  }
 }
 
 // ── EXISTING DRAWS ──

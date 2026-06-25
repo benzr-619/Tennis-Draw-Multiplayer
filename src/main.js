@@ -1,4 +1,4 @@
-import { state, activeDraw, applyTheme, isMobile } from './state.js'
+import { state, activeDraw, applyTheme, isMobile, hasActiveDraw } from './state.js'
 import { login, signup, logout, restoreSession } from './auth.js'
 import { loadAllDraws, reloadActiveDraw, slamKey, slamLabel } from './data.js'
 import { renderBracket, renderBracketDirect, placeCard, setRenderBracketFn } from './bracket.js'
@@ -9,6 +9,7 @@ import { buildPrintHTML } from './print.js'
 import { initCommissioner, renderResults, renderLockManaging } from './commissioner.js'
 import { renderLeaderboard } from './leaderboard.js'
 import { animateSegThumb } from './seg-thumb.js'
+import { supabase } from './supabase.js'
 
 // ── INIT ──
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
@@ -533,16 +534,78 @@ if (bb && li) {
   bb.addEventListener('scroll', function () { li.style.transform = 'translateX(-' + this.scrollLeft + 'px)' })
 }
 
+// ── GETTING READY (between-slams) ──
+async function renderGettingReady() {
+  let label = null, startsAt = null
+  try {
+    const { data } = await supabase
+      .from('app_settings')
+      .select('next_slam_label, next_slam_starts_at')
+      .eq('id', 1)
+      .maybeSingle()
+    label = data?.next_slam_label ?? null
+    startsAt = data?.next_slam_starts_at ?? null
+  } catch (_) {}
+
+  const logoHtml = `<img src="/icons/icon-192.png" alt="" style="width:100px;height:100px;border-radius:50%;display:block;margin-bottom:8px">`
+
+  if (!label) {
+    return `<div class="bracket-empty">
+      ${logoHtml}
+      <div class="bracket-empty-title" style="font-size:26px">No draw uploaded yet.</div>
+    </div>`
+  }
+
+  let countdownHtml = ''
+  if (startsAt) {
+    const msLeft = new Date(startsAt) - Date.now()
+    if (msLeft > 0) {
+      const totalMins = Math.floor(msLeft / 60000)
+      const days = Math.floor(totalMins / 1440)
+      const hrs  = Math.floor((totalMins % 1440) / 60)
+      const mins = totalMins % 60
+      const str = days >= 1
+        ? `Matches start in ${days} day${days === 1 ? '' : 's'}`
+        : `Matches start in ${hrs}h ${String(mins).padStart(2, '0')}m`
+      countdownHtml = `<div class="bracket-empty-sub" style="font-family:var(--mono);font-size:16px">${str}</div>`
+    }
+  }
+
+  return `<div class="bracket-empty">
+    ${logoHtml}
+    <div class="bracket-empty-title" style="font-size:28px">${label}</div>
+    ${countdownHtml}
+    <div class="bracket-empty-sub" style="font-size:13px;margin-top:12px;opacity:0.7;font-family:var(--mono)">tap anywhere to browse the last draw</div>
+  </div>`
+}
+
 // ── SHOW BRACKET SCREEN ──
 async function showBracketScreen() {
-  if (state.draws.length === 0) {
-    applyTheme('')
+  if (!hasActiveDraw()) {
+    // Render last slam dimmed behind a frosted overlay
+    const d = activeDraw() // loadAllDraws fallback points activeTab at last draw
+    if (d) {
+      applyTheme(d.slam)
+      if (isMobile() && _mobileActiveRound === 0) _mobileActiveRound = defaultMobileRound(d)
+    } else { applyTheme('') }
     renderHeader()
     renderStats()
     renderBracketDisplay()
     showScreen('screen-bracket')
+    const area = $('bracket-area')
+    if (area) {
+      area.querySelector('.getting-ready-overlay')?.remove()
+      const overlay = document.createElement('div')
+      overlay.className = 'getting-ready-overlay'
+      overlay.innerHTML = await renderGettingReady()
+      overlay.addEventListener('click', () => overlay.remove())
+      overlay.style.cursor = 'pointer'
+      area.appendChild(overlay)
+    }
     return
   }
+  // Active draw: remove overlay if lingering from between-slams mode
+  $('bracket-area')?.querySelector('.getting-ready-overlay')?.remove()
   const d = activeDraw()
   if (d) {
     applyTheme(d.slam)
