@@ -15,7 +15,7 @@ export async function loadAllDraws() {
   // 1. Fetch all draws
   const { data: drawRows, error: de } = await supabase
     .from('draws')
-    .select('id, slam, draw_type, year, original_picks_locked, is_active, created_at')
+    .select('id, slam, draw_type, year, original_picks_locked, is_active, exclude_from_leaderboard, created_at')
     .order('created_at', { ascending: true })
 
   if (de) throw de
@@ -113,6 +113,7 @@ export async function loadDraw(drawRow) {
     year: drawRow.year,
     locked: drawRow.original_picks_locked ?? false,
     is_active: drawRow.is_active ?? false,
+    excludeFromLeaderboard: drawRow.exclude_from_leaderboard ?? false,
     rounds,
   }
 
@@ -164,7 +165,7 @@ export async function loadLockSchedules() {
 export async function reloadActiveDraw() {
   const d = state.draws[state.activeTab]
   if (!d) return
-  const drawRow = { id: d.db_id, slam: d.slam, draw_type: d.draw, year: d.year, original_picks_locked: d.locked, is_active: d.is_active }
+  const drawRow = { id: d.db_id, slam: d.slam, draw_type: d.draw, year: d.year, original_picks_locked: d.locked, is_active: d.is_active, exclude_from_leaderboard: d.excludeFromLeaderboard }
   const refreshed = await loadDraw(drawRow)
   state.draws[state.activeTab] = refreshed
   await loadLockSchedules()

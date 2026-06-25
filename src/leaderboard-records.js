@@ -13,6 +13,7 @@ let recSort       = { col: 'slamIndex', dir: -1 }
 
 let _recContainer    = null
 let _recProfs        = null
+let _recAllDraws     = null
 let _recAllStatsMaps = null
 let _recYears        = null
 let _recContentEl    = null
@@ -102,8 +103,9 @@ export async function renderRecordsTab(container, profs) {
   }
   _recContainer    = container
   _recProfs        = profs
-  _recAllStatsMaps = await Promise.all(state.draws.map(d => loadDrawStatsForAllUsers(d)))
-  _recYears        = [...new Set(state.draws.map(d => d.year))].sort((a, b) => b - a)
+  _recAllDraws     = state.draws.filter(d => !d.excludeFromLeaderboard)
+  _recAllStatsMaps = await Promise.all(_recAllDraws.map(d => loadDrawStatsForAllUsers(d)))
+  _recYears        = [...new Set(_recAllDraws.map(d => d.year))].sort((a, b) => b - a)
   if (recPeriod !== 'all' && !_recYears.includes(recPeriod)) recPeriod = 'all'
   _rerenderAll()
 }
@@ -118,9 +120,9 @@ function renderPeriodContent(content) {
   content.innerHTML = ''
 
   const periodDraws = recPeriod === 'all'
-    ? state.draws
-    : state.draws.filter(d => d.year === recPeriod)
-  const periodMaps = periodDraws.map(d => _recAllStatsMaps[state.draws.indexOf(d)])
+    ? _recAllDraws
+    : _recAllDraws.filter(d => d.year === recPeriod)
+  const periodMaps = periodDraws.map(d => _recAllStatsMaps[_recAllDraws.indexOf(d)])
   const agg        = buildAllTimeAgg(_recProfs, periodDraws, periodMaps)
   const brackets   = buildAllBrackets(_recProfs, periodDraws, periodMaps)
   const bestUpset  = buildPoolBestUpset(_recProfs, periodDraws, periodMaps)

@@ -59,11 +59,12 @@ export function openListModal(title, rows) {
 // ── MAIN ENTRY ──
 
 export async function renderSlamsTab(container, profs) {
-  if (state.draws.length === 0) {
+  const visibleDraws = state.draws.filter(d => !d.excludeFromLeaderboard)
+  if (visibleDraws.length === 0) {
     container.innerHTML = '<div class="lb-empty">No draws uploaded yet.</div>'; return
   }
   const groups = new Map()
-  state.draws.forEach(d => {
+  visibleDraws.forEach(d => {
     const k = slamKey(d)
     if (!groups.has(k)) groups.set(k, { slam: d.slam, year: d.year, draws: [], key: k })
     groups.get(k).draws.push(d)

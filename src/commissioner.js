@@ -76,6 +76,7 @@ export function initCommissioner() {
   initDropZone()
   $c('comm-parse-btn')?.addEventListener('click', handleParseClick)
   $c('comm-confirm-btn')?.addEventListener('click', handleConfirmDraw)
+  renderExistingDraws()
 }
 
 // ── COMMISSIONER HEADER ──
@@ -339,6 +340,7 @@ async function handleConfirmDraw() {
 
     // Update commissioner header to reflect new slam
     renderCommHeader()
+    renderExistingDraws()
   } catch (err) {
     setDrawMsg('Error saving draw: ' + err.message, 'error')
     btn.disabled = false; btn.textContent = 'Confirm draw'
@@ -346,6 +348,48 @@ async function handleConfirmDraw() {
   }
 
   btn.disabled = false; btn.textContent = 'Confirm draw'
+}
+
+// ── EXISTING DRAWS ──
+export function renderExistingDraws() {
+  const wrap = $c('comm-existing-draws-wrap')
+  if (!wrap) return
+  if (state.draws.length === 0) { wrap.innerHTML = ''; return }
+
+  const SLAM_NAMES = { AO: 'Australian Open', RG: 'Roland Garros', WIM: 'Wimbledon', USO: 'US Open' }
+  const DRAW_NAMES = { MS: "Men's Singles", WS: "Women's Singles" }
+
+  wrap.innerHTML = '<div class="comm-section-title" style="margin-bottom:10px">Existing draws</div>'
+  const list = document.createElement('div')
+  list.style.cssText = 'display:flex;flex-direction:column;gap:8px'
+
+  state.draws.forEach(d => {
+    const row = document.createElement('div')
+    row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:8px 12px;border:1px solid var(--border);border-radius:7px;background:var(--surface)'
+
+    const label = document.createElement('span')
+    label.style.cssText = 'flex:1;font-family:var(--mono);font-size:12px;color:var(--text)'
+    label.textContent = `${SLAM_NAMES[d.slam] || d.slam} ${d.year} · ${DRAW_NAMES[d.draw] || d.draw}`
+
+    const cbWrap = document.createElement('label')
+    cbWrap.style.cssText = 'display:flex;align-items:center;gap:6px;cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--text2);white-space:nowrap'
+
+    const cb = document.createElement('input')
+    cb.type = 'checkbox'
+    cb.checked = d.excludeFromLeaderboard
+    cb.addEventListener('change', async () => {
+      cb.disabled = true
+      await supabase.from('draws').update({ exclude_from_leaderboard: cb.checked }).eq('id', d.db_id)
+      d.excludeFromLeaderboard = cb.checked
+      cb.disabled = false
+    })
+
+    cbWrap.append(cb, 'Exclude from leaderboard')
+    row.append(label, cbWrap)
+    list.appendChild(row)
+  })
+
+  wrap.appendChild(list)
 }
 
 // ── MSG HELPER ──
