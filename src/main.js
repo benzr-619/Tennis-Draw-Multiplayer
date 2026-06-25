@@ -1,5 +1,5 @@
 import { state, activeDraw, applyTheme, isMobile, hasActiveDraw } from './state.js'
-import { login, signup, logout, restoreSession } from './auth.js'
+import { login, signup, logout, restoreSession, updateDisplayName } from './auth.js'
 import { loadAllDraws, reloadActiveDraw, slamKey, slamLabel } from './data.js'
 import { renderBracket, renderBracketDirect, placeCard, setRenderBracketFn } from './bracket.js'
 import { renderBracketList } from './bracket-list.js'
@@ -481,7 +481,7 @@ wireAcctMenu('acct-chip', 'acct-menu')
 wireAcctMenu('acct-chip-lb', 'acct-menu-lb')
 wireAcctMenu('acct-chip-cmsr', 'acct-menu-cmsr')
 document.addEventListener('click', closeAcctMenus)
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAcctMenus() })
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeAcctMenus(); closeRenameModal() } })
 
 // ── VIEWER BACK ──
 $('viewer-back-btn-v').addEventListener('click', async () => {
@@ -527,6 +527,42 @@ setInterval(() => {
 $('epm-cancel').addEventListener('click', closeModal)
 $('epm-confirm').addEventListener('click', confirmEditPlayer)
 $('edit-player-modal').addEventListener('click', e => { if (e.target === $('edit-player-modal')) closeModal() })
+
+// ── RENAME MODAL ──
+function openRenameModal() {
+  closeAcctMenus()
+  $('rename-input').value = state.currentUser?.display_name ?? ''
+  $('rename-msg').textContent = ''
+  $('rename-modal').style.display = 'flex'
+  $('rename-input').focus()
+  $('rename-input').select()
+}
+function closeRenameModal() {
+  $('rename-modal').style.display = 'none'
+}
+;['rename-btn', 'rename-btn-lb', 'rename-btn-cmsr'].forEach(id => {
+  const el = $(id)
+  if (el) el.addEventListener('click', openRenameModal)
+})
+$('rename-cancel').addEventListener('click', closeRenameModal)
+$('rename-modal').addEventListener('click', e => { if (e.target === $('rename-modal')) closeRenameModal() })
+$('rename-confirm').addEventListener('click', async () => {
+  const newName = $('rename-input').value.trim()
+  if (!newName) { $('rename-msg').textContent = 'Name cannot be empty.'; return }
+  const btn = $('rename-confirm')
+  btn.disabled = true
+  btn.textContent = 'Saving…'
+  try {
+    await updateDisplayName(state.currentUser.id, newName)
+    renderHeader()
+    closeRenameModal()
+  } catch (err) {
+    $('rename-msg').textContent = err.message || 'Failed to save.'
+  } finally {
+    btn.disabled = false
+    btn.textContent = 'Save'
+  }
+})
 
 // ── ROUND LABELS SCROLL SYNC (desktop only) ──
 const bb = $('bracket-body'), li = $('round-labels-inner')

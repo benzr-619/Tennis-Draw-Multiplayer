@@ -9,7 +9,7 @@ Singleton Supabase table — always exactly one row with `id = 1`.
 | Column | Type | Purpose |
 |---|---|---|
 | `id` | int PK (always 1) | Singleton enforced by PK |
-| `next_slam_label` | text nullable | Displayed as the title on the getting-ready page (e.g. "Wimbledon 2026") |
+| `next_slam_label` | text nullable | Displayed as the title on the overlay (e.g. "Wimbledon 2026") |
 | `next_slam_starts_at` | timestamptz nullable | When matches begin; drives the countdown |
 
 **RLS:** all authenticated users can SELECT; only commissioners can UPDATE/INSERT (mirrors lock_schedules pattern).
@@ -26,27 +26,60 @@ The between-slams state is triggered by `!hasActiveDraw()`, which covers two cas
 
 Before this feature, only the zero-draws case was handled — the fallback in `loadAllDraws` (data.js ~line 34) would pick the last-indexed draw when none was active, showing a stale finished bracket.
 
-## Chrome-Hiding in showBracketScreen() (main.js)
+## Overlay Approach in showBracketScreen() (main.js)
+
+**No chrome is hidden.** The full bracket renders normally in the background; a fixed-position overlay floats on top covering the full viewport.
 
 When `!hasActiveDraw()`, `showBracketScreen()`:
-1. Hides `#search-wrap` (style.display = 'none')
-2. Hides `.hdr-row2` on `#screen-bracket` (style.display = 'none') — covers both M/W seg and stats strip
-3. Sets `#print-btn` hidden = true
-4. Hides `#mobile-bottom-bar` (style.display = 'none') — covers mobile M/W seg and mobile search
+1. Calls `applyTheme(d.slam)` on the last inactive draw (if any), then `renderHeader()`, `renderStats()`, `renderBracketDisplay()` — the last slam renders in full behind the overlay
+2. Appends a `.getting-ready-overlay` div to `#bracket-area`
+3. Sets `overlay.innerHTML = await renderGettingReady()` — the logo + title + countdown card
+4. Wires `overlay.addEventListener('click', () => overlay.remove())` — tap/click anywhere dismisses the overlay and lets users browse the last draw
 
-When `hasActiveDraw()` becomes true again, all four are restored with `style.display = ''` / `hidden = false`. Setting `style.display = ''` defers back to CSS — mobile-bottom-bar has `display:none` at desktop and `display:flex` at ≤768px, so this correctly re-enables it on mobile only.
+When `hasActiveDraw()` becomes true (new slam uploaded), the active-draw path removes any lingering overlay: `$('bracket-area')?.querySelector('.getting-ready-overlay')?.remove()`.
 
-Page-level nav (`#nav-bracket`, `#nav-leaderboard`) and the account chip remain visible — leaderboard stays fully functional without an active draw.
+Page-level nav (Draw/Leaderboard tabs) and all chrome remain fully interactive — the overlay is CSS `position:fixed; z-index:100` covering only what's rendered, not the entire DOM.
+
+## #bracket-area Wrapper (index.html)
+
+`#bracket-body` is wrapped in `<div id="bracket-area">`:
+```html
+<div id="bracket-area">
+  <div class="bracket-body" id="bracket-body"></div>
+</div>
+```
+
+CSS: `#bracket-area { flex:1; position:relative; overflow:hidden; display:flex; flex-direction:column }` — takes the `flex:1` role that `#bracket-body` previously had in `#screen-bracket`'s column. `#bracket-body` keeps its own `flex:1` to fill `#bracket-area`.
+
+The overlay is appended to `#bracket-area` (DOM parent) even though it's `position:fixed` — the parent doesn't affect fixed positioning, but keeps the overlay easy to find via `$('bracket-area').querySelector('.getting-ready-overlay')`.
+
+## .getting-ready-overlay CSS (index.html)
+
+```css
+.getting-ready-overlay { position:fixed; inset:0; z-index:100; display:flex; align-items:center; justify-content:center; backdrop-filter:blur(2px); -webkit-backdrop-filter:blur(2px); }
+.getting-ready-overlay::before { content:''; position:absolute; inset:0; background:var(--bg); opacity:0.70; z-index:-1; }
+```
+
+`position:fixed` covers the full viewport including header and stats row. `::before` provides the tinted frost (70% bg opacity). Content (logo + text) floats above via stacking context.
 
 ## renderGettingReady() (main.js)
 
-Async function, called in the `!hasActiveDraw()` branch of `showBracketScreen()`. Fetches `app_settings` id=1 with `.maybeSingle()`, then:
-- If no `next_slam_label`: returns plain "No draw uploaded yet." fallback HTML
-- If label set: returns slam name in `.bracket-empty-title` (Playfair Display, existing class) + optional countdown in `.bracket-empty-sub` (DM Mono via inline style)
+Async function that returns an HTML string. Fetches `app_settings` id=1 with `.maybeSingle()`, then:
+- **Logo:** `<img src="/icons/icon-192.png" border-radius:50%>` — circle clip removes the icon's cream square corners, showing just the green tennis ball motif
+- If no `next_slam_label`: returns fallback with logo + "No draw uploaded yet."
+- If label set: logo + slam name (Playfair 28px, `.bracket-empty-title`) + optional countdown (DM Mono 16px) + "tap anywhere to browse the last draw" hint (13px, 0.7 opacity)
 
-Countdown format: "Matches start in N day(s)" when ≥1 day remaining; "Matches start in Xh MMm" for sub-day. No countdown shown if start time has already passed or is not set.
+Countdown format: "Matches start in N day(s)" when ≥1 day remaining; "Matches start in Xh MMm" for sub-day. No countdown if start time is in the past or not set.
 
-HTML is written directly to `$('bracket-body').innerHTML` — does not go through `renderBracketLayout()`.
+The HTML is set as `overlay.innerHTML` — no card background, no separate DOM structure. Content sizes are large enough to read against the frosted overlay without a card.
+
+## /?signup URL Param (main.js init)
+
+Invite page links to `/?signup`. In `init()`, when no session exists, the code checks:
+```js
+if (new URLSearchParams(window.location.search).has('signup')) setAuthMode('signup')
+```
+This opens the auth screen in signup mode (display name field visible, button says "Sign up"). Visiting `/` directly defaults to login mode.
 
 ## Commissioner Getting Ready Mode Form
 

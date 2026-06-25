@@ -765,7 +765,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .pr-check{font-family:var(--mono);font-size:11px;color:var(--purple);margin-left:auto;padding-left:4px;flex-shrink:0}
 
 /* ── MODAL ── */
-#edit-player-modal,#pick-confirm-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:200;align-items:center;justify-content:center}
+#edit-player-modal,#pick-confirm-modal,#rename-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:200;align-items:center;justify-content:center}
 
 ::-webkit-scrollbar{width:6px;height:6px}
 ::-webkit-scrollbar-track{background:var(--surface2)}
@@ -846,6 +846,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
         <div class="acct-menu" id="acct-menu">
           <button class="acct-mi" id="print-btn">Print bracket</button>
           <button class="acct-mi commish-nav" id="commish-btn" hidden>Commissioner</button>
+          <button class="acct-mi" id="rename-btn">Change name</button>
           <button class="acct-mi acct-mi-danger" id="logout-btn">Sign out</button>
         </div>
       </div>
@@ -909,6 +910,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
         </button>
         <div class="acct-menu" id="acct-menu-lb">
           <button class="acct-mi commish-nav" id="commish-btn-lb" hidden>Commissioner</button>
+          <button class="acct-mi" id="rename-btn-lb">Change name</button>
           <button class="acct-mi acct-mi-danger" id="logout-btn-lb">Sign out</button>
         </div>
       </div>
@@ -956,6 +958,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
         </button>
         <div class="acct-menu" id="acct-menu-cmsr">
           <button class="acct-mi" id="exit-commish-btn">Back to draw</button>
+          <button class="acct-mi" id="rename-btn-cmsr">Change name</button>
           <button class="acct-mi acct-mi-danger" id="logout-btn-comm">Sign out</button>
         </div>
       </div>
@@ -1115,6 +1118,18 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
     <div id="epm-btn-area" style="display:flex;gap:8px">
       <button id="epm-confirm" style="flex:1;padding:9px;background:var(--accent);color:var(--accent-text);border:none;border-radius:7px;font-family:var(--sans);font-size:13px;font-weight:600;cursor:pointer">Update player</button>
       <button id="epm-cancel" style="padding:9px 16px;background:var(--surface2);border:1px solid var(--border2);color:var(--text);border-radius:7px;font-family:var(--sans);font-size:13px;cursor:pointer">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="rename-modal">
+  <div style="background:var(--surface);border:1px solid var(--border2);border-radius:12px;padding:22px;width:320px;max-width:92vw;box-shadow:0 8px 32px rgba(0,0,0,0.15)">
+    <div style="font-family:var(--serif);font-size:17px;font-weight:400;margin-bottom:16px">Change name</div>
+    <input id="rename-input" type="text" maxlength="40" placeholder="Display name" style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border2);color:var(--text);padding:8px 10px;border-radius:6px;font-family:var(--sans);font-size:13px;margin-bottom:12px">
+    <div id="rename-msg" style="font-size:12px;color:#c0392b;min-height:16px;margin-bottom:10px"></div>
+    <div style="display:flex;gap:8px">
+      <button id="rename-confirm" style="flex:1;padding:9px;background:var(--accent);color:var(--accent-text);border:none;border-radius:7px;font-family:var(--sans);font-size:13px;font-weight:600;cursor:pointer">Save</button>
+      <button id="rename-cancel" style="padding:9px 16px;background:var(--surface2);border:1px solid var(--border2);color:var(--text);border-radius:7px;font-family:var(--sans);font-size:13px;cursor:pointer">Cancel</button>
     </div>
   </div>
 </div>

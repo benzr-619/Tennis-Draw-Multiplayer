@@ -36,6 +36,15 @@ export async function signup(email, password, displayName) {
   return state.currentUser
 }
 
+export async function updateDisplayName(userId, displayName) {
+  const { error } = await supabase
+    .from('profiles')
+    .update({ display_name: displayName })
+    .eq('id', userId)
+  if (error) throw error
+  state.currentUser = { ...state.currentUser, display_name: displayName }
+}
+
 export async function logout() {
   await supabase.auth.signOut()
   state.currentUser = null

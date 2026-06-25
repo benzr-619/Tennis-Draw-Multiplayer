@@ -4,9 +4,13 @@ Historical record of build steps, refactors, and fixed bugs. **Not loaded into c
 
 ---
 
-## 2026-06-25 — Getting-ready screen between slams
+## 2026-06-25 — Getting-ready overlay + invite page fixes
 
-When all draws have `is_active = false`, the bracket screen now shows a "getting ready" page instead of a stale finished bracket. New `app_settings` Supabase table (singleton row id=1) stores `next_slam_label` and `next_slam_starts_at`. `hasActiveDraw()` added to `state.js`. `showBracketScreen()` branches on `!hasActiveDraw()` rather than `draws.length === 0`. In the between-slams state, the M/W seg control, search bar, print button, and mobile bottom bar are hidden; page-level nav and leaderboard remain fully functional. Commissioner → Draw Management has a new "Getting Ready Mode" section: pre-fill next slam label + start date ("Save next slam info"), or "Switch to getting-ready mode" to save settings and deactivate all draws in one step.
+**Getting-ready overlay (revised from original approach):** Between-slams state now renders the last finished bracket dimmed behind a fixed-position frosted overlay rather than replacing the bracket with a blank page. `#bracket-body` was wrapped in a new `#bracket-area` div (`flex:1; position:relative`). The `.getting-ready-overlay` uses `position:fixed; inset:0; z-index:100` with `backdrop-filter:blur(2px)` and a `::before` tint at 70% bg opacity — covers full viewport including header and stats row. Clicking/tapping anywhere on the overlay dismisses it so users can browse the last draw. Logo uses `border-radius:50%` to show just the green tennis ball circle from the app icon (clips the cream square corners). Chrome (M/W seg, search, print, mobile bar) is no longer hidden — all stays interactive; leaderboard nav fully accessible behind/above the overlay.
+
+**Original getting-ready screen (2026-06-25):** New `app_settings` Supabase table (singleton row id=1) stores `next_slam_label` and `next_slam_starts_at`. `hasActiveDraw()` added to `state.js`. Commissioner → Draw Management → Getting Ready Mode section: "Save next slam info" (upserts settings only) and "Switch to getting-ready mode" (upserts + deactivates all draws).
+
+**Invite page:** `public/invite.html` added — standalone shareable page at `/invite` (Netlify `_redirects` rewrite). "Sign Up Now" button links to `/?signup`; `init()` in `main.js` detects the `?signup` param and opens the auth screen in signup mode via `setAuthMode('signup')`.
 
 ---
 
