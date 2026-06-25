@@ -10,6 +10,9 @@ import { initCommissioner, renderResults, renderLockManaging } from './commissio
 import { renderLeaderboard } from './leaderboard.js'
 import { animateSegThumb } from './seg-thumb.js'
 import { supabase } from './supabase.js'
+import { simulateEloFill } from './elo.js'
+import { savePickToSupabase } from './picks.js'
+import { buildDrawView } from './draw-view.js'
 
 // ── INIT ──
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
@@ -481,7 +484,7 @@ wireAcctMenu('acct-chip', 'acct-menu')
 wireAcctMenu('acct-chip-lb', 'acct-menu-lb')
 wireAcctMenu('acct-chip-cmsr', 'acct-menu-cmsr')
 document.addEventListener('click', closeAcctMenus)
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeAcctMenus(); closeRenameModal() } })
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeAcctMenus(); closeRenameModal(); closeEloModal() } })
 
 // ── VIEWER BACK ──
 $('viewer-back-btn-v').addEventListener('click', async () => {
@@ -527,6 +530,58 @@ setInterval(() => {
 $('epm-cancel').addEventListener('click', closeModal)
 $('epm-confirm').addEventListener('click', confirmEditPlayer)
 $('edit-player-modal').addEventListener('click', e => { if (e.target === $('edit-player-modal')) closeModal() })
+
+// ── ELO AUTO-FILL ──
+const _eloSurfaceLabel = { AO: 'hard court', RG: 'clay', WIM: 'grass', USO: 'hard court' }
+function openEloModal() {
+  const d = activeDraw()
+  const surface = _eloSurfaceLabel[d?.slam] ?? 'surface'
+  const fills = d ? simulateEloFill(d) : []
+  let emptyCount = 0
+  if (d) {
+    for (const round of d.rounds) {
+      for (const m of round.matches) {
+        if (!m.matchPick && !m.winner && (m.p1?.name || m.p2?.name)) emptyCount++
+      }
+    }
+  }
+  const skipped = emptyCount - fills.length
+  const skipNote = skipped > 0
+    ? `${skipped} match${skipped > 1 ? 'es' : ''} skipped — ELO unavailable for those players.`
+    : 'All empty matches covered.'
+  $('ecm-body').innerHTML = `Not sure who to pick? Just go with your gut or shut your eyes and click! Half the fun is being wrong.<br><br>` +
+    `This will fill <strong>${fills.length}</strong> of <strong>${emptyCount}</strong> empty matches using ${surface} ELO ratings. Your existing picks won't change.<br><br>` +
+    `<span style="color:var(--text3)">${skipNote}</span>`
+  $('ecm-confirm').disabled = fills.length === 0
+  $('ecm-msg').textContent = ''
+  $('elo-confirm-modal').style.display = 'flex'
+}
+function closeEloModal() { $('elo-confirm-modal').style.display = 'none' }
+document.addEventListener('click', e => { if (e.target.id === 'autofill-elo-btn') openEloModal() })
+$('ecm-cancel').addEventListener('click', closeEloModal)
+$('elo-confirm-modal').addEventListener('click', e => { if (e.target === $('elo-confirm-modal')) closeEloModal() })
+$('ecm-confirm').addEventListener('click', async () => {
+  const d = activeDraw()
+  const fills = simulateEloFill(d)
+  if (!fills.length) { $('ecm-msg').textContent = 'No empty matches with ELO data to fill.'; return }
+  const btn = $('ecm-confirm')
+  btn.disabled = true; btn.textContent = 'Filling…'
+  try {
+    for (const { ri, mi, playerName } of fills) {
+      const m = d.rounds[ri].matches[mi]
+      m.matchPick = playerName
+      await savePickToSupabase(m, d.db_id)
+    }
+    buildDrawView(d)
+    renderStats()
+    renderBracket()
+    closeEloModal()
+  } catch (err) {
+    $('ecm-msg').textContent = err.message || 'Failed to save.'
+  } finally {
+    btn.disabled = false; btn.textContent = 'Auto-fill'
+  }
+})
 
 // ── RENAME MODAL ──
 function openRenameModal() {

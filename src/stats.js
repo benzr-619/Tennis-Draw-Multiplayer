@@ -336,9 +336,18 @@ export function renderStats() {
     simplePill('picks filled', s.filled + ' / ' + s.total)
     simplePill('complete', pct + '%')
 
+    const hasElo = d.rounds[0]?.matches.some(m => m.elo_p1 != null || m.elo_p2 != null)
     if (!isMobile()) {
       const cdEl = buildCountdownEl(d, s)
       if (cdEl) { cdEl.style.marginLeft = 'auto'; strip.appendChild(cdEl) }
+      if (hasElo) {
+        const link = document.createElement('button')
+        link.className = 'sc-autofill-link'
+        link.id = 'autofill-elo-btn'
+        link.textContent = 'Auto-fill'
+        if (!cdEl) link.style.marginLeft = 'auto'
+        strip.appendChild(link)
+      }
     }
     _updateMobileCountdownWrap(d, s)
 

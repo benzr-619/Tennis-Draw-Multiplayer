@@ -401,6 +401,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .sc-guide-chevron{display:inline-block;transition:transform 0.2s;font-size:12px;color:var(--text3);line-height:1}
 .sc-guide-btn:hover .sc-guide-chevron,.sc-guide-btn.open .sc-guide-chevron{color:var(--text2)}
 .sc-guide-btn.open .sc-guide-chevron{transform:rotate(180deg)}
+.sc-autofill-link{background:none;border:none;font-family:var(--mono);font-size:11px;color:var(--text3);cursor:pointer;padding:0 14px;align-self:center;text-decoration:underline;text-underline-offset:2px;flex-shrink:0}
+.sc-autofill-link:hover{color:var(--text2)}
 /* Health underline — bottom 18px of stats-strip */
 .health-underline{position:absolute;bottom:0;left:0;right:0;pointer-events:none;z-index:2}
 .health-ul-labels-row{display:flex;align-items:flex-end;position:relative;height:13px;padding:0 16px}
@@ -765,7 +767,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .pr-check{font-family:var(--mono);font-size:11px;color:var(--purple);margin-left:auto;padding-left:4px;flex-shrink:0}
 
 /* ── MODAL ── */
-#edit-player-modal,#pick-confirm-modal,#rename-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:200;align-items:center;justify-content:center}
+#edit-player-modal,#pick-confirm-modal,#rename-modal,#elo-confirm-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:200;align-items:center;justify-content:center}
 
 ::-webkit-scrollbar{width:6px;height:6px}
 ::-webkit-scrollbar-track{background:var(--surface2)}
@@ -1130,6 +1132,18 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
     <div style="display:flex;gap:8px">
       <button id="rename-confirm" style="flex:1;padding:9px;background:var(--accent);color:var(--accent-text);border:none;border-radius:7px;font-family:var(--sans);font-size:13px;font-weight:600;cursor:pointer">Save</button>
       <button id="rename-cancel" style="padding:9px 16px;background:var(--surface2);border:1px solid var(--border2);color:var(--text);border-radius:7px;font-family:var(--sans);font-size:13px;cursor:pointer">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="elo-confirm-modal">
+  <div style="background:var(--surface);border:1px solid var(--border2);border-radius:12px;padding:22px;width:340px;max-width:92vw;box-shadow:0 8px 32px rgba(0,0,0,0.15)">
+    <div style="font-family:var(--serif);font-size:17px;font-weight:400;margin-bottom:10px">Auto-fill empty picks?</div>
+    <div id="ecm-body" style="font-size:12px;color:var(--text2);margin-bottom:16px;line-height:1.6"></div>
+    <div id="ecm-msg" style="font-size:12px;color:#c0392b;min-height:14px;margin-bottom:10px"></div>
+    <div style="display:flex;gap:8px">
+      <button id="ecm-confirm" style="flex:1;padding:9px;background:var(--accent);color:var(--accent-text);border:none;border-radius:7px;font-family:var(--sans);font-size:13px;font-weight:600;cursor:pointer">Auto-fill</button>
+      <button id="ecm-cancel" style="padding:9px 16px;background:var(--surface2);border:1px solid var(--border2);color:var(--text);border-radius:7px;font-family:var(--sans);font-size:13px;cursor:pointer">Cancel</button>
     </div>
   </div>
 </div>

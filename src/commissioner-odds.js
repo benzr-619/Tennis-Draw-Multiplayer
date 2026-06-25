@@ -8,6 +8,59 @@ import {
   loadOddsRaw, loadNameMappings, saveNameMapping, deleteNameMapping,
   getUnmatchedApiNames, forceOddsRefresh, normaliseName,
 } from './odds.js'
+import { supabase } from './supabase.js'
+
+const SLAM_SURFACE = { AO: 'h', RG: 'c', WIM: 'g', USO: 'h' }
+
+// Persists unmatched ELO names across tab switches (cleared only on new sync)
+let _lastEloUnmatched = []
+let _lastEloUnmatchedDrawId = null
+
+function _matchEloData(eloList, draw, mappings) {
+  const byApiNorm = new Map(eloList.map(e => [normaliseName(e.name), { apiName: e.name, elo: e.elo }]))
+
+  // Apply saved name_mappings: draw player name → elo (via api_name mapping)
+  const byDrawNorm = new Map()
+  const mappingApiNorms = new Set()
+  for (const mp of mappings) {
+    const apiNorm = normaliseName(mp.api_name)
+    if (byApiNorm.has(apiNorm)) {
+      byDrawNorm.set(normaliseName(mp.draw_player_name), byApiNorm.get(apiNorm).elo)
+      mappingApiNorms.add(apiNorm)
+    }
+  }
+
+  const upserts = []
+  const matchedApiNorms = new Set()
+  let matchedCount = 0, totalPlayers = 0
+
+  for (const m of (draw.rounds[0]?.matches ?? [])) {
+    const upd = { id: m.db_id }
+    let changed = false
+    for (const side of ['p1', 'p2']) {
+      const pName = m[side]?.name
+      if (!pName) continue
+      totalPlayers++
+      const norm = normaliseName(pName)
+      let elo = null
+      if (byApiNorm.has(norm)) {
+        elo = byApiNorm.get(norm).elo
+        matchedApiNorms.add(norm)
+      } else if (byDrawNorm.has(norm)) {
+        elo = byDrawNorm.get(norm)
+      }
+      if (elo !== null) { upd[`elo_${side}`] = elo; changed = true; matchedCount++ }
+    }
+    if (changed) upserts.push(upd)
+  }
+
+  const allMatchedNorms = new Set([...matchedApiNorms, ...mappingApiNorms])
+  const unmatched = eloList
+    .filter(e => !allMatchedNorms.has(normaliseName(e.name)))
+    .map(e => e.name)
+
+  return { upserts, unmatched, matchedCount, totalPlayers }
+}
 
 // ── RENDER ENTRY ──
 
@@ -68,6 +121,144 @@ export async function renderOddsTab() {
       } catch (err) {
         if (msg) { msg.className = 'comm-msg error'; msg.textContent = 'Error: ' + err.message }
         if (btn) { btn.disabled = false; btn.textContent = 'Force refresh now' }
+      }
+    })
+
+    // ── ELO section ──
+    const r0Matches = d.rounds[0]?.matches ?? []
+    let eloMatchedCount = 0, eloTotalPlayers = 0
+    for (const m of r0Matches) {
+      if (m.p1?.name) { eloTotalPlayers++; if (m.elo_p1 != null) eloMatchedCount++ }
+      if (m.p2?.name) { eloTotalPlayers++; if (m.elo_p2 != null) eloMatchedCount++ }
+    }
+    const lastEloSync = d.elo_synced_at ? new Date(d.elo_synced_at).toLocaleString() : null
+
+    const eloSection = document.createElement('div')
+    eloSection.className = 'comm-section'
+    eloSection.innerHTML = `
+      <div class="comm-section-title" style="margin-bottom:10px">ELO Ratings</div>
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+        <span style="font-size:13px;color:var(--text2)">
+          Last sync: <span style="color:var(--text);font-family:var(--mono);font-size:12px">${lastEloSync ?? '—'}</span>
+        </span>
+        <span style="font-size:13px;color:var(--text2)">
+          Matched: <span style="color:var(--text);font-family:var(--mono);font-size:12px">${eloMatchedCount} / ${eloTotalPlayers}</span>
+        </span>
+        <button class="comm-btn comm-btn-primary" id="elo-sync-btn">Sync ELO</button>
+      </div>
+      <div class="comm-msg" id="elo-status-msg" style="margin-top:8px"></div>`
+    wrap.appendChild(eloSection)
+
+    // Draw players still missing ELO — used both for triage guard and dropdown options
+    const eloUnmatchedPlayers = []
+    r0Matches.forEach(m => {
+      if (m.p1?.name && m.elo_p1 == null) eloUnmatchedPlayers.push(m.p1.name)
+      if (m.p2?.name && m.elo_p2 == null) eloUnmatchedPlayers.push(m.p2.name)
+    })
+
+    // Render any unmatched ELO names from last sync (only for this draw, only if draw still has unmatched players)
+    if (_lastEloUnmatched.length > 0 && _lastEloUnmatchedDrawId === d.db_id && eloUnmatchedPlayers.length > 0) {
+      const eloTriageWrap = document.createElement('div')
+      eloTriageWrap.style.cssText = 'margin-top:12px'
+      const eloTriageHdr = document.createElement('div')
+      eloTriageHdr.innerHTML = `<div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.7">
+        These ELO names didn't match any draw player. Assign them to enable ELO auto-fill on their matches.
+        Saved mappings persist across slams.</div>`
+      eloTriageWrap.appendChild(eloTriageHdr)
+
+      const drawPlayerNames = eloUnmatchedPlayers
+
+      const eloGrid = document.createElement('div')
+      eloGrid.style.cssText = 'display:flex;flex-direction:column;gap:6px'
+      _lastEloUnmatched.forEach(apiName => {
+        const row = document.createElement('div')
+        row.style.cssText = 'display:flex;align-items:center;gap:10px;flex-wrap:wrap'
+        const apiLabel = document.createElement('span')
+        apiLabel.style.cssText = 'font-family:var(--mono);font-size:12px;color:var(--text);flex:0 0 200px;min-width:140px'
+        apiLabel.textContent = apiName
+        const arrow = document.createElement('span')
+        arrow.style.cssText = 'color:var(--text3);font-size:12px'
+        arrow.textContent = '→'
+        const sel = document.createElement('select')
+        sel.className = 'comm-input'
+        sel.style.cssText = 'flex:1;min-width:180px;max-width:260px;font-size:12px'
+        sel.innerHTML = `<option value="">— pick a player —</option>`
+        drawPlayerNames.forEach(pName => {
+          const opt = document.createElement('option')
+          opt.value = pName; opt.textContent = pName
+          sel.appendChild(opt)
+        })
+        const saveBtn = document.createElement('button')
+        saveBtn.className = 'comm-btn comm-btn-primary'
+        saveBtn.textContent = 'Save'
+        saveBtn.addEventListener('click', async () => {
+          if (!sel.value) return
+          saveBtn.disabled = true
+          try {
+            await saveNameMapping(apiName, sel.value)
+            row.style.opacity = '0.4'
+            row.innerHTML = `<span style="font-family:var(--mono);font-size:11px;color:var(--green)">✓ ${escHtml(apiName)} → ${escHtml(sel.value)}</span>`
+          } catch (err) {
+            saveBtn.disabled = false
+            const errEl = document.createElement('span')
+            errEl.style.cssText = 'font-size:11px;color:var(--red)'
+            errEl.textContent = err.message
+            row.appendChild(errEl)
+          }
+        })
+        row.appendChild(apiLabel); row.appendChild(arrow); row.appendChild(sel); row.appendChild(saveBtn)
+        eloGrid.appendChild(row)
+      })
+      eloTriageWrap.appendChild(eloGrid)
+      eloSection.appendChild(eloTriageWrap)
+    }
+
+    document.getElementById('elo-sync-btn')?.addEventListener('click', async () => {
+      const btn = document.getElementById('elo-sync-btn')
+      const msg = document.getElementById('elo-status-msg')
+      if (btn) { btn.disabled = true; btn.textContent = 'Syncing…' }
+      try {
+        const tour = d.draw === 'WS' ? 'wta' : 'atp'
+        const surface = SLAM_SURFACE[d.slam]
+        if (!surface) throw new Error('Unknown slam: ' + d.slam)
+        const { data: eloList, error: fnErr } = await supabase.functions.invoke('sync-elo', {
+          body: { tour, surface }
+        })
+        if (fnErr) {
+          let detail = fnErr.message
+          if (fnErr.context?.json) {
+            try { const b = await fnErr.context.json(); if (b?.error) detail = b.error } catch {}
+          }
+          throw new Error(detail)
+        }
+        if (!Array.isArray(eloList)) throw new Error(eloList?.error || 'Unexpected response from sync-elo')
+
+        const freshMappings = await loadNameMappings()
+        const { upserts, unmatched, matchedCount, totalPlayers } = _matchEloData(eloList, d, freshMappings)
+        _lastEloUnmatched = unmatched
+        _lastEloUnmatchedDrawId = d.db_id
+
+        if (upserts.length > 0) {
+          for (const upd of upserts) {
+            const cols = {}
+            if (upd.elo_p1 !== undefined) cols.elo_p1 = upd.elo_p1
+            if (upd.elo_p2 !== undefined) cols.elo_p2 = upd.elo_p2
+            const { error: updErr } = await supabase.from('matches').update(cols).eq('id', upd.id)
+            if (updErr) throw updErr
+          }
+          // Mirror to in-memory state
+          for (const upd of upserts) {
+            const m = r0Matches.find(m => m.db_id === upd.id)
+            if (m) { if (upd.elo_p1 !== undefined) m.elo_p1 = upd.elo_p1; if (upd.elo_p2 !== undefined) m.elo_p2 = upd.elo_p2 }
+          }
+        }
+        await supabase.from('draws').update({ elo_synced_at: new Date().toISOString() }).eq('id', d.db_id)
+
+        if (msg) { msg.className = 'comm-msg success'; msg.textContent = `Synced. ${matchedCount} / ${totalPlayers} players matched.` }
+        await renderOddsTab()
+      } catch (err) {
+        if (msg) { msg.className = 'comm-msg error'; msg.textContent = 'Error: ' + err.message }
+        if (btn) { btn.disabled = false; btn.textContent = 'Sync ELO' }
       }
     })
 

@@ -15,7 +15,7 @@ export async function loadAllDraws() {
   // 1. Fetch all draws
   const { data: drawRows, error: de } = await supabase
     .from('draws')
-    .select('id, slam, draw_type, year, original_picks_locked, is_active, exclude_from_leaderboard, created_at')
+    .select('id, slam, draw_type, year, original_picks_locked, is_active, exclude_from_leaderboard, created_at, elo_synced_at')
     .order('created_at', { ascending: true })
 
   if (de) throw de
@@ -45,7 +45,7 @@ export async function loadDraw(drawRow) {
   // Fetch matches
   const { data: matchRows, error: me } = await supabase
     .from('matches')
-    .select('id, round_index, match_index, p1_name, p1_seed, p2_name, p2_seed, winner, score, roster_changed_at, odds_p1_live, odds_p2_live, odds_fetched_at, odds_p1_locked, odds_p2_locked, odds_locked_at')
+    .select('id, round_index, match_index, p1_name, p1_seed, p2_name, p2_seed, winner, score, roster_changed_at, odds_p1_live, odds_p2_live, odds_fetched_at, odds_p1_locked, odds_p2_locked, odds_locked_at, elo_p1, elo_p2')
     .eq('draw_id', drawId)
     .order('round_index', { ascending: true })
 
@@ -93,6 +93,8 @@ export async function loadDraw(drawRow) {
       odds_p1_locked: mr.odds_p1_locked ?? null,
       odds_p2_locked: mr.odds_p2_locked ?? null,
       odds_locked_at: mr.odds_locked_at ?? null,
+      elo_p1: mr.elo_p1 ?? null,
+      elo_p2: mr.elo_p2 ?? null,
     }
     roundsMap[ri].matches[mr.match_index] = match
   })
@@ -114,6 +116,7 @@ export async function loadDraw(drawRow) {
     locked: drawRow.original_picks_locked ?? false,
     is_active: drawRow.is_active ?? false,
     excludeFromLeaderboard: drawRow.exclude_from_leaderboard ?? false,
+    elo_synced_at: drawRow.elo_synced_at ?? null,
     rounds,
   }
 
@@ -186,6 +189,7 @@ function emptyMatch() {
     winner: null, score: '', roster_changed_at: null,
     odds_p1_live: null, odds_p2_live: null, odds_fetched_at: null,
     odds_p1_locked: null, odds_p2_locked: null, odds_locked_at: null,
+    elo_p1: null, elo_p2: null,
   }
 }
 
