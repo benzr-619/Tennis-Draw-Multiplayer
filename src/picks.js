@@ -48,6 +48,7 @@ export function cascadeMatchPickForward(d, ri, mi) {
 }
 
 export function clearMatchPickForward(d, ri, mi, name) {
+  const cleared = []
   let r = ri, m = mi
   while (true) {
     const next = getNextSlot(d, r, m)
@@ -56,8 +57,10 @@ export function clearMatchPickForward(d, ri, mi, name) {
     if (nm.winner) break
     if (nm.matchPick !== name) break
     nm.matchPick = null
+    cleared.push(nm)
     r = next.nri; m = next.nmi
   }
+  return cleared
 }
 
 // ── SAVE PICK TO SUPABASE ──
@@ -181,11 +184,12 @@ export async function handlePickClick(ri, mi, p, { renderStats, renderBracket })
     // Pre-lock: just record the pick; slots are derived by buildDrawView.
     const prev = m.matchPick
     m.matchPick = m.matchPick === p.name ? null : p.name
-    if (prev && prev !== m.matchPick) clearMatchPickForward(d, ri, mi, prev)
+    const cleared = (prev && prev !== m.matchPick) ? clearMatchPickForward(d, ri, mi, prev) : []
+    buildDrawView(d)
+    await savePickToSupabase(m, d.db_id)
+    await Promise.all(cleared.filter(nm => nm.db_id).map(nm => savePickToSupabase(nm, d.db_id)))
   }
 
-  buildDrawView(d)
-  await savePickToSupabase(m, d.db_id)
   renderStats()
   renderBracket()
 }
