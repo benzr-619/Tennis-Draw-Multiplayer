@@ -4,6 +4,7 @@
 
 import { renderBracketLayout } from './bracket-layout.js'
 import { formatAmerican } from './odds.js'
+import { makeFlagEl } from './flags.js'
 
 let _scrollHandler = null
 
@@ -103,8 +104,8 @@ function placeViewerCard(draw, m, ri, mi, x, y, wrap, mode) {
 
       const row = document.createElement('div'); row.className = cls; row.style.position = 'relative'
       const seedEl = document.createElement('span'); seedEl.className = 'pr-seed'; seedEl.textContent = p.seed || ''
+      row.appendChild(seedEl); row.appendChild(makeFlagEl(draw.countryMap?.[p.name]))
       const nameEl = document.createElement('span'); nameEl.className = 'pr-name'; nameEl.textContent = p.name || '—'
-      row.appendChild(seedEl)
       row.appendChild(nameEl)
 
       // Odds inline after name
@@ -153,8 +154,8 @@ function placeViewerCard(draw, m, ri, mi, x, y, wrap, mode) {
 
       const row = document.createElement('div'); row.className = cls; row.style.position = 'relative'
       const seedEl = document.createElement('span'); seedEl.className = 'pr-seed'; seedEl.textContent = p.seed || ''
+      row.appendChild(seedEl); row.appendChild(makeFlagEl(draw.countryMap?.[p.name]))
       const nameEl = document.createElement('span'); nameEl.className = 'pr-name'; nameEl.textContent = p.name || '—'
-      row.appendChild(seedEl)
       row.appendChild(nameEl)
       return row
     }

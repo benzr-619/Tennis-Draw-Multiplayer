@@ -6,7 +6,7 @@
 //
 // Established 2026-06-01 (audit part C). Replaces three verbatim copies of this code.
 
-export const CW = 180, CH = 62, GAP = 20, COL = 200
+export const CW = 205, CH = 62, GAP = 20, COL = 225
 
 const DEFAULT_EMPTY = `
   <div class="bracket-empty">
@@ -147,12 +147,12 @@ export function renderBracketLayout({ draw, body, labelsInner, placeCard, champi
     labelsInner.innerHTML = ''
     for (let ri = 0; ri < drawRounds; ri++) {
       const l = document.createElement('div')
-      l.style.cssText = 'width:180px;flex-shrink:0;text-align:center;font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text3)'
+      l.style.cssText = `width:${CW}px;flex-shrink:0;text-align:center;font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text3)`
       l.textContent = rounds[ri].label; labelsInner.appendChild(l)
       if (ri < drawRounds - 1) { const g = document.createElement('div'); g.style.cssText = 'width:20px;flex-shrink:0'; labelsInner.appendChild(g) }
     }
     const finLbl = document.createElement('div')
-    finLbl.style.cssText = 'width:180px;flex-shrink:0;text-align:center;font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text3);padding-left:20px'
+    finLbl.style.cssText = `width:${CW}px;flex-shrink:0;text-align:center;font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text3);padding-left:20px`
     finLbl.textContent = 'Final'; labelsInner.appendChild(finLbl)
     labelsInner.style.transform = 'translateX(0)'
   }

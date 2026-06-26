@@ -7,6 +7,7 @@ import { isMatchLocked } from './lock.js'
 import { renderStats } from './stats.js'
 import { renderBracketLayout } from './bracket-layout.js'
 import { formatAmerican } from './odds.js'
+import { makeFlagEl } from './flags.js'
 
 let _renderOverride = null
 export function setRenderBracketFn(fn) { _renderOverride = fn }
@@ -83,8 +84,9 @@ export function placeCard(d, m, ri, mi, x, y, wrap) {
     if (p.elim && !m.winner) {
       const row = document.createElement('div'); row.className = 'pr s-orig-wrong'; row.style.position = 'relative'
       const seedEl = document.createElement('span'); seedEl.className = 'pr-seed'; seedEl.textContent = p.seed || ''
+      row.appendChild(seedEl); row.appendChild(makeFlagEl(d.countryMap?.[p.name]))
       const nameEl = document.createElement('span'); nameEl.className = 'pr-name'; nameEl.textContent = p.name || '—'
-      row.appendChild(seedEl); row.appendChild(nameEl)
+      row.appendChild(nameEl)
       // No click handler: elim slots aren't directly clickable.
       return row
     }
@@ -118,11 +120,11 @@ export function placeCard(d, m, ri, mi, x, y, wrap) {
     }
 
     const row = document.createElement('div'); row.className = cls; row.style.position = 'relative'
-    const seedEl = document.createElement('span'); seedEl.className = 'pr-seed'; seedEl.textContent = p.seed || ''
-    const nameEl = document.createElement('span'); nameEl.className = 'pr-name'; nameEl.textContent = p.name || '—'
-    row.appendChild(seedEl); row.appendChild(nameEl)
 
-    // High-confidence star
+    // Seed gutter: holds seed text + hover-toggle star (star overlays seed on hover, no layout shift)
+    const gutterEl = document.createElement('div'); gutterEl.className = 'pr-seed-gutter'
+    const seedEl = document.createElement('span'); seedEl.className = 'pr-seed'; seedEl.textContent = p.seed || ''
+    gutterEl.appendChild(seedEl)
     const bothConfirmed = ri === 0
       ? (m.p1.name && m.p2.name)
       : (d.rounds[ri - 1]?.matches[mi * 2]?.winner && d.rounds[ri - 1]?.matches[mi * 2 + 1]?.winner)
@@ -137,7 +139,15 @@ export function placeCard(d, m, ri, mi, x, y, wrap) {
         await savePickToSupabase(m, d.db_id)
         renderStats(); renderBracket()
       })
-      row.appendChild(starEl)
+      gutterEl.appendChild(starEl)
+      row.classList.add('pr-has-star')
+    }
+    row.appendChild(gutterEl); row.appendChild(makeFlagEl(d.countryMap?.[p.name]))
+    const nameEl = document.createElement('span'); nameEl.className = 'pr-name'; nameEl.textContent = p.name || '—'
+    row.appendChild(nameEl)
+    // Persistent gold dot at card's left edge when high-confidence is ON
+    if (isLivePick && m.highConfidence) {
+      const dot = document.createElement('span'); dot.className = 'pr-hc-dot'; row.appendChild(dot)
     }
 
     // Inline odds — replaces the dot; shown when any odds are available for this slot

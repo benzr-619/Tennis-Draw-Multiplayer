@@ -13,6 +13,7 @@
 <link rel="apple-touch-icon" href="/icons/icon-192.png">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flag-icons@7.2.3/css/flag-icons.min.css">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -440,7 +441,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .bracket-svg-wrap svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visible}
 
 /* ── MATCH CARD ── */
-.mc{position:absolute;background:var(--surface);border:1px solid var(--border);border-radius:6px;width:180px;display:flex;flex-direction:column;transition:border-color 0.12s}
+.mc{position:absolute;background:var(--surface);border:1px solid var(--border);border-radius:6px;width:205px;display:flex;flex-direction:column;transition:border-color 0.12s}
 .mc.st-correct{border-color:var(--green-border)}
 .mc.st-wrong{border-color:var(--red-border)}
 .mc.st-needs-repick{border-color:#e8900a;border-width:2px}
@@ -459,12 +460,33 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .pr.s-elim{opacity:0.28;cursor:default}
 .pr.s-orig-wrong .pr-name{text-decoration:line-through;opacity:0.5}
 .pr.s-backup-wrong .pr-name{text-decoration:line-through;opacity:0.5}
-.pr-seed{font-family:var(--mono);font-size:9px;color:var(--text3);min-width:16px;text-align:center;flex-shrink:0}
+.pr-seed{font-family:var(--mono);font-size:9px;color:var(--text3);min-width:16px;text-align:center;flex-shrink:0;transition:opacity 0.15s}
+.pr-flag{min-width:18px;width:18px;height:11px;flex-shrink:0;display:inline-block;border-radius:1px;overflow:hidden;background-size:contain;background-position:50% 50%;background-repeat:no-repeat}
+.pr-flag.fi{width:18px;height:11px;line-height:11px}
 .pr-name{flex:1;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+/* Hover-peek: reveal truncated names in place, overlaying odds within the card */
+@media(hover:hover){
+  .pr:hover .pr-name{overflow:visible;position:relative;z-index:2;background:inherit;padding-right:6px}
+}
 .pr-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0;background:transparent;border:1px solid var(--border2)}
-.pr-star{background:none;border:none;cursor:pointer;font-size:13px;flex-shrink:0;padding:0 3px;line-height:1;color:var(--border2);transition:color 0.12s}
-.pr-star:hover{color:#c9a227}
+/* Seed gutter: fixed-width slot that swaps seed↔star on hover */
+.pr-seed-gutter{position:relative;min-width:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+/* Star: absolutely centered in gutter, hidden at rest, revealed on row hover */
+.pr-star{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:none;border:none;cursor:pointer;font-size:12px;line-height:1;padding:3px;color:var(--border2);opacity:0;transition:opacity 0.15s,color 0.12s}
 .pr-star.is-high{color:#c9a227}
+.pr-star:hover{color:#c9a227}
+/* Desktop hover: seed fades out, star fades in (only on rows that have a star) */
+@media(hover:hover){
+  .pr.pr-has-star:hover .pr-seed{opacity:0}
+  .pr.pr-has-star:hover .pr-star{opacity:1}
+}
+/* Touch: star always visible (seed hidden behind it when present) */
+@media(hover:none){
+  .pr.pr-has-star .pr-seed{opacity:0}
+  .pr.pr-has-star .pr-star{opacity:1}
+}
+/* Persistent gold dot at left edge — at-a-glance high-confidence status */
+.pr-hc-dot{position:absolute;left:4px;top:50%;transform:translateY(-50%);width:4px;height:4px;border-radius:50%;background:#c9a227;pointer-events:none}
 /* Checkmark icon for correct backup picks */
 .pr-backup-ok-icon{font-size:10px;color:var(--green,#2d7a3a);font-family:var(--mono);margin-left:3px;flex-shrink:0;line-height:1}
 /* Floating labels for displaced original picks — shown outside the card */

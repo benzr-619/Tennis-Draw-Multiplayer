@@ -45,7 +45,7 @@ export async function loadDraw(drawRow) {
   // Fetch matches
   const { data: matchRows, error: me } = await supabase
     .from('matches')
-    .select('id, round_index, match_index, p1_name, p1_seed, p2_name, p2_seed, winner, score, roster_changed_at, odds_p1_live, odds_p2_live, odds_fetched_at, odds_p1_locked, odds_p2_locked, odds_locked_at, elo_p1, elo_p2')
+    .select('id, round_index, match_index, p1_name, p1_seed, p1_country, p2_name, p2_seed, p2_country, winner, score, roster_changed_at, odds_p1_live, odds_p2_live, odds_fetched_at, odds_p1_locked, odds_p2_locked, odds_locked_at, elo_p1, elo_p2')
     .eq('draw_id', drawId)
     .order('round_index', { ascending: true })
 
@@ -75,8 +75,8 @@ export async function loadDraw(drawRow) {
     // Defensive defaults — migrateState equivalent
     const match = {
       db_id: mr.id,
-      p1: { name: mr.p1_name ?? '', seed: mr.p1_seed ?? '' },
-      p2: { name: mr.p2_name ?? '', seed: mr.p2_seed ?? '' },
+      p1: { name: mr.p1_name ?? '', seed: mr.p1_seed ?? '', country: mr.p1_country ?? '' },
+      p2: { name: mr.p2_name ?? '', seed: mr.p2_seed ?? '', country: mr.p2_country ?? '' },
       matchPick: pk.match_pick ?? null,
       originalPick: pk.original_pick ?? null,
       originalPickResult: pk.original_pick_result ?? null,
@@ -145,6 +145,15 @@ export async function loadDraw(drawRow) {
       // won't lose a valid pick by ignoring the prompt.
     })
   }
+
+  // Build player→country lookup from round-0 (where PDF codes are stored).
+  // Country is NOT cascaded through derived slots; renderers look up by player name.
+  const countryMap = {}
+  ;(roundsMap[0]?.matches || []).forEach(m => {
+    if (m?.p1?.name && m?.p1?.country) countryMap[m.p1.name] = m.p1.country
+    if (m?.p2?.name && m?.p2?.country) countryMap[m.p2.name] = m.p2.country
+  })
+  assembled.countryMap = countryMap
 
   // Derive all round-2+ slots, elimination flags, and displaced-pick labels in
   // one pure pass. (Replaces the old inline reconstruction + markLoserForward replay.)

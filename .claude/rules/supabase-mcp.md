@@ -22,7 +22,7 @@ A Supabase MCP connector is connected. Use it for schema changes, data inspectio
 |---|---|---|
 | `profiles` | ~2 | `id` (uuid, FK→auth.users), `display_name`, `is_commissioner` (bool, default false), `created_at` |
 | `draws` | ~2 | `id`, `slam` (AO/RG/WIM/USO), `draw_type` (MS/WS), `year`, `created_by`, `original_picks_locked` (bool), `is_active` (bool) |
-| `matches` | ~254 | `id`, `draw_id`, `round_index` (0–6), `match_index`, `p1_name`, `p1_seed`, `p2_name`, `p2_seed`, `winner`, `score`, `roster_changed_at` |
+| `matches` | ~254 | `id`, `draw_id`, `round_index` (0–6), `match_index`, `p1_name`, `p1_seed`, `p1_country`, `p2_name`, `p2_seed`, `p2_country`, `winner`, `score`, `roster_changed_at` |
 | `picks` | ~254 | `id`, `user_id`, `draw_id`, `match_id`, `match_pick`, `original_pick`, `original_pick_result` (correct/wrong), `match_pick_result` (correct/wrong), `high_confidence`, `edited_after_lock`, `notes` |
 | `lock_schedules` | ~13 | `id`, `draw_id`, `round_index`, `match_index_start`, `match_index_end`, `lock_type` (original_picks/backup_picks), `label`, `scheduled_at`, `locked_at` |
 | `app_settings` | 1 (singleton) | `id` (int PK, always 1), `next_slam_label` (text), `next_slam_starts_at` (timestamptz) — between-slams state |

@@ -23,18 +23,20 @@ export function parseTnnsText(text) {
       if (sm && parseInt(sm[1]) >= 1 && parseInt(sm[1]) <= 32) { seed = sm[1]; rest = sm[2].trim() }
       const mm = rest.match(/^(Q|WC|LL|PR)\s+(.+)$/); if (mm) { if (!seed) seed = mm[1]; rest = mm[2].trim() }
       const mm2 = rest.match(/^(Q|WC|LL|PR)\s+(.+)$/); if (mm2) { if (!seed) seed = mm2[1]; rest = mm2[2].trim() }
+      const countryM = rest.match(/^([A-Z]{2,4})\s+/)
+      const country = countryM ? countryM[1] : ''
       rest = rest.replace(/^[A-Z]{2,4}\s+/, '')
       const nm = rest.match(/^([A-Z][A-Z\s\-\']+),\s*([A-Za-z][a-zA-Z\-]*)/)
       if (!nm) continue
       const last = nm[1].trim().split(/[\s\-]/).map(w => w[0] + w.slice(1).toLowerCase()).join(' ')
-      byPos[pos] = { seed, name: nm[2].trim() + ' ' + last }
+      byPos[pos] = { seed, name: nm[2].trim() + ' ' + last, country }
     }
   }
   const matches = []
   for (let i = 1; i <= 128; i += 2) {
     const p1 = byPos[i] || { name: '', seed: '' }
     const p2 = byPos[i + 1] || { name: '', seed: '' }
-    if (p1.name || p2.name) matches.push({ p1_name: p1.name, p1_seed: p1.seed, p2_name: p2.name, p2_seed: p2.seed })
+    if (p1.name || p2.name) matches.push({ p1_name: p1.name, p1_seed: p1.seed, p1_country: p1.country || '', p2_name: p2.name, p2_seed: p2.seed, p2_country: p2.country || '' })
   }
   return matches
 }

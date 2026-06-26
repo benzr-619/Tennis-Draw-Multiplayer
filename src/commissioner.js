@@ -274,6 +274,11 @@ async function handleConfirmDraw() {
 
   try {
     const r1 = readR1FromTable()
+    // Countries aren't editable in the review table — merge from the original parse.
+    r1.forEach((m, i) => {
+      m.p1_country = parsedR1[i]?.p1_country || null
+      m.p2_country = parsedR1[i]?.p2_country || null
+    })
 
     // Check if draw already exists
     const { data: existing } = await supabase
@@ -305,8 +310,8 @@ async function handleConfirmDraw() {
           const m = r1[mi] || {}
           matchInserts.push({
             draw_id: drawId, round_index: ri, match_index: mi,
-            p1_name: m.p1_name || '', p1_seed: m.p1_seed || '',
-            p2_name: m.p2_name || '', p2_seed: m.p2_seed || '',
+            p1_name: m.p1_name || '', p1_seed: m.p1_seed || '', p1_country: m.p1_country || null,
+            p2_name: m.p2_name || '', p2_seed: m.p2_seed || '', p2_country: m.p2_country || null,
           })
         } else {
           matchInserts.push({

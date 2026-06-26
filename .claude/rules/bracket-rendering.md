@@ -80,6 +80,24 @@ Contrast with live bracket: there the *displaced eliminated pick* (`.mc-orig-eli
 - `.mc-champ-actual` — same positioning — neutral `var(--text3)`, mono 11px
 - Both rely on `.champ-box` having `position:absolute` (which makes it a positioned ancestor for child absolute elements).
 
+## Card Geometry Constants (bracket-layout.js)
+
+`CW = 205, CH = 62, GAP = 20, COL = 225` — set 2026-06-26. CW was 180; increased to 205 to prevent name truncation at normal lengths (e.g. "Stefanos Tsitsipas"). COL = CW + GAP always. Round label widths in bracket-layout.js reference `${CW}px` — not hardcoded. `.mc { width: 205px }` in index.html must stay in sync with CW. Print (src/print.js) uses separate geometry — do NOT change it here.
+
+Row padding restored to original `padding:4px 7px; gap:5px` (the extra card width handles the space).
+
+**Name hover-peek** (`@media(hover:hover)` only): on `.pr:hover`, `.pr-name` gets `overflow:visible; position:relative; z-index:2; background:inherit; padding-right:6px`. The full name renders in place, overlaying the odds element rightward, clipped at the card edge by `rowsWrap`'s `overflow:hidden` (which cannot be removed — it clips colored state backgrounds to the card's rounded corners). Touch devices unaffected. Viewer rows have `pointer-events:none`, so hover never fires there.
+
+## High-Confidence — Seed-Gutter Star + Left-Edge Dot (2026-06-26)
+
+**Control (`.pr-star` in `.pr-seed-gutter`):** The star lives inside a `div.pr-seed-gutter` wrapper (same `min-width:16px` slot as the old `span.pr-seed`). It is `position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); opacity:0` at rest — the seed text shows normally. On desktop hover (`@media(hover:hover)`), `.pr.pr-has-star:hover .pr-seed{opacity:0}` and `.pr.pr-has-star:hover .pr-star{opacity:1}` fade the seed out and the star in within the same gutter — **no layout shift**. Click toggles `highConfidence` as before. On touch (`@media(hover:none)`), seed is hidden and star is always visible in the gutter.
+
+The `pr-has-star` class is added to the `.pr` row in JS when the star is rendered (only for `isLivePick && bothConfirmed && !m.winner`). Elim rows and rows without a live pick never get `pr-has-star` — their seeds never fade.
+
+**Status marker (`.pr-hc-dot`):** When `isLivePick && m.highConfidence`, a `span.pr-hc-dot` is appended to the row (absolutely positioned): `left:4px; top:50%; transform:translateY(-50%); width:4px; height:4px; border-radius:50%; background:#c9a227`. Sits in the 7px left padding buffer between the card border and the seed gutter. Persistent at rest — visible without hovering.
+
+**Old right-edge star removed.** No star is ever appended after `.pr-name` or `.pr-odds`. The `.pr-star.is-high{position:static}` rule is gone. Golden file updated to include `pr-has-star` in class lists.
+
 ## `placeCard` Callback Signature
 
 `(draw, match, ri, mi, x, y, wrap)` — used by `bracket.js`, `viewer-bracket.js`, `commissioner-results.js`. Each renderer owns its own implementation for card painting only. Geometry never duplicated.

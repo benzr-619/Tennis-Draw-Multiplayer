@@ -2,6 +2,7 @@
 // buildPrintHTML(d) receives an assembled Draw object; no async, no Supabase
 
 import { isBackupPick } from './scoring.js'
+import { flagPrintHTML } from './flags.js'
 
 const SLAM_CONFIG = {
   AO: { name: 'Australian Open' },
@@ -45,6 +46,8 @@ export function buildPrintHTML(d) {
   const halfGap = (gapW / 2).toFixed(2)        // "1.50" mm — stubs meet at gap center
   const halfPairGap = (PAIR_GAP / 2).toFixed(2) // "0.80" mm — arm overshoot past slot boundary
 
+  const countryMap = d.countryMap || {}
+
   function nameLineHTML(p, m) {
     if (!p || !p.name) return '<div style="height:' + rowH.toFixed(2) + 'mm"></div>'
     const isOrig = m.originalPick && m.originalPick === p.name
@@ -67,6 +70,7 @@ export function buildPrintHTML(d) {
     return '<div style="height:' + rowH.toFixed(2) + 'mm;display:flex;align-items:center;overflow:hidden;gap:1pt">'
       + '<span style="font-size:5pt;min-width:7pt;text-align:center;flex-shrink:0;color:' + accent + '">' + ind + '</span>'
       + '<span style="font-family:\'DM Mono\',monospace;font-size:5pt;color:' + seedCol + ';min-width:9pt;text-align:right;flex-shrink:0">' + escH(p.seed) + '</span>'
+      + flagPrintHTML(countryMap[p.name] || '')
       + '<span style="font-family:\'Playfair Display\',Georgia,serif;font-size:7.5pt;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;' + nameStyle + '">' + escH(p.name) + '</span>'
       + '</div>'
   }
@@ -203,6 +207,7 @@ export function buildPrintHTML(d) {
   }
 
   const fonts = '<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=DM+Mono&display=swap" rel="stylesheet">'
+    + '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flag-icons@7.2.3/css/flag-icons.min.css">'
   return '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>' + escH((cfg.name || d.slam) + ' ' + d.year + ' ' + d.draw) + '</title>' + fonts
     + '<style>@page{size:A3 portrait;margin:0}*{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{background:#f0eeea}'
     + '@media screen{body{padding:8mm;display:flex;flex-direction:column;gap:8mm}div[style*="page-break"]{box-shadow:0 2px 16px rgba(0,0,0,0.15)}}'
