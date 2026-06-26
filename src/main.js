@@ -48,6 +48,7 @@ function renderBracketDisplay() {
   } else {
     renderBracketDirect()
   }
+  renderEloBanner()
 }
 
 function renderRoundSelector(d) {
@@ -533,6 +534,18 @@ $('edit-player-modal').addEventListener('click', e => { if (e.target === $('edit
 
 // ── ELO AUTO-FILL ──
 const _eloSurfaceLabel = { AO: 'hard court', RG: 'clay', WIM: 'grass', USO: 'hard court' }
+let _eloBannerDrawId = null
+function renderEloBanner() {
+  const d = activeDraw()
+  const el = $('bracket-notifications')
+  if (!el) return
+  if (_eloBannerDrawId && _eloBannerDrawId === d?.db_id && !d?.locked) {
+    el.innerHTML = '<div class="elo-chalk-banner">ELO chalk applied. Scroll through to review and add some upsets.</div>'
+  } else {
+    el.innerHTML = ''
+    if (d?.locked) _eloBannerDrawId = null
+  }
+}
 function openEloModal() {
   const d = activeDraw()
   const surface = _eloSurfaceLabel[d?.slam] ?? 'surface'
@@ -549,7 +562,7 @@ function openEloModal() {
   const skipNote = skipped > 0
     ? `${skipped} match${skipped > 1 ? 'es' : ''} skipped — ELO unavailable for those players.`
     : 'All empty matches covered.'
-  $('ecm-body').innerHTML = `Not sure who to pick? Just go with your gut or shut your eyes and click! Half the fun is being wrong.<br><br>` +
+  $('ecm-body').innerHTML =
     `This will fill <strong>${fills.length}</strong> of <strong>${emptyCount}</strong> empty matches using ${surface} ELO ratings. Your existing picks won't change.<br><br>` +
     `<span style="color:var(--text3)">${skipNote}</span>`
   $('ecm-confirm').disabled = fills.length === 0
@@ -573,8 +586,10 @@ $('ecm-confirm').addEventListener('click', async () => {
       await savePickToSupabase(m, d.db_id)
     }
     buildDrawView(d)
+    _eloBannerDrawId = d.db_id
     renderStats()
     renderBracket()
+    renderEloBanner()
     closeEloModal()
   } catch (err) {
     $('ecm-msg').textContent = err.message || 'Failed to save.'

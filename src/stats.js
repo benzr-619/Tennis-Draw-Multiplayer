@@ -344,7 +344,7 @@ export function renderStats() {
         const link = document.createElement('button')
         link.className = 'sc-autofill-link'
         link.id = 'autofill-elo-btn'
-        link.textContent = 'Auto-fill'
+        link.textContent = 'Finish for me'
         if (!cdEl) link.style.marginLeft = 'auto'
         strip.appendChild(link)
       }
