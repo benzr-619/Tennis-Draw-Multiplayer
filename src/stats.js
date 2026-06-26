@@ -337,17 +337,18 @@ export function renderStats() {
     simplePill('complete', pct + '%')
 
     const hasElo = d.rounds[0]?.matches.some(m => m.elo_p1 != null || m.elo_p2 != null)
+    let cdEl = null
     if (!isMobile()) {
-      const cdEl = buildCountdownEl(d, s)
+      cdEl = buildCountdownEl(d, s)
       if (cdEl) { cdEl.style.marginLeft = 'auto'; strip.appendChild(cdEl) }
-      if (hasElo) {
-        const link = document.createElement('button')
-        link.className = 'sc-autofill-link'
-        link.id = 'autofill-elo-btn'
-        link.textContent = 'Finish for me'
-        if (!cdEl) link.style.marginLeft = 'auto'
-        strip.appendChild(link)
-      }
+    }
+    if (hasElo) {
+      const link = document.createElement('button')
+      link.className = 'sc-autofill-link'
+      link.id = 'autofill-elo-btn'
+      link.textContent = 'Finish for me'
+      if (!cdEl) link.style.marginLeft = 'auto'
+      strip.appendChild(link)
     }
     _updateMobileCountdownWrap(d, s)
 

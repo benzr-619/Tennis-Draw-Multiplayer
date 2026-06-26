@@ -554,7 +554,7 @@ function openEloModal() {
   if (d) {
     for (const round of d.rounds) {
       for (const m of round.matches) {
-        if (!m.matchPick && !m.winner && (m.p1?.name || m.p2?.name)) emptyCount++
+        if (!m.matchPick && !m.winner) emptyCount++
       }
     }
   }
