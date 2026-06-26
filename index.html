@@ -130,6 +130,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 @keyframes icon-spin{to{transform:rotate(360deg)}}
 .acct-menu{position:absolute;top:calc(100% + 6px);right:0;background:var(--surface);border:1px solid var(--border2);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.12);min-width:160px;z-index:100;overflow:hidden;display:none;padding:4px}
 .acct-menu.open{display:block}
+[hidden]{display:none!important}
 .acct-mi{display:flex;align-items:center;gap:9px;width:100%;text-align:left;padding:8px 10px;border:none;background:none;border-radius:5px;font-family:var(--sans);font-size:12px;color:var(--text2);cursor:pointer;transition:background 0.1s}
 .acct-mi:hover{background:var(--surface2);color:var(--text)}
 .acct-mi-danger{color:var(--red)}
@@ -528,6 +529,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .lb-draw-card-header:hover{background:var(--surface2)}
 .lb-draw-label{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text3)}
 .lb-draw-expand{font-family:var(--mono);font-size:10px;color:var(--text3)}
+.lb-prelock-msg{padding:20px 16px;text-align:center;color:var(--text3);font:400 13px/1.4 'DM Sans',sans-serif}
 /* Table */
 .lb-table{width:100%}
 .lb-row{display:grid;grid-template-columns:1fr 72px 80px 80px;align-items:center;padding:0 14px;min-height:36px;border-bottom:1px solid var(--border);column-gap:12px;position:relative}

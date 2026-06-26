@@ -200,10 +200,16 @@ function _buildCard(draw, profs, statsMap, color, baseline) {
   card.className = 'lb-draw-card'; card.style.setProperty('--lb-slam-color', color)
 
   const cardHdr = document.createElement('div')
-  cardHdr.className = 'lb-draw-card-header lb-draw-card-clickable'
-  cardHdr.innerHTML = `<span class="lb-draw-label">${draw.draw === 'MS' ? "Men's Singles" : "Women's Singles"}</span><span class="lb-draw-expand">All stats →</span>`
+  const drawLabel = `<span class="lb-draw-label">${draw.draw === 'MS' ? "Men's Singles" : "Women's Singles"}</span>`
+  if (draw.locked) {
+    cardHdr.className = 'lb-draw-card-header lb-draw-card-clickable'
+    cardHdr.innerHTML = drawLabel + `<span class="lb-draw-expand">All stats →</span>`
+    cardHdr.addEventListener('click', e => { e.stopPropagation(); setLbDetail(draw); renderLeaderboard() })
+  } else {
+    cardHdr.className = 'lb-draw-card-header'
+    cardHdr.innerHTML = drawLabel
+  }
   card.appendChild(cardHdr)
-  cardHdr.addEventListener('click', e => { e.stopPropagation(); setLbDetail(draw); renderLeaderboard() })
 
   const sortedProfs = [...profs].filter(p => statsMap[p.id]?.hasAnyPicks)
     .sort((a, b) => (statsMap[b.id]?.[slamSort.col] ?? -Infinity) - (statsMap[a.id]?.[slamSort.col] ?? -Infinity))
@@ -220,46 +226,53 @@ function _buildCard(draw, profs, statsMap, color, baseline) {
   table.appendChild(hdr)
   const sortHdrs = COLS.map((c, i) => ({ col: c.key, cell: hdr.children[i + 1] }))
 
-  sortedProfs.forEach((prof, rank) => {
-    const s = statsMap[prof.id] || {}
-    const isSelf = prof.id === state?.currentUser?.id
-    const row = document.createElement('div')
-    row.className = `lb-row lb-row-card${rank % 2 ? ' lb-row-alt' : ''}${isSelf ? ' lb-row-self' : ''}`
-    row.dataset.uid = prof.id; row.dataset.slamIndex = s.slamIndex ?? -Infinity
-    row.dataset.score = s.score ?? -Infinity; row.dataset.matchYield = s.matchYield ?? -Infinity
+  if (!draw.locked) {
+    const msg = document.createElement('div')
+    msg.className = 'lb-prelock-msg'
+    msg.textContent = 'Leaderboard unlocks after the picks deadline'
+    table.appendChild(msg)
+  } else {
+    sortedProfs.forEach((prof, rank) => {
+      const s = statsMap[prof.id] || {}
+      const isSelf = prof.id === state?.currentUser?.id
+      const row = document.createElement('div')
+      row.className = `lb-row lb-row-card${rank % 2 ? ' lb-row-alt' : ''}${isSelf ? ' lb-row-self' : ''}`
+      row.dataset.uid = prof.id; row.dataset.slamIndex = s.slamIndex ?? -Infinity
+      row.dataset.score = s.score ?? -Infinity; row.dataset.matchYield = s.matchYield ?? -Infinity
 
-    const nameCell = document.createElement('div'); nameCell.className = 'lb-cell lb-cell-name'
-    const rnkEl = document.createElement('span'); rnkEl.className = 'lb-rank'; rnkEl.textContent = '#' + (rank + 1)
-    if (baseline && slamSort.col === 'slamIndex') {
-      const old = baseline[draw.db_id + ':' + prof.id], cur = rank + 1
-      if (old && old !== cur) {
-        const arr = document.createElement('span')
-        arr.className = old > cur ? 'lb-arrow-up' : 'lb-arrow-dn'; arr.textContent = old > cur ? ' ▲' : ' ▼'
-        rnkEl.appendChild(arr)
+      const nameCell = document.createElement('div'); nameCell.className = 'lb-cell lb-cell-name'
+      const rnkEl = document.createElement('span'); rnkEl.className = 'lb-rank'; rnkEl.textContent = '#' + (rank + 1)
+      if (baseline && slamSort.col === 'slamIndex') {
+        const old = baseline[draw.db_id + ':' + prof.id], cur = rank + 1
+        if (old && old !== cur) {
+          const arr = document.createElement('span')
+          arr.className = old > cur ? 'lb-arrow-up' : 'lb-arrow-dn'; arr.textContent = old > cur ? ' ▲' : ' ▼'
+          rnkEl.appendChild(arr)
+        }
       }
-    }
-    const nameEl = document.createElement('span')
-    nameEl.className = 'lb-player-name lb-player-link'; nameEl.textContent = prof.display_name
-    nameEl.addEventListener('click', e => { e.stopPropagation(); openViewerOriginalPicks(prof, draw) })
-    nameCell.append(rnkEl, nameEl)
-    if (isSelf) { const b = document.createElement('span'); b.className = 'rec-you-badge'; b.textContent = 'YOU'; nameCell.appendChild(b) }
-    row.appendChild(nameCell)
+      const nameEl = document.createElement('span')
+      nameEl.className = 'lb-player-name lb-player-link'; nameEl.textContent = prof.display_name
+      nameEl.addEventListener('click', e => { e.stopPropagation(); openViewerOriginalPicks(prof, draw) })
+      nameCell.append(rnkEl, nameEl)
+      if (isSelf) { const b = document.createElement('span'); b.className = 'rec-you-badge'; b.textContent = 'YOU'; nameCell.appendChild(b) }
+      row.appendChild(nameCell)
 
-    COLS.forEach(col => {
-      const cell = document.createElement('div')
-      cell.className = 'lb-cell lb-cell-' + col.key + (col.key === slamSort.col ? ' lb-cell-active-col' : '')
-      cell.dataset.col = col.key
-      cell.textContent = formatStat(col.key, s[col.key]); row.appendChild(cell)
+      COLS.forEach(col => {
+        const cell = document.createElement('div')
+        cell.className = 'lb-cell lb-cell-' + col.key + (col.key === slamSort.col ? ' lb-cell-active-col' : '')
+        cell.dataset.col = col.key
+        cell.textContent = formatStat(col.key, s[col.key]); row.appendChild(cell)
+      })
+
+      if (s.drawHealth !== null && s.drawHealth !== undefined) {
+        const pct = Math.round(s.drawHealth * 100), bar = document.createElement('div')
+        bar.className = 'lb-health-bar'
+        bar.style.cssText = `width:${pct}%;background:hsl(${healthHue(pct)},75%,48%);transition:width 0.3s ease`
+        row.appendChild(bar)
+      }
+      table.appendChild(row)
     })
-
-    if (s.drawHealth !== null && s.drawHealth !== undefined) {
-      const pct = Math.round(s.drawHealth * 100), bar = document.createElement('div')
-      bar.className = 'lb-health-bar'
-      bar.style.cssText = `width:${pct}%;background:hsl(${healthHue(pct)},75%,48%);transition:width 0.3s ease`
-      row.appendChild(bar)
-    }
-    table.appendChild(row)
-  })
+  }
   card.appendChild(table)
   return { card, table, sortHdrs }
 }
@@ -283,11 +296,14 @@ function _buildChipsRow(section, group, allMaps, profs) {
   }
   row.appendChild(c1)
 
+  const anyLocked = group.draws.some(d => d.locked)
   let bestH = null
-  profs.forEach(p => group.draws.forEach(d => {
-    const s = allMaps.get(d.db_id)?.[p.id]
-    if (s?.hasAnyPicks && s.drawHealth !== null && (!bestH || s.drawHealth > bestH.h)) bestH = { h: s.drawHealth, draw: d, prof: p }
-  }))
+  if (anyLocked) {
+    profs.forEach(p => group.draws.forEach(d => {
+      const s = allMaps.get(d.db_id)?.[p.id]
+      if (s?.hasAnyPicks && s.drawHealth !== null && (!bestH || s.drawHealth > bestH.h)) bestH = { h: s.drawHealth, draw: d, prof: p }
+    }))
+  }
   const c2 = _mkChip('HEALTHIEST DRAW')
   if (!bestH) { c2.appendChild(_emptyChip()) } else {
     const pct = Math.round(bestH.h * 100), hue = healthHue(pct)
