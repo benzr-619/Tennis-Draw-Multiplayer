@@ -1,4 +1,4 @@
-// Print — ported verbatim from reference app
+// Print — ported verbatim from reference app, then improved (cards, elbows, finals bar)
 // buildPrintHTML(d) receives an assembled Draw object; no async, no Supabase
 
 import { isBackupPick } from './scoring.js'
@@ -23,7 +23,10 @@ export function buildPrintHTML(d) {
   const accent = accentColors[d.slam] || '#1a1916'
   function escH(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }
 
-  const BODY_H = 381
+  // FINALS_H: height of the Finals bar (bar + margin-bottom) subtracted from BODY_H so the
+  // bracket tree still fits within the page. 12 mm bar + 1 mm gap = 13 mm total.
+  const FINALS_H = 13
+  const BODY_H = 381 - FINALS_H  // = 368 mm
   const R1_PER_PAGE = 32
   const PAIR_GAP = 1.6
   const unit = (BODY_H - (R1_PER_PAGE - 1) * PAIR_GAP) / R1_PER_PAGE
@@ -34,8 +37,13 @@ export function buildPrintHTML(d) {
     return n * unit + (n - 1) * PAIR_GAP
   }
 
-  const colW = [54, 40, 32, 26, 24, 24]
+  // Uniform column widths: 6 × 40 mm + 5 × 3 mm gaps = 255 mm (within 257 mm usable)
+  const colW = [40, 40, 40, 40, 40, 40]
   const gapW = 3
+
+  // Connector geometry
+  const halfGap = (gapW / 2).toFixed(2)        // "1.50" mm — stubs meet at gap center
+  const halfPairGap = (PAIR_GAP / 2).toFixed(2) // "0.80" mm — arm overshoot past slot boundary
 
   function nameLineHTML(p, m) {
     if (!p || !p.name) return '<div style="height:' + rowH.toFixed(2) + 'mm"></div>'
@@ -58,32 +66,73 @@ export function buildPrintHTML(d) {
 
     return '<div style="height:' + rowH.toFixed(2) + 'mm;display:flex;align-items:center;overflow:hidden;gap:1pt">'
       + '<span style="font-size:5pt;min-width:7pt;text-align:center;flex-shrink:0;color:' + accent + '">' + ind + '</span>'
-      + '<span style="font-family:monospace;font-size:5pt;color:' + seedCol + ';min-width:9pt;text-align:right;flex-shrink:0">' + escH(p.seed) + '</span>'
+      + '<span style="font-family:\'DM Mono\',monospace;font-size:5pt;color:' + seedCol + ';min-width:9pt;text-align:right;flex-shrink:0">' + escH(p.seed) + '</span>'
       + '<span style="font-family:\'Playfair Display\',Georgia,serif;font-size:7.5pt;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;' + nameStyle + '">' + escH(p.name) + '</span>'
       + '</div>'
   }
+
+  // Match card: wraps two player rows. height = unit (box-sizing:border-box keeps it exact).
+  function matchCard(m) {
+    return '<div style="height:' + unit.toFixed(2) + 'mm;box-sizing:border-box;border:0.4pt solid #d4d0c8;'
+      + 'background:#f9f8f6;border-radius:0.6mm;overflow:hidden;display:flex;flex-direction:column;'
+      + 'justify-content:center">'
+      + nameLineHTML(m.p1, m) + nameLineHTML(m.p2, m)
+      + '</div>'
+  }
+
+  // Right connector stub extending halfGap mm to the right (into the adjacent gap column).
+  const rightStub = '<div style="position:absolute;right:-' + halfGap + 'mm;top:calc(50% - 0.25pt);'
+    + 'width:' + halfGap + 'mm;height:0.5pt;background:#bbb"></div>'
+
+  // Left connector stub extending halfGap mm to the left (from the adjacent gap column).
+  const leftStub = '<div style="position:absolute;left:-' + halfGap + 'mm;top:calc(50% - 0.25pt);'
+    + 'width:' + halfGap + 'mm;height:0.5pt;background:#bbb"></div>'
+
+  // Vertical arm for even-indexed slots: descends from card center to halfPairGap below slot bottom.
+  const armDown = '<div style="position:absolute;right:-' + halfGap + 'mm;width:0.5pt;background:#bbb;'
+    + 'top:50%;bottom:-' + halfPairGap + 'mm"></div>'
+
+  // Vertical arm for odd-indexed slots: ascends from halfPairGap above slot top to card center.
+  const armUp = '<div style="position:absolute;right:-' + halfGap + 'mm;width:0.5pt;background:#bbb;'
+    + 'top:-' + halfPairGap + 'mm;bottom:50%"></div>'
 
   function buildPage(startR1, endR1, pageNum, isTopHalf) {
     const r1Slice = r1.slice(startR1, endR1)
     const finMatch = rounds[rounds.length - 1] && rounds[rounds.length - 1].matches[0]
     const champName = finMatch && (finMatch.winner || finMatch.matchPick) || '—'
     const halfLabel = isTopHalf ? 'Top half' : 'Bottom half'
-    const champHTML = isTopHalf
-      ? '<span style="font-family:monospace;font-size:7pt;color:#888;margin-left:16pt">Champion: </span>'
-        + '<span style="font-family:\'Playfair Display\',Georgia,serif;font-size:10pt;font-weight:600;color:' + accent + '">' + escH(champName) + '</span>'
-      : ''
+
+    // Header row: tournament name (left) + draw/half/page (right)
     const header = '<div style="display:flex;align-items:baseline;justify-content:space-between;border-bottom:1.5pt solid ' + accent + ';padding-bottom:3pt;margin-bottom:4pt;flex-shrink:0">'
-      + '<div>'
-        + '<span style="font-family:\'Playfair Display\',Georgia,serif;font-size:15pt;font-weight:600;color:' + accent + '">' + escH((cfg.name || d.slam) + ' ' + d.year) + '</span>'
-        + champHTML
+      + '<span style="font-family:\'Playfair Display\',Georgia,serif;font-size:15pt;font-weight:600;color:' + accent + '">' + escH((cfg.name || d.slam) + ' ' + d.year) + '</span>'
+      + '<span style="font-family:\'DM Mono\',monospace;font-size:7pt;color:#888">' + escH(d.draw) + ' · ' + halfLabel + ' · ' + pageNum + ' / 2</span>'
       + '</div>'
-      + '<span style="font-family:monospace;font-size:7pt;color:#888">' + escH(d.draw) + ' · ' + halfLabel + ' · ' + pageNum + ' / 2</span>'
+
+    // Finals bar: compact strip showing the Final match + Champion, on both pages.
+    // height:12mm is fixed so BODY_H can be reduced by FINALS_H=13mm (12mm + 1mm margin-bottom).
+    const finalsBar = '<div style="display:flex;align-items:stretch;height:12mm;flex-shrink:0;margin-bottom:1mm;'
+      + 'border:0.4pt solid #d4d0c8;border-radius:0.8mm;background:#f9f8f6;overflow:hidden">'
+      // "FINAL" label tab
+      + '<div style="display:flex;align-items:center;padding:0 3mm;border-right:0.4pt solid #d4d0c8;flex-shrink:0">'
+      + '<span style="font-family:\'DM Mono\',monospace;font-size:5pt;text-transform:uppercase;letter-spacing:0.1em;color:#999;white-space:nowrap">Final</span>'
+      + '</div>'
+      // Two finalists (uses nameLineHTML so pick state colors work)
+      + '<div style="flex:1;display:flex;flex-direction:column;justify-content:center;padding:0 2mm;min-width:0">'
+      + nameLineHTML(finMatch && finMatch.p1, finMatch || {})
+      + nameLineHTML(finMatch && finMatch.p2, finMatch || {})
+      + '</div>'
+      // Champion section
+      + '<div style="display:flex;flex-direction:column;justify-content:center;padding:0 3mm;'
+      + 'border-left:1.2pt solid ' + accent + ';background:#fff;flex-shrink:0">'
+      + '<span style="font-family:\'DM Mono\',monospace;font-size:4.5pt;text-transform:uppercase;letter-spacing:0.1em;color:#999;margin-bottom:1pt">Champion</span>'
+      + '<span style="font-family:\'Playfair Display\',Georgia,serif;font-size:9pt;font-weight:600;color:' + accent + ';white-space:nowrap">' + escH(champName) + '</span>'
+      + '</div>'
       + '</div>'
 
     let labels = '<div style="display:flex;margin-bottom:2mm;flex-shrink:0;border-bottom:0.4pt solid #ddd;padding-bottom:2pt">'
     for (let ri = 0; ri < drawRounds; ri++) {
       if (ri > 0) labels += '<div style="width:' + gapW + 'mm;flex-shrink:0"></div>'
-      labels += '<div style="width:' + colW[ri] + 'mm;flex-shrink:0;font-family:monospace;font-size:5.5pt;text-transform:uppercase;letter-spacing:0.1em;color:#999;text-align:center">' + escH(rounds[ri].label) + '</div>'
+      labels += '<div style="width:' + colW[ri] + 'mm;flex-shrink:0;font-family:\'DM Mono\',monospace;font-size:5.5pt;text-transform:uppercase;letter-spacing:0.1em;color:#999;text-align:center">' + escH(rounds[ri].label) + '</div>'
     }
     labels += '</div>'
 
@@ -97,7 +146,15 @@ export function buildPrintHTML(d) {
             ? '<div style="height:' + (PAIR_GAP + 1.5) + 'mm;display:flex;align-items:center"><div style="flex:1;border-top:0.4pt dashed #c8c4bb"></div></div>'
             : '<div style="height:' + PAIR_GAP + 'mm"></div>'
         }
-        html += nameLineHTML(m.p1, m) + nameLineHTML(m.p2, m)
+        // Outer container: overflow:visible so rightStub can extend into the adjacent gap.
+        // Inner card: overflow:hidden for player row content clipping.
+        html += '<div style="height:' + unit.toFixed(2) + 'mm;position:relative;overflow:visible">'
+          + rightStub
+          + '<div style="height:' + unit.toFixed(2) + 'mm;box-sizing:border-box;border:0.4pt solid #d4d0c8;'
+          + 'background:#f9f8f6;border-radius:0.6mm;overflow:hidden;display:flex;flex-direction:column;justify-content:center">'
+          + nameLineHTML(m.p1, m) + nameLineHTML(m.p2, m)
+          + '</div>'
+          + '</div>'
       })
       return html
     }
@@ -111,27 +168,38 @@ export function buildPrintHTML(d) {
       let html = ''
       slice.forEach((m, i) => {
         if (i > 0) html += '<div style="height:' + PAIR_GAP + 'mm"></div>'
-        const arm = isLast ? '' : (i % 2 === 0
-          ? 'border-right:0.5pt solid #ccc;border-bottom:0.5pt solid #ccc;'
-          : 'border-right:0.5pt solid #ccc;border-top:0.5pt solid #ccc;')
-        html += '<div style="height:' + sh + 'mm;' + arm + 'display:flex;flex-direction:column;justify-content:center;padding-right:1pt">'
-        html += nameLineHTML(m.p1, m) + nameLineHTML(m.p2, m)
+
+        // Connector elements (absolute, inside slot div)
+        let connectors = ''
+        if (!isLast) {
+          connectors += rightStub
+          connectors += (i % 2 === 0) ? armDown : armUp
+        }
+        // Left stub from left gap into card (ri >= 2; R1 provides its own right stubs)
+        if (ri >= 2) {
+          connectors += leftStub
+        }
+
+        // Slot div: position:relative + overflow:visible so stubs extend into gaps
+        html += '<div style="height:' + sh + 'mm;position:relative;overflow:visible;display:flex;flex-direction:column;justify-content:center">'
+        html += connectors
+        html += matchCard(m)
         html += '</div>'
       })
       return html
     }
 
-    let body = '<div style="display:flex;align-items:stretch;flex:1;min-height:0;overflow:hidden">'
+    let body = '<div style="display:flex;align-items:stretch;flex:1;min-height:0;overflow:visible">'
     for (let ri = 0; ri < drawRounds; ri++) {
       if (ri > 0) body += '<div style="width:' + gapW + 'mm;flex-shrink:0"></div>'
       const col = ri === 0 ? r1Col() : laterCol(ri)
       const border = ri === 0 ? 'border-right:0.4pt solid #e0ddd8;' : ''
-      body += '<div style="width:' + colW[ri] + 'mm;flex-shrink:0;' + border + '">' + col + '</div>'
+      body += '<div style="width:' + colW[ri] + 'mm;flex-shrink:0;' + border + 'position:relative;overflow:visible">' + col + '</div>'
     }
     body += '</div>'
 
     return '<div style="width:277mm;height:420mm;overflow:hidden;display:flex;flex-direction:column;page-break-after:always;box-sizing:border-box;padding:10mm 10mm 8mm;background:#fff">'
-      + header + labels + body + '</div>'
+      + header + finalsBar + labels + body + '</div>'
   }
 
   const fonts = '<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=DM+Mono&display=swap" rel="stylesheet">'

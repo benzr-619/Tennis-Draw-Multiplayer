@@ -262,11 +262,11 @@ export async function renderOddsTab() {
       }
     })
 
-    // ── Unmatched names (triage) ──
+    // ── Unmatched names (triage) — nested inside statusSection ──
     const triageSection = document.createElement('div')
-    triageSection.className = 'comm-section'
+    triageSection.style.cssText = 'margin-top:14px;padding-top:14px;border-top:1px solid var(--border)'
     const triageHdr = document.createElement('div')
-    triageHdr.innerHTML = `<div class="comm-section-title" style="margin-bottom:6px">Unmatched API Names</div>
+    triageHdr.innerHTML = `<div style="font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);margin-bottom:8px">Unmatched API Names</div>
       <div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.7">
         These names came from The Odds API but couldn't be auto-matched to draw players.
         Assign each to a player to enable odds on their matches.
@@ -276,7 +276,7 @@ export async function renderOddsTab() {
     if (unmatched.length === 0) {
       const empty = document.createElement('div')
       empty.style.cssText = 'font-family:var(--mono);font-size:11px;color:var(--text3)'
-      empty.textContent = unmatched.length === 0 && rawRows.length === 0
+      empty.textContent = rawRows.length === 0
         ? 'No odds data yet — odds are fetched every 3 hours while a draw is active, or use Force refresh above.'
         : 'All API names matched.'
       triageSection.appendChild(empty)
@@ -337,58 +337,58 @@ export async function renderOddsTab() {
       })
       triageSection.appendChild(grid)
     }
-    wrap.appendChild(triageSection)
+    statusSection.appendChild(triageSection)
 
     // ── Existing mappings ──
     const mappingsSection = document.createElement('div')
     mappingsSection.className = 'comm-section'
-    const mappingsHdr = document.createElement('div')
-    mappingsHdr.innerHTML = `<div class="comm-section-title" style="margin-bottom:10px">Saved Name Mappings (${mappings.length})</div>`
-    mappingsSection.appendChild(mappingsHdr)
 
     if (mappings.length === 0) {
-      const empty = document.createElement('div')
-      empty.style.cssText = 'font-family:var(--mono);font-size:11px;color:var(--text3)'
-      empty.textContent = 'No mappings saved yet.'
-      mappingsSection.appendChild(empty)
+      mappingsSection.innerHTML = `<div class="comm-section-title" style="margin-bottom:10px">Saved Name Mappings</div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--text3)">No mappings saved yet.</div>`
     } else {
-      let showAllMappings = false
+      let showMappings = false
       const mappingWrap = document.createElement('div')
 
       const renderMappingRows = () => {
         mappingWrap.innerHTML = ''
-        const list = showAllMappings ? mappings : mappings.slice(0, 8)
-        list.forEach(m => {
-          const row = document.createElement('div')
-          row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:5px 0;border-top:1px solid var(--border)'
-          row.innerHTML = `
-            <span style="flex:1;font-family:var(--mono);font-size:11px;color:var(--text2)">${escHtml(m.api_name)}</span>
-            <span style="color:var(--text3);font-size:11px">→</span>
-            <span style="flex:1;font-size:12px;color:var(--text)">${escHtml(m.draw_player_name)}</span>`
-          const delBtn = document.createElement('button')
-          delBtn.className = 'comm-btn comm-btn-danger'
-          delBtn.style.fontSize = '11px'
-          delBtn.textContent = 'Delete'
-          delBtn.addEventListener('click', async () => {
-            delBtn.disabled = true
-            try {
-              await deleteNameMapping(m.api_name)
-              await renderOddsTab()
-            } catch (err) {
-              delBtn.disabled = false
-            }
+
+        const toggleRow = document.createElement('div')
+        toggleRow.style.cssText = 'font-family:var(--mono);font-size:10px;color:var(--text3);cursor:pointer'
+        toggleRow.textContent = showMappings ? `Hide saved mappings ↑` : `Show saved mappings (${mappings.length}) ↓`
+        toggleRow.addEventListener('click', () => { showMappings = !showMappings; renderMappingRows() })
+        mappingWrap.appendChild(toggleRow)
+
+        if (showMappings) {
+          mappings.forEach(m => {
+            const row = document.createElement('div')
+            row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:5px 0;border-top:1px solid var(--border);margin-top:6px'
+            row.innerHTML = `
+              <span style="flex:1;font-family:var(--mono);font-size:11px;color:var(--text2)">${escHtml(m.api_name)}</span>
+              <span style="color:var(--text3);font-size:11px">→</span>
+              <span style="flex:1;font-size:12px;color:var(--text)">${escHtml(m.draw_player_name)}</span>`
+            const delBtn = document.createElement('button')
+            delBtn.className = 'comm-btn comm-btn-danger'
+            delBtn.style.fontSize = '11px'
+            delBtn.textContent = 'Delete'
+            delBtn.addEventListener('click', async () => {
+              delBtn.disabled = true
+              try {
+                await deleteNameMapping(m.api_name)
+                await renderOddsTab()
+              } catch (err) {
+                delBtn.disabled = false
+              }
+            })
+            row.appendChild(delBtn)
+            mappingWrap.appendChild(row)
           })
-          row.appendChild(delBtn)
-          mappingWrap.appendChild(row)
-        })
-        if (mappings.length > 8) {
-          const toggle = document.createElement('div')
-          toggle.style.cssText = 'padding:6px 0;font-family:var(--mono);font-size:10px;color:var(--text3);cursor:pointer;border-top:1px solid var(--border)'
-          toggle.textContent = showAllMappings ? 'Show less ↑' : `Show all ${mappings.length} ↓`
-          toggle.addEventListener('click', () => { showAllMappings = !showAllMappings; renderMappingRows() })
-          mappingWrap.appendChild(toggle)
         }
       }
+
+      const hdr = document.createElement('div')
+      hdr.innerHTML = `<div class="comm-section-title" style="margin-bottom:10px">Saved Name Mappings</div>`
+      mappingsSection.appendChild(hdr)
       renderMappingRows()
       mappingsSection.appendChild(mappingWrap)
     }

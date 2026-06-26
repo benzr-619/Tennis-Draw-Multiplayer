@@ -20,6 +20,7 @@ const ROUND_SIZES = [64, 32, 16, 8, 4, 2, 1]
 // ── MODULE STATE (draw management only) ──
 let _initialized = false
 let parsedR1 = null  // [{p1_name, p1_seed, p2_name, p2_seed}]
+let _existingDrawsExpanded = false
 
 // ── INIT ──
 export function initCommissioner() {
@@ -78,6 +79,8 @@ export function initCommissioner() {
   $c('comm-confirm-btn')?.addEventListener('click', handleConfirmDraw)
   renderExistingDraws()
   renderGettingReadySection()
+  const _ad = activeDraw()
+  if (_ad) renderPickCompletion(_ad)
 }
 
 // ── COMMISSIONER HEADER ──
@@ -122,6 +125,7 @@ export function renderCommHeader() {
         const activeTab = document.querySelector('#comm-hdr-nav .hdr-nav-link.active')?.dataset.tab
         if (activeTab === 'lock') renderLockManaging()
         else if (activeTab === 'odds') renderOddsTab()
+        else if (activeTab === 'draw') { const ad = activeDraw(); if (ad) renderPickCompletion(ad) }
         else renderResults()
       })
     }
@@ -342,6 +346,8 @@ async function handleConfirmDraw() {
     // Update commissioner header to reflect new slam
     renderCommHeader()
     renderExistingDraws()
+    const _ad2 = activeDraw()
+    if (_ad2) renderPickCompletion(_ad2)
   } catch (err) {
     setDrawMsg('Error saving draw: ' + err.message, 'error')
     btn.disabled = false; btn.textContent = 'Confirm draw'
@@ -384,8 +390,7 @@ async function renderGettingReadySection() {
   wrap.innerHTML = `
     <div class="comm-section-title" style="margin-bottom:10px">Getting Ready Mode</div>
     <p style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.6">
-      Pre-fill the next slam details so players see a countdown as soon as the current slam ends.
-      Use <strong>Switch to getting-ready mode</strong> to deactivate the current slam and show the waiting screen to everyone.
+      Pre-fill the next slam details so players see a countdown. Clicking <strong>Go Live</strong> deactivates the current slam and shows the waiting screen to everyone.
     </p>
     <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
       <div>
@@ -402,32 +407,10 @@ async function renderGettingReadySection() {
           style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid var(--border);border-radius:5px;background:var(--surface);color:var(--text);font-family:var(--mono);font-size:12px">
       </div>
     </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="comm-btn comm-btn-secondary" id="comm-save-next-slam-btn">Save next slam info</button>
-      <button class="comm-btn comm-btn-danger" id="comm-switch-getting-ready-btn">Switch to getting-ready mode</button>
-    </div>
+    <button class="comm-btn comm-btn-danger" id="comm-switch-getting-ready-btn">Go Live with Getting Ready Screen</button>
     <div class="comm-msg" id="comm-getting-ready-msg"></div>`
 
-  $c('comm-save-next-slam-btn')?.addEventListener('click', handleSaveNextSlam)
   $c('comm-switch-getting-ready-btn')?.addEventListener('click', handleSwitchToGettingReady)
-}
-
-async function handleSaveNextSlam() {
-  const msg = $c('comm-getting-ready-msg')
-  const btn = $c('comm-save-next-slam-btn')
-  if (btn) btn.disabled = true
-  const { labelVal, startsAt } = _readNextSlamForm()
-  try {
-    const { error } = await supabase
-      .from('app_settings')
-      .upsert({ id: 1, next_slam_label: labelVal, next_slam_starts_at: startsAt })
-    if (error) throw error
-    if (msg) { msg.className = 'comm-msg success'; msg.textContent = 'Next slam info saved.' }
-  } catch (err) {
-    if (msg) { msg.className = 'comm-msg error'; msg.textContent = 'Error: ' + err.message }
-  } finally {
-    if (btn) btn.disabled = false
-  }
 }
 
 async function handleSwitchToGettingReady() {
@@ -467,14 +450,27 @@ async function handleSwitchToGettingReady() {
 export function renderExistingDraws() {
   const wrap = $c('comm-existing-draws-wrap')
   if (!wrap) return
-  if (state.draws.length === 0) { wrap.innerHTML = ''; return }
 
   const SLAM_NAMES = { AO: 'Australian Open', RG: 'Roland Garros', WIM: 'Wimbledon', USO: 'US Open' }
   const DRAW_NAMES = { MS: "Men's Singles", WS: "Women's Singles" }
 
-  wrap.innerHTML = '<div class="comm-section-title" style="margin-bottom:10px">Existing draws</div>'
+  wrap.innerHTML = ''
+
+  const hdrRow = document.createElement('div')
+  hdrRow.style.cssText = 'display:flex;align-items:center;cursor:pointer;user-select:none'
+  hdrRow.innerHTML = `
+    <div class="comm-section-title" style="margin-bottom:0;flex:1">Manage Draws</div>
+    <span style="font-family:var(--mono);font-size:13px;color:var(--text3)">${_existingDrawsExpanded ? '▾' : '▸'}</span>`
+  hdrRow.addEventListener('click', () => {
+    _existingDrawsExpanded = !_existingDrawsExpanded
+    renderExistingDraws()
+  })
+  wrap.appendChild(hdrRow)
+
+  if (!_existingDrawsExpanded || state.draws.length === 0) return
+
   const list = document.createElement('div')
-  list.style.cssText = 'display:flex;flex-direction:column;gap:8px'
+  list.style.cssText = 'display:flex;flex-direction:column;gap:8px;margin-top:12px'
 
   state.draws.forEach(d => {
     const row = document.createElement('div')
@@ -484,25 +480,112 @@ export function renderExistingDraws() {
     label.style.cssText = 'flex:1;font-family:var(--mono);font-size:12px;color:var(--text)'
     label.textContent = `${SLAM_NAMES[d.slam] || d.slam} ${d.year} · ${DRAW_NAMES[d.draw] || d.draw}`
 
-    const cbWrap = document.createElement('label')
-    cbWrap.style.cssText = 'display:flex;align-items:center;gap:6px;cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--text2);white-space:nowrap'
+    if (d.is_active) {
+      const activePill = document.createElement('span')
+      activePill.style.cssText = 'font-family:var(--mono);font-size:10px;color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:2px 7px;white-space:nowrap'
+      activePill.textContent = 'Active'
+      row.append(label, activePill)
+    } else {
+      const reactivateBtn = document.createElement('button')
+      reactivateBtn.className = 'comm-btn comm-btn-secondary'
+      reactivateBtn.style.cssText = 'font-size:11px;padding:4px 10px'
+      reactivateBtn.textContent = 'Re-activate'
+      reactivateBtn.addEventListener('click', () => handleReactivateDraw(d.db_id))
+      row.append(label, reactivateBtn)
+    }
 
-    const cb = document.createElement('input')
-    cb.type = 'checkbox'
-    cb.checked = d.excludeFromLeaderboard
-    cb.addEventListener('change', async () => {
-      cb.disabled = true
-      await supabase.from('draws').update({ exclude_from_leaderboard: cb.checked }).eq('id', d.db_id)
-      d.excludeFromLeaderboard = cb.checked
-      cb.disabled = false
-    })
-
-    cbWrap.append(cb, 'Exclude from leaderboard')
-    row.append(label, cbWrap)
     list.appendChild(row)
   })
 
   wrap.appendChild(list)
+}
+
+async function handleReactivateDraw(drawDbId) {
+  if (!state.currentUser?.is_commissioner) return
+  if (!window.confirm('Re-activate this draw? All other draws will be deactivated and the Getting Ready screen will be cleared.')) return
+  try {
+    await supabase.from('draws').update({ is_active: false }).neq('id', 'none')
+    await supabase.from('draws').update({ is_active: true }).eq('id', drawDbId)
+    await supabase.from('app_settings')
+      .upsert({ id: 1, next_slam_label: null, next_slam_starts_at: null })
+    await loadAllDraws()
+    renderCommHeader()
+    renderExistingDraws()
+    await renderGettingReadySection()
+    const ad = activeDraw()
+    if (ad) renderPickCompletion(ad)
+  } catch (err) {
+    alert('Error: ' + err.message)
+  }
+}
+
+// ── PICK COMPLETION ──
+async function renderPickCompletion(d) {
+  const wrap = $c('comm-pick-completion-wrap')
+  if (!wrap) return
+  if (!d) { wrap.style.display = 'none'; return }
+  wrap.style.display = ''
+
+  wrap.innerHTML = '<div class="comm-section-title" style="margin-bottom:10px">Pick Completion</div>' +
+    '<div style="color:var(--text3);font-family:var(--mono);font-size:11px">Loading…</div>'
+
+  try {
+    const allMatchIds = d.rounds.flatMap(r => r.matches.map(m => m.db_id)).filter(Boolean)
+    if (allMatchIds.length === 0) { wrap.style.display = 'none'; return }
+
+    const [{ data: picks }, { data: profiles }] = await Promise.all([
+      supabase.from('picks').select('user_id, match_pick')
+        .eq('draw_id', d.db_id).in('match_id', allMatchIds),
+      supabase.from('profiles').select('id, display_name'),
+    ])
+
+    const byUser = {}
+    ;(picks ?? []).forEach(p => {
+      if (!byUser[p.user_id]) byUser[p.user_id] = { filled: 0 }
+      if (p.match_pick) byUser[p.user_id].filled++
+    })
+
+    const TOTAL = allMatchIds.length
+    const profMap = Object.fromEntries((profiles ?? []).map(p => [p.id, p.display_name]))
+
+    const rows = Object.entries(byUser)
+      .map(([uid, { filled }]) => ({ name: profMap[uid] || uid, filled }))
+      .sort((a, b) => b.filled - a.filled)
+
+    if (rows.length === 0) {
+      wrap.innerHTML = '<div class="comm-section-title" style="margin-bottom:10px">Pick Completion</div>' +
+        '<div style="font-family:var(--mono);font-size:11px;color:var(--text3)">No picks submitted yet.</div>'
+      return
+    }
+
+    const headerRow = `<div style="display:grid;grid-template-columns:1fr 60px 90px;gap:6px;padding:0 0 6px;border-bottom:1px solid var(--border);margin-bottom:4px">
+      <span style="font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase">Player</span>
+      <span style="font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase;text-align:right">Picks</span>
+      <span style="font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase;text-align:right">Status</span>
+    </div>`
+
+    const dataRows = rows.map(({ name, filled }) => {
+      const isComplete = filled >= TOTAL
+      const isStarted = filled > 0
+      const chipStyle = isComplete
+        ? 'background:#d4edda;color:#1a5c2a;border:1px solid #a3d9b1'
+        : isStarted
+          ? 'background:#fff3cd;color:#856404;border:1px solid #ffc107'
+          : 'background:var(--surface2);color:var(--text3);border:1px solid var(--border)'
+      const chipText = isComplete ? 'Complete' : isStarted ? 'In Progress' : 'Not Started'
+      return `<div style="display:grid;grid-template-columns:1fr 60px 90px;gap:6px;padding:5px 0;border-top:1px solid var(--border);align-items:center">
+        <span style="font-size:12px;color:var(--text)">${escHtml(name)}</span>
+        <span style="font-family:var(--mono);font-size:12px;color:var(--text);text-align:right">${filled}/${TOTAL}</span>
+        <span style="font-family:var(--mono);font-size:10px;border-radius:4px;padding:2px 6px;text-align:center;white-space:nowrap;${chipStyle}">${chipText}</span>
+      </div>`
+    }).join('')
+
+    wrap.innerHTML = `<div class="comm-section-title" style="margin-bottom:10px">Pick Completion</div>${headerRow}${dataRows}`
+
+  } catch (err) {
+    wrap.innerHTML = `<div class="comm-section-title" style="margin-bottom:10px">Pick Completion</div>` +
+      `<div style="font-family:var(--mono);font-size:11px;color:var(--red)">Error: ${escHtml(err.message)}</div>`
+  }
 }
 
 // ── MSG HELPER ──

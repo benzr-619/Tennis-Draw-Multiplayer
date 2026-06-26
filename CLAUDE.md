@@ -22,6 +22,7 @@ Current rules files:
 - `.claude/rules/supabase-mcp.md` — Supabase MCP connector: project ID, table schemas, how to run migrations/SQL without manual dashboard work
 - `.claude/rules/betting.md` — Match Yield betting layer: scoring formula, odds lifecycle, sport keys, name matching, DB objects, first-slam troubleshooting
 - `.claude/rules/between-slams.md` — app_settings table, hasActiveDraw(), getting-ready screen, commissioner form
+- `.claude/rules/print.md` — print layout conventions: card geometry, elbow connector approach, champion box placement, column widths
 
 ---
 
@@ -259,7 +260,7 @@ Reached via account-menu "Commissioner" entry (`enterCommissioner()`); exited vi
 
 ## 13. Feature Status
 
-**Built:** foundation, commissioner screen, leaderboard, polish, viewer, lock architecture (incl. scheduled-locks list), post-lock backup-pick cascade, `buildDrawView` derived-state model, Match Yield betting layer (odds polling, name matching, commissioner Odds tab, bracket card odds display), Records tab trophy-room redesign, Slams tab live-board redesign (stage 3: live slam header + sortable M/W cards + movement arrows + health underlines + storyline chips + past-slam compact/expand + generic list modal), draw notification email (Supabase Edge Function `send-draw-notification` + Resend; `draws.notified_at` column; `get_resend_api_key()` vault helper; standalone HTML email template in `Multiplayer/wimbledon-2026-email.html`).
+**Built:** foundation, commissioner screen, leaderboard, polish, viewer, lock architecture (incl. scheduled-locks list), post-lock backup-pick cascade, `buildDrawView` derived-state model, Match Yield betting layer (odds polling, name matching, commissioner Odds tab, bracket card odds display), Records tab trophy-room redesign, Slams tab live-board redesign (stage 3: live slam header + sortable M/W cards + movement arrows + health underlines + storyline chips + past-slam compact/expand + generic list modal), draw notification email (Supabase Edge Function `send-draw-notification` + Resend; `draws.notified_at` column; `get_resend_api_key()` vault helper; standalone HTML email template in `Multiplayer/wimbledon-2026-email.html`), commissioner Draw Management improvements: Pick Completion table (per-player round-0 fill count + status chip), Manage Draws collapsed section with Re-activate button (sets `draws.is_active`, clears `app_settings` Getting Ready state), Getting Ready single-button flow, Odds tab Unmatched API Names nested inside Odds Status card.
 
 **Naming note:** "Score" is labelled **Draw Yield** everywhere in the UI (stats bar, leaderboard). Internal key remains `score` in JS stats objects. Chalk display removed from UI; code retained in `scoring.js` / `stats.js` (commented out) for future re-enable.
 

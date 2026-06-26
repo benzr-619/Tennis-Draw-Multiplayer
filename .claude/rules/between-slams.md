@@ -90,19 +90,19 @@ This opens the auth screen in signup mode (display name field visible, button sa
 | `comm-getting-ready-wrap` | `<div class="comm-section">` | Container, populated by `renderGettingReadySection()` |
 | `comm-next-slam-label` | `<input type="text">` | Next slam display name |
 | `comm-next-slam-starts-at` | `<input type="datetime-local">` | Start date/time (local time) |
-| `comm-save-next-slam-btn` | `<button>` | Upserts app_settings only — does NOT deactivate draws |
-| `comm-switch-getting-ready-btn` | `<button class="comm-btn-danger">` | Upserts app_settings AND deactivates all draws |
+| `comm-switch-getting-ready-btn` | `<button class="comm-btn-danger">` | "Go Live with Getting Ready Screen" — upserts app_settings AND deactivates all draws |
 | `comm-getting-ready-msg` | `<div class="comm-msg">` | Success/error feedback |
 
 ### Key Functions (src/commissioner.js)
 
 - `fetchAppSettings()` — reads app_settings id=1 row
-- `renderGettingReadySection()` — async, populates `#comm-getting-ready-wrap`, wires button handlers
+- `renderGettingReadySection()` — async, populates `#comm-getting-ready-wrap`, wires the single button handler
 - `_readNextSlamForm()` — reads form inputs, converts datetime-local to UTC ISO
-- `handleSaveNextSlam()` — upserts app_settings without touching draws
 - `handleSwitchToGettingReady()` — confirm → upsert app_settings → `draws.update({is_active:false}).neq('id','none')` → loadAllDraws → re-render
 
-`renderGettingReadySection()` is called fire-and-forget from `initCommissioner()` (after `renderExistingDraws()`). It is also re-called by `handleSwitchToGettingReady()` to refresh the form after the mode switch.
+Single-button design: there is no separate "Save" button. The one button ("Go Live with Getting Ready Screen") does both — saves app_settings AND deactivates all draws.
+
+`renderGettingReadySection()` is called fire-and-forget from `initCommissioner()` (after `renderExistingDraws()`). It is also re-called by `handleSwitchToGettingReady()` and `handleReactivateDraw()` to refresh the form after state changes.
 
 ### datetime-local ↔ UTC Conversion
 
