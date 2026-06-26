@@ -103,7 +103,11 @@ export async function renderRecordsTab(container, profs) {
   }
   _recContainer    = container
   _recProfs        = profs
-  _recAllDraws     = state.draws.filter(d => !d.excludeFromLeaderboard)
+  _recAllDraws     = state.draws.filter(d => !d.excludeFromLeaderboard && d.locked)
+  if (_recAllDraws.length === 0) {
+    container.innerHTML = '<div class="lb-empty">No completed draws yet.</div>'
+    return
+  }
   _recAllStatsMaps = await Promise.all(_recAllDraws.map(d => loadDrawStatsForAllUsers(d)))
   _recYears        = [...new Set(_recAllDraws.map(d => d.year))].sort((a, b) => b - a)
   if (recPeriod !== 'all' && !_recYears.includes(recPeriod)) recPeriod = 'all'
@@ -182,7 +186,7 @@ function buildPodium(eligible, agg, aggKey) {
   wrap.className = 'rec-podium'
 
   // Visual order: rank2 left, rank1 center, rank3 right
-  [[top3[1], 2], [top3[0], 1], [top3[2], 3]].forEach(([prof, rank]) => {
+  ;[[top3[1], 2], [top3[0], 1], [top3[2], 3]].forEach(([prof, rank]) => {
     const s = agg[prof.id]
     const block = document.createElement('div')
     block.className = 'rec-pod-block' + (rank === 1 ? ' rec-pod-top' : '')

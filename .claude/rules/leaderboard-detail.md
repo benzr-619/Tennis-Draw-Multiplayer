@@ -2,6 +2,10 @@
 
 Read this when working on the leaderboard, viewer, or slam color theming.
 
+## ASI Gotcha — leading `[` after an unterminated statement (fixed 2026-06-26)
+
+`src/leaderboard-records.js` uses semicolon-free style. Any statement immediately followed by a line that begins with `[` (an array literal you intend as a new statement) will be mis-parsed as index access on the previous expression. `buildPodium` crashed with `Cannot read properties of undefined (reading 'forEach')` because `wrap.className = 'rec-podium'` (no semicolon) chained into `[[top3...]].forEach` → `'rec-podium'[...].forEach`. Fix: prefix the array-literal statement with a leading `;` (idiom already used at the `;['all', ..._recYears]` line). Same applies to lines starting with `(`.
+
 ## Slam Colors
 
 ```js
