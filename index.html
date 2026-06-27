@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Slam Bracket</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -233,7 +233,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
   /* Leaderboard bottom bar: reorder tabbar below content */
   .lb-root{display:flex;flex-direction:column;flex:1;min-height:0}
   .lb-content{order:1;flex:1;min-height:0}
-  .lb-tabbar{order:2;border-top:1px solid var(--border);border-bottom:none;padding:10px 16px calc(14px + env(safe-area-inset-bottom));background:var(--surface);flex-shrink:0}
+  .lb-tabbar{order:2;border-top:1px solid var(--border);border-bottom:none;padding:10px 16px 26px;background:var(--surface);flex-shrink:0}
   .lb-tabseg{width:100%}
   .lb-tab{flex:1;text-align:center;padding:8px 12px}
 }
@@ -311,7 +311,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 /* M/W seg takes full width with full labels and breathing room */
 .mobile-seg-row{
   display:flex;align-items:center;justify-content:center;
-  padding:10px 16px calc(14px + env(safe-area-inset-bottom));border-top:1px solid var(--border)
+  padding:10px 16px 26px;border-top:1px solid var(--border)
 }
 .mobile-seg-row .seg-control{width:100%}
 .mobile-seg-row .seg-btn{flex:1;justify-content:center;padding:10px 12px}
