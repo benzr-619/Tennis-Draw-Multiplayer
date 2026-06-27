@@ -90,13 +90,17 @@ Row padding restored to original `padding:4px 7px; gap:5px` (the extra card widt
 
 ## High-Confidence — Seed-Gutter Star + Left-Edge Dot (2026-06-26)
 
-**Control (`.pr-star` in `.pr-seed-gutter`):** The star lives inside a `div.pr-seed-gutter` wrapper (same `min-width:16px` slot as the old `span.pr-seed`). It is `position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); opacity:0` at rest — the seed text shows normally. On desktop hover (`@media(hover:hover)`), `.pr.pr-has-star:hover .pr-seed{opacity:0}` and `.pr.pr-has-star:hover .pr-star{opacity:1}` fade the seed out and the star in within the same gutter — **no layout shift**. Click toggles `highConfidence` as before. On touch (`@media(hover:none)`), seed is hidden and star is always visible in the gutter.
+**Desktop (`@media(hover:hover)`) — gutter star + edge dot:**
+- `.pr-star` lives inside `div.pr-seed-gutter` (`min-width:16px`), `position:absolute` centered, `opacity:0` at rest. On `.pr.pr-has-star:hover`: seed fades out (`opacity:0`), star fades in (`opacity:1`) — no layout shift. Click toggles `highConfidence`.
+- `.pr-hc-dot` (`position:absolute; left:4px`): 4×4px gold dot in the left padding buffer. Persistent at rest when `highConfidence` is ON.
+- `pr-has-star` class added to the `.pr` row in JS (only for `isLivePick && bothConfirmed && !m.winner`). Elim rows never get it — their seeds never fade.
 
-The `pr-has-star` class is added to the `.pr` row in JS when the star is rendered (only for `isLivePick && bothConfirmed && !m.winner`). Elim rows and rows without a live pick never get `pr-has-star` — their seeds never fade.
+**Mobile/touch (`@media(hover:none)`) — seed always visible, star between name and odds:**
+- Gutter star (`.pr-star`): `display:none` — seed is never hidden, always visible in the gutter.
+- Edge dot (`.pr-hc-dot`): `display:none` — not shown on mobile.
+- `.pr-star-mobile`: a separate `button` element appended to the row after `.pr-name` and before `.pr-odds` (in DOM order → flex order). `display:none` by default (invisible on desktop). On touch: `display:inline-flex`. Shows `☆` when OFF (muted `var(--border2)`), `★` gold when ON (`.is-high`). Same click handler as the desktop star. No hover needed — always visible and tappable.
 
-**Status marker (`.pr-hc-dot`):** When `isLivePick && m.highConfidence`, a `span.pr-hc-dot` is appended to the row (absolutely positioned): `left:4px; top:50%; transform:translateY(-50%); width:4px; height:4px; border-radius:50%; background:#c9a227`. Sits in the 7px left padding buffer between the card border and the seed gutter. Persistent at rest — visible without hovering.
-
-**Old right-edge star removed.** No star is ever appended after `.pr-name` or `.pr-odds`. The `.pr-star.is-high{position:static}` rule is gone. Golden file updated to include `pr-has-star` in class lists.
+**Old right-edge star removed.** No star is appended after `.pr-name` in the old right-edge position. Golden file updated to include `pr-has-star` in class lists.
 
 ## `placeCard` Callback Signature
 

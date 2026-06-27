@@ -149,6 +149,20 @@ export function placeCard(d, m, ri, mi, x, y, wrap) {
     if (isLivePick && m.highConfidence) {
       const dot = document.createElement('span'); dot.className = 'pr-hc-dot'; row.appendChild(dot)
     }
+    // Mobile star: persistent between name and odds; hidden on desktop via CSS
+    if (isLivePick && bothConfirmed && !m.winner) {
+      const mStar = document.createElement('button')
+      mStar.className = 'pr-star-mobile' + (m.highConfidence ? ' is-high' : '')
+      mStar.textContent = m.highConfidence ? '★' : '☆'
+      mStar.title = m.highConfidence ? 'High confidence (click to clear)' : 'Mark as high confidence'
+      mStar.addEventListener('click', async e => {
+        e.stopPropagation()
+        m.highConfidence = !m.highConfidence
+        await savePickToSupabase(m, d.db_id)
+        renderStats(); renderBracket()
+      })
+      row.appendChild(mStar)
+    }
 
     // Inline odds — replaces the dot; shown when any odds are available for this slot
     const slotOdds = side === 'p1' ? (m.odds_p1_locked ?? m.odds_p1_live ?? null)
