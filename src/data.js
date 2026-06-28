@@ -173,7 +173,18 @@ export async function loadLockSchedules() {
   state.lockSchedules = data || []
 }
 
-// Reload just the active draw's picks (e.g. after switching tabs)
+// Reload all draws without resetting the user's current tab selection.
+export async function refreshAll() {
+  if (!state.currentUser) return
+  const savedId = state.draws[state.activeTab]?.db_id
+  await loadAllDraws()
+  if (savedId) {
+    const idx = state.draws.findIndex(d => d.db_id === savedId)
+    if (idx >= 0) state.activeTab = idx
+  }
+}
+
+// Reload just the active draw's picks (e.g. after commissioner action)
 export async function reloadActiveDraw() {
   const d = state.draws[state.activeTab]
   if (!d) return

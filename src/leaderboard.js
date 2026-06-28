@@ -18,6 +18,7 @@ let lbDetailDraw = null        // Draw | null — when set, show full-width draw
 let lbSort = { col: 'score', dir: -1 }
 
 export function setLbDetail(draw) { lbDetailDraw = draw; lbSort = { col: 'score', dir: -1 } }
+export function clearStatsCache() { statsCache.clear() }
 let statsCache = new Map()     // drawDbId → { userId: stats }
 let profiles = null
 

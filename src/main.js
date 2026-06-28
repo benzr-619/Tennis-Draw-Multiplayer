@@ -1,13 +1,13 @@
 import { state, activeDraw, applyTheme, isMobile, hasActiveDraw } from './state.js'
 import { login, signup, logout, restoreSession, updateDisplayName, fetchProfile, requestPasswordReset, handleRecoverySession } from './auth.js'
-import { loadAllDraws, reloadActiveDraw, slamKey, slamLabel } from './data.js'
+import { loadAllDraws, refreshAll, reloadActiveDraw, slamKey, slamLabel } from './data.js'
 import { renderBracket, renderBracketDirect, placeCard, setRenderBracketFn } from './bracket.js'
 import { renderBracketList } from './bracket-list.js'
 import { closeModal, confirmEditPlayer, renderCommRoundSelector } from './commissioner-results.js'
 import { renderStats, resetStatsFilter, setCountdownClickHandler, fetchPoolSlamIndex } from './stats.js'
 import { buildPrintHTML } from './print.js'
 import { initCommissioner, renderResults, renderLockManaging } from './commissioner.js'
-import { renderLeaderboard } from './leaderboard.js'
+import { renderLeaderboard, clearStatsCache } from './leaderboard.js'
 import { animateSegThumb } from './seg-thumb.js'
 import { supabase } from './supabase.js'
 import { simulateEloFill } from './elo.js'
@@ -266,18 +266,17 @@ function renderHeader() {
   if (userLbEl && user) userLbEl.textContent = user.display_name
 }
 
-async function switchTab(i) {
+function switchTab(i) {
   state.activeTab = i
   resetStatsFilter()
   const d = state.draws[i]
   if (!d) return
   applyTheme(d.slam)
-  await reloadActiveDraw()
-  if (isMobile()) _mobileActiveRound = defaultMobileRound(activeDraw())
+  if (isMobile()) _mobileActiveRound = defaultMobileRound(d)
   renderHeader()
   renderStats()
   renderBracketDisplay()
-  fetchPoolSlamIndex(activeDraw(), state.currentUser?.id).then(() => renderStats())
+  fetchPoolSlamIndex(d, state.currentUser?.id).then(() => renderStats())
 }
 
 // ── FIND UNPICKED CARD HELPER ──
@@ -580,7 +579,8 @@ async function doRefresh(btnId, after) {
   btn.disabled = true
   btn.classList.add('spinning')
   try {
-    await reloadActiveDraw()
+    await refreshAll()
+    clearStatsCache()
     after()
   } finally {
     btn.disabled = false
@@ -588,6 +588,7 @@ async function doRefresh(btnId, after) {
   }
 }
 $('api-sync-btn').addEventListener('click', () => doRefresh('api-sync-btn', () => {
+  renderHeader()
   renderStats()
   renderBracketDisplay()
   fetchPoolSlamIndex(activeDraw(), state.currentUser?.id).then(() => renderStats())
