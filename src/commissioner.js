@@ -535,22 +535,18 @@ async function renderPickCompletion(d) {
     '<div style="color:var(--text3);font-family:var(--mono);font-size:11px">Loading…</div>'
 
   try {
-    const allMatchIds = d.rounds.flatMap(r => r.matches.map(m => m.db_id)).filter(Boolean)
-    if (allMatchIds.length === 0) { wrap.style.display = 'none'; return }
+    const TOTAL = d.rounds.flatMap(r => r.matches).filter(m => m.db_id).length
+    if (TOTAL === 0) { wrap.style.display = 'none'; return }
 
-    const [{ data: picks }, { data: profiles }] = await Promise.all([
-      supabase.from('picks').select('user_id, match_pick')
-        .eq('draw_id', d.db_id).in('match_id', allMatchIds),
+    const [{ data: completionRows, error: ce }, { data: profiles }] = await Promise.all([
+      supabase.rpc('pick_completion', { p_draw_id: d.db_id }),
       supabase.from('profiles').select('id, display_name'),
     ])
+    if (ce) throw ce
 
     const byUser = {}
-    ;(picks ?? []).forEach(p => {
-      if (!byUser[p.user_id]) byUser[p.user_id] = { filled: 0 }
-      if (p.match_pick) byUser[p.user_id].filled++
-    })
+    ;(completionRows ?? []).forEach(r => { byUser[r.user_id] = { filled: Number(r.filled) } })
 
-    const TOTAL = allMatchIds.length
     const profMap = Object.fromEntries((profiles ?? []).map(p => [p.id, p.display_name]))
 
     const rows = Object.entries(byUser)

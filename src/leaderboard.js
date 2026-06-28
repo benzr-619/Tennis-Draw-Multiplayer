@@ -40,13 +40,28 @@ export async function loadAllProfiles() {
   return profiles
 }
 
+// Fetches all rows from a Supabase query builder, paginating in 1,000-row pages
+// to bypass the PostgREST default cap. Pass the query without .range() applied.
+export async function fetchAllRows(baseQuery) {
+  const PAGE = 1000
+  let from = 0
+  const all = []
+  while (true) {
+    const { data, error } = await baseQuery.range(from, from + PAGE - 1)
+    if (error) throw error
+    all.push(...(data || []))
+    if ((data || []).length < PAGE) break
+    from += PAGE
+  }
+  return all
+}
+
 export async function loadAllPicksForDraw(drawDbId) {
-  const { data, error } = await supabase
-    .from('picks')
-    .select('user_id, match_id, match_pick, original_pick, original_pick_result, match_pick_result, high_confidence, edited_after_lock')
-    .eq('draw_id', drawDbId)
-  if (error) throw error
-  return data || []
+  return fetchAllRows(
+    supabase.from('picks')
+      .select('user_id, match_id, match_pick, original_pick, original_pick_result, match_pick_result, high_confidence, edited_after_lock')
+      .eq('draw_id', drawDbId)
+  )
 }
 
 // Assembles a draw using the user's current picks, then re-derives all slot/elim state.

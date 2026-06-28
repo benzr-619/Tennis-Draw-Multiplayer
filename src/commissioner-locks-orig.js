@@ -80,14 +80,10 @@ async function _doLockOriginalPicks(d) {
     await supabase.from('lock_schedules').delete().eq('id', pendingSched.id)
   }
 
-  // 3. Snapshot: original_pick = match_pick for all users
-  const { data: allPicks, error: pe } = await supabase
-    .from('picks').select('id, match_pick').eq('draw_id', d.db_id)
+  // 3. Snapshot: original_pick = match_pick for all users (single atomic UPDATE via RPC,
+  //    avoids the PostgREST 1,000-row cap that would truncate the fetch-then-loop path)
+  const { error: pe } = await supabase.rpc('snapshot_original_picks', { p_draw_id: d.db_id })
   if (pe) throw pe
-
-  for (const pk of (allPicks || [])) {
-    await supabase.from('picks').update({ original_pick: pk.match_pick }).eq('id', pk.id)
-  }
 
   // 4. Update local state
   d.locked = true

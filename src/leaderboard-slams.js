@@ -7,7 +7,7 @@ import { supabase } from './supabase.js'
 import { formatAmerican } from './odds.js'
 import {
   loadAllPicksForDraw, assembleDrawForUser, loadDrawStatsForAllUsers,
-  openViewerOriginalPicks, formatStat, setLbDetail, renderLeaderboard,
+  openViewerOriginalPicks, formatStat, setLbDetail, renderLeaderboard, fetchAllRows,
 } from './leaderboard.js'
 
 const STATUS_NAMES = ['Round 1', 'Round 2', 'Round 3', 'Round 4', 'Quarterfinals', 'Semifinals', 'Final']
@@ -136,10 +136,12 @@ async function _loadBaseline(group, profs, R) {
   const result = {}
   for (const d of group.draws) {
     if (!_picksCache.has(d.db_id)) {
-      const { data } = await supabase.from('picks')
-        .select('user_id,match_id,match_pick,original_pick,original_pick_result,match_pick_result,high_confidence,edited_after_lock')
-        .eq('draw_id', d.db_id)
-      _picksCache.set(d.db_id, data || [])
+      const rows = await fetchAllRows(
+        supabase.from('picks')
+          .select('user_id,match_id,match_pick,original_pick,original_pick_result,match_pick_result,high_confidence,edited_after_lock')
+          .eq('draw_id', d.db_id)
+      )
+      _picksCache.set(d.db_id, rows)
     }
     const byUser = {}
     _picksCache.get(d.db_id).forEach(p => { if (!byUser[p.user_id]) byUser[p.user_id] = []; byUser[p.user_id].push(p) })

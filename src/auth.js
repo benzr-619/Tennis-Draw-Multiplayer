@@ -58,3 +58,17 @@ export async function restoreSession() {
   state.currentUser = await fetchProfile(session.user.id)
   return state.currentUser
 }
+
+export async function requestPasswordReset(email) {
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + '/',
+  })
+  if (error) throw error
+}
+
+export async function handleRecoverySession() {
+  const params = new URLSearchParams(window.location.hash.slice(1))
+  if (params.get('type') !== 'recovery') return false
+  const { data: { session } } = await supabase.auth.getSession()
+  return !!session
+}

@@ -135,6 +135,7 @@ export async function handlePickClick(ri, mi, p, { renderStats, renderBracket })
 
   // Block backup picks on matches whose backup pick window is locked
   if (drawLocked && !isWithdrawalRepick && isMatchLocked(ri, mi, 'backup_picks')) return
+  if (drawLocked && ri === 0 && !isWithdrawalRepick) return
 
   if (isWithdrawalRepick) {
     // Always show the confirmation popup — Cancel is how the player backs out.

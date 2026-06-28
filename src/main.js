@@ -1,5 +1,5 @@
 import { state, activeDraw, applyTheme, isMobile, hasActiveDraw } from './state.js'
-import { login, signup, logout, restoreSession, updateDisplayName } from './auth.js'
+import { login, signup, logout, restoreSession, updateDisplayName, fetchProfile, requestPasswordReset, handleRecoverySession } from './auth.js'
 import { loadAllDraws, reloadActiveDraw, slamKey, slamLabel } from './data.js'
 import { renderBracket, renderBracketDirect, placeCard, setRenderBracketFn } from './bracket.js'
 import { renderBracketList } from './bracket-list.js'
@@ -73,24 +73,104 @@ let authMode = 'login'
 
 function setAuthMode(mode) {
   authMode = mode
+  const sa = $('screen-auth')
+  sa.classList.remove('auth-mode-login', 'auth-mode-signup', 'auth-mode-forgot', 'auth-mode-reset')
+  sa.classList.add('auth-mode-' + mode)
+
   const isSignup = mode === 'signup'
-  $('auth-display-name').style.display = isSignup ? '' : 'none'
-  $('auth-heading').innerHTML = isSignup ? 'Create your<br><em>account.</em>' : 'Welcome<br><em>back.</em>'
-  $('auth-sub').textContent = isSignup
-    ? 'Pick a display name — this is what others see on the leaderboard.'
-    : 'Sign in to your account to make picks and track the tournament.'
-  $('auth-submit').textContent = isSignup ? 'Sign up' : 'Sign in'
-  $('auth-toggle-text').textContent = isSignup ? 'Already have an account?' : "Don't have an account?"
-  $('auth-toggle-link').textContent = isSignup ? 'Sign in' : 'Sign up'
-  $('auth-error').className = 'auth-error'
-  if (isSignup) {
-    $('auth-password').autocomplete = 'new-password'
-  } else {
-    $('auth-password').autocomplete = 'current-password'
+  const isForgot = mode === 'forgot'
+  const isReset = mode === 'reset'
+
+  const headings = {
+    login: 'Welcome<br><em>back.</em>',
+    signup: 'Create your<br><em>account.</em>',
+    forgot: 'Reset your<br><em>password.</em>',
+    reset: 'Set new<br><em>password.</em>',
   }
+  const subs = {
+    login: 'Sign in to your account to make picks and track the tournament.',
+    signup: 'Pick a display name — this is what others see on the leaderboard.',
+    forgot: "Enter your email and we'll send you a link to reset your password.",
+    reset: 'Choose a new password for your account.',
+  }
+  $('auth-heading').innerHTML = headings[mode]
+  $('auth-sub').textContent = subs[mode]
+
+  if (!isForgot && !isReset) {
+    $('auth-display-name').style.display = isSignup ? '' : 'none'
+    $('auth-submit').textContent = isSignup ? 'Sign up' : 'Sign in'
+    $('auth-toggle-text').textContent = isSignup ? 'Already have an account?' : "Don't have an account?"
+    $('auth-toggle-link').textContent = isSignup ? 'Sign in' : 'Sign up'
+    $('auth-password').autocomplete = isSignup ? 'new-password' : 'current-password'
+  }
+
+  if (isForgot) {
+    const mainEmail = $('auth-email').value.trim()
+    if (mainEmail) $('auth-forgot-email').value = mainEmail
+  }
+
+  $('auth-error').className = 'auth-error'
 }
 
 $('auth-toggle-link').addEventListener('click', () => setAuthMode(authMode === 'login' ? 'signup' : 'login'))
+$('auth-forgot-link').addEventListener('click', () => setAuthMode('forgot'))
+$('auth-forgot-back').addEventListener('click', () => setAuthMode('login'))
+
+$('auth-forgot-form').addEventListener('submit', async e => {
+  e.preventDefault()
+  const btn = $('auth-forgot-submit')
+  const errEl = $('auth-error')
+  errEl.className = 'auth-error'
+  const email = $('auth-forgot-email').value.trim()
+  if (!email) return
+  btn.disabled = true
+  btn.textContent = 'Sending…'
+  try {
+    await requestPasswordReset(email)
+    errEl.textContent = 'Check your email for a reset link.'
+    errEl.className = 'auth-error visible auth-success'
+  } catch (err) {
+    errEl.textContent = err.message
+    errEl.className = 'auth-error visible'
+    btn.disabled = false
+    btn.textContent = 'Send reset link'
+  }
+})
+
+$('auth-reset-form').addEventListener('submit', async e => {
+  e.preventDefault()
+  const btn = $('auth-reset-submit')
+  const errEl = $('auth-error')
+  errEl.className = 'auth-error'
+  const password = $('auth-reset-password').value
+  const confirm = $('auth-reset-confirm').value
+  if (password.length < 8) {
+    errEl.textContent = 'Password must be at least 8 characters.'
+    errEl.className = 'auth-error visible'
+    return
+  }
+  if (password !== confirm) {
+    errEl.textContent = 'Passwords do not match.'
+    errEl.className = 'auth-error visible'
+    return
+  }
+  btn.disabled = true
+  btn.textContent = 'Setting password…'
+  try {
+    const { error } = await supabase.auth.updateUser({ password })
+    if (error) throw error
+    history.replaceState(null, '', window.location.pathname)
+    const { data: { session } } = await supabase.auth.getSession()
+    state.currentUser = await fetchProfile(session.user.id)
+    await loadAllDraws()
+    await routeAfterAuth()
+  } catch (err) {
+    errEl.textContent = err.message
+    errEl.className = 'auth-error visible'
+    btn.disabled = false
+    btn.textContent = 'Set Password'
+  }
+})
 
 $('auth-form').addEventListener('submit', async e => {
   e.preventDefault()
@@ -729,6 +809,12 @@ async function init() {
   setCountdownClickHandler(handleCountdownClick)
   setRenderBracketFn(renderBracketDisplay)
   try {
+    const isRecovery = await handleRecoverySession()
+    if (isRecovery) {
+      setAuthMode('reset')
+      showScreen('screen-auth')
+      return
+    }
     const user = await restoreSession()
     if (!user) {
       if (new URLSearchParams(window.location.search).has('signup')) setAuthMode('signup')

@@ -177,9 +177,10 @@ export function placeCard(d, m, ri, mi, x, y, wrap) {
 
     const isResolved = cls.includes('locked')
     const backupPickLocked = d.locked && !m.editedAfterLock && isMatchLocked(ri, mi, 'backup_picks')
-    if (p.name && !m.winner && (!isResolved || m.editedAfterLock) && !backupPickLocked) {
+    const isR1PostLock = d.locked && ri === 0 && !m.editedAfterLock
+    if (p.name && !m.winner && (!isResolved || m.editedAfterLock) && !backupPickLocked && !isR1PostLock) {
       row.addEventListener('click', () => handlePickClick(ri, mi, p, { renderStats, renderBracket }))
-    } else if (p.name && backupPickLocked) {
+    } else if (p.name && (backupPickLocked || isR1PostLock)) {
       row.classList.add('pick-locked')
     }
     return row

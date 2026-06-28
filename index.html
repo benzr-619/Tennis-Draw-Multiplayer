@@ -54,6 +54,12 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .auth-toggle a:hover{text-decoration:underline}
 .auth-error{background:var(--red-bg);border:1px solid var(--red-border);color:var(--red);padding:9px 12px;border-radius:6px;font-size:12px;line-height:1.5;display:none}
 .auth-error.visible{display:block}
+.auth-error.auth-success{background:#e8f5ee;border-color:#4c9968;color:#2d6e4a}
+.auth-forgot-link{display:none}
+#screen-auth.auth-mode-login .auth-forgot-link{display:inline}
+.auth-forgot-section,.auth-reset-section{display:none;flex-direction:column;gap:10px;margin-bottom:1rem}
+#screen-auth.auth-mode-forgot .auth-forgot-section,#screen-auth.auth-mode-reset .auth-reset-section{display:flex}
+#screen-auth.auth-mode-forgot #auth-form,#screen-auth.auth-mode-forgot .auth-toggle,#screen-auth.auth-mode-reset #auth-form,#screen-auth.auth-mode-reset .auth-toggle{display:none}
 
 /* ── BRACKET ── */
 #screen-bracket{flex-direction:column;background:var(--bg)}
@@ -827,7 +833,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 <body>
 
 <!-- ── AUTH ── -->
-<div id="screen-auth" class="screen">
+<div id="screen-auth" class="screen auth-mode-login">
   <div class="auth-container">
     <div class="auth-wordmark">Slam Bracket</div>
     <h1 class="auth-heading" id="auth-heading">Welcome<br><em>back.</em></h1>
@@ -842,7 +848,18 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
     <div class="auth-toggle">
       <span id="auth-toggle-text">Don't have an account?</span>
       <a id="auth-toggle-link">Sign up</a>
+      <span class="auth-forgot-link"> · <a id="auth-forgot-link">Forgot password?</a></span>
     </div>
+    <form class="auth-forgot-section" id="auth-forgot-form" onsubmit="return false">
+      <input class="auth-input" id="auth-forgot-email" type="email" placeholder="Email address" autocomplete="email">
+      <button class="auth-btn" id="auth-forgot-submit" type="submit">Send reset link</button>
+      <div style="text-align:center;margin-top:2px;font-size:12px;color:var(--text2)"><a id="auth-forgot-back" style="color:var(--accent);cursor:pointer;text-decoration:none;font-weight:500">Back to login</a></div>
+    </form>
+    <form class="auth-reset-section" id="auth-reset-form" onsubmit="return false">
+      <input class="auth-input" id="auth-reset-password" type="password" placeholder="New password" autocomplete="new-password">
+      <input class="auth-input" id="auth-reset-confirm" type="password" placeholder="Confirm new password" autocomplete="new-password">
+      <button class="auth-btn" id="auth-reset-submit" type="submit">Set Password</button>
+    </form>
   </div>
 </div>
 

@@ -24,6 +24,7 @@ Current rules files:
 - `.claude/rules/between-slams.md` — app_settings table, hasActiveDraw(), getting-ready screen, commissioner form
 - `.claude/rules/print.md` — print layout conventions: card geometry, elbow connector approach, champion box placement, column widths
 - `.claude/rules/flags.md` — player country flags: parser capture, IOC→ISO2 table location, per-draw name→country map, always-rendered .pr-flag gutter, renderers touched
+- `.claude/rules/data-fetching.md` — PostgREST 1,000-row cap: fetchAllRows paginator, snapshot_original_picks + pick_completion RPCs, canonical cross-user query sites
 
 ---
 
