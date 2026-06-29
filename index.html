@@ -200,12 +200,11 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
   .hdr-row2{overflow:hidden}
 }
 @media(max-width:768px){
-  /* Hide the health underline and details drawer on mobile — strip scrolls horizontally */
+  /* Health underline stays off on mobile */
   .health-underline{display:none!important}
-  .stats-drawer{display:none!important}
   /* Post-lock bar elements: remove bottom reserve (no underline on mobile) */
   .sc-hero,.sc-yield-cell,.sc-countdown{padding-bottom:9px}
-  .sc-guide-btn{display:none!important}
+  .sc-guide-btn{flex-shrink:0}
 }
 
 /* ── MOBILE LAYOUT (≤768px) ── */

@@ -10,8 +10,16 @@ let _countdownClickHandler = null
 let _poolSlamIndex = null   // current user's Slam Index for the active draw
 let _poolFlatROI = null     // current user's flat-stake ROI for the active draw (e.g. 0.45 = +45%)
 let _drawerOpen = false
-let _drawerMathOpen = null  // id of the open math row (e.g. 'draw-yield')
-let _lastDrawId = null      // detect draw change → reset drawer state
+let _drawerMathOpen = null      // id of the open math row (e.g. 'draw-yield')
+let _lastDrawId = null          // detect draw change → reset drawer state
+let _outsideTouchHandler = null // touchstart handler that closes the drawer when tapping outside
+
+function _removeOutsideTouchHandler() {
+  if (_outsideTouchHandler) {
+    document.removeEventListener('touchstart', _outsideTouchHandler)
+    _outsideTouchHandler = null
+  }
+}
 
 export function resetStatsFilter() { statsRoundFilter = null }
 export function getStatsFilter() { return statsRoundFilter }
@@ -211,6 +219,10 @@ function _buildDrawerContent(s, hasResult) {
   const healthVal = healthPct !== null ? `${healthPct}%` : '—'
   const healthValStyle = ''
 
+  const breakdownStr = hasResult && (s.baseScore + s.skillBonus) > 0
+    ? ` · ${s.baseScore} base + ${s.skillBonus} upset pts`
+    : ''
+
   const rows = [
     {
       id: 'slam-index',
@@ -225,7 +237,7 @@ function _buildDrawerContent(s, hasResult) {
       label: 'Draw Yield',
       value: totalScore,
       valueStyle: '',
-      def: 'Only original, pre-tournament picks score here. Rounds pay 1·2·3·6·10·18·32 points, plus a bonus for calling upsets.',
+      def: `Only original, pre-tournament picks score here. Rounds pay 1·2·3·6·10·18·32 points, plus a bonus for calling upsets.${breakdownStr}`,
       math: 'Upset bonus = winner\'s seed − loser\'s seed, never below 0. Unseeded counts as seed 33; unseeded vs unseeded pays a flat 0.5.',
     },
     {
@@ -423,19 +435,41 @@ export function renderStats() {
     </div>`
   strip.appendChild(yieldsEl)
 
-  // 3. Stats Guide pill (inline end-cap of stat cluster, before spacer)
-  if (!isMobile()) {
+  // 3. Stats Guide pill (all viewports — mobile now supported)
+  {
     const guideBtn = document.createElement('button')
     guideBtn.className = `sc-guide-btn${_drawerOpen ? ' open' : ''}`
     guideBtn.setAttribute('aria-expanded', _drawerOpen ? 'true' : 'false')
     guideBtn.innerHTML = `Stats Guide <span class="sc-guide-chevron">▾</span>`
+
+    const _wireOutsideTouch = () => {
+      _removeOutsideTouchHandler()
+      _outsideTouchHandler = e => {
+        const stp = document.getElementById('stats-strip')
+        const dr = document.getElementById('stats-drawer')
+        if ((stp && stp.contains(e.target)) || (dr && dr.contains(e.target))) return
+        _drawerOpen = false
+        guideBtn.classList.remove('open')
+        guideBtn.setAttribute('aria-expanded', 'false')
+        if (dr) dr.classList.remove('open')
+        _removeOutsideTouchHandler()
+      }
+      document.addEventListener('touchstart', _outsideTouchHandler)
+    }
+
     guideBtn.addEventListener('click', () => {
       _drawerOpen = !_drawerOpen
       guideBtn.classList.toggle('open', _drawerOpen)
       guideBtn.setAttribute('aria-expanded', String(_drawerOpen))
       const drawer = document.getElementById('stats-drawer')
       if (drawer) drawer.classList.toggle('open', _drawerOpen)
+      if (_drawerOpen) _wireOutsideTouch()
+      else _removeOutsideTouchHandler()
     })
+
+    // Re-wire with the current guideBtn if drawer state was restored as open
+    if (_drawerOpen) _wireOutsideTouch()
+
     strip.appendChild(guideBtn)
   }
 
