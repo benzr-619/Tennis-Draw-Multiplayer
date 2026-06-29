@@ -4,7 +4,7 @@ import { state } from './state.js'
 import { SLAM_CONFIG } from './data.js'
 import { formatAmerican } from './odds.js'
 // Circular in ESM is fine: all are function calls, not top-level init
-import { loadDrawStatsForAllUsers, openViewerOriginalPicks, formatStat } from './leaderboard.js'
+import { loadDrawStatsForAllUsers, openViewerOriginalPicks, formatStat, fmtScore } from './leaderboard.js'
 import { openListModal } from './leaderboard-slams.js'
 
 // ── MODULE STATE ──
@@ -49,7 +49,7 @@ function buildAllTimeAgg(profs, draws, statsMaps) {
     agg[prof.id] = {
       drawsPlayed,
       hasAnyPicks:    drawsPlayed > 0,
-      avgScore:       drawsPlayed > 0 ? Math.round(totalScore / drawsPlayed) : null,
+      avgScore:       drawsPlayed > 0 ? totalScore / drawsPlayed : null,
       totalMatchYield: myCount > 0   ? Math.round(totalMY)                  : null,
       avgMatchYield:   myCount > 0   ? Math.round(totalMY / myCount)        : null,
       avgSlamIndex:    siCount > 0   ? Math.round(totalSI / siCount)        : null,
@@ -346,10 +346,10 @@ function buildBestDrawChip(profs, brackets) {
   body.className = 'rec-honor-body rec-honor-clickable'
   body.addEventListener('click', () => openListModal('Best Single Draw', sorted.map(e => {
     const ec = SLAM_CONFIG[e.draw.slam] || {}
-    return { name: e.prof.display_name, sub: (ec.name || e.draw.slam) + ' ' + e.draw.year + ' ' + e.draw.draw, val: String(e.score) }
+    return { name: e.prof.display_name, sub: (ec.name || e.draw.slam) + ' ' + e.draw.year + ' ' + e.draw.draw, val: fmtScore(e.score) }
   })))
   const main = document.createElement('div'); main.className = 'rec-honor-main'
-  main.textContent = `${best.prof.display_name} · ${cfg.name || best.draw.slam} ${best.draw.year} ${best.draw.draw} · ${best.score}`
+  main.textContent = `${best.prof.display_name} · ${cfg.name || best.draw.slam} ${best.draw.year} ${best.draw.draw} · ${fmtScore(best.score)}`
   body.appendChild(main); chip.appendChild(body)
   return chip
 }

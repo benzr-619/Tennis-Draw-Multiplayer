@@ -227,8 +227,8 @@ export async function loadDrawStatsForAllUsers(baseDraw) {
     })
 
     result[prof.id] = {
-      score: Math.round(s.baseScore + s.skillBonus),
-      baseScore: Math.round(s.baseScore),
+      score: s.baseScore + s.skillBonus,
+      baseScore: s.baseScore,
       upsetScore: parseFloat(s.skillBonus.toFixed(1)),
       drawAcc: origRes > 0 ? s.cDrawOrig / origRes : null,
       matchAcc: allRes > 0 ? (s.cOrig + s.cBackup) / allRes : null,
@@ -623,7 +623,7 @@ function renderViewerStats(s, mode = 'original') {
   const origRes = s.cDrawOrig + s.wDrawOrig
   const allRes = s.cOrig + s.wOrig + s.cBackup + s.wBackup
 
-  const score   = Math.round(s.baseScore + s.skillBonus)
+  const score   = s.baseScore + s.skillBonus
   const drawAcc = origRes > 0 ? Math.round(s.cDrawOrig / origRes * 100) + '%' : null
   const matchAcc = allRes > 0 ? Math.round((s.cOrig + s.cBackup) / allRes * 100) + '%' : null
   const health  = s.maxHealthPts > 0 ? Math.round(s.reachableHealthPts / s.maxHealthPts * 100) + '%' : null
@@ -634,7 +634,7 @@ function renderViewerStats(s, mode = 'original') {
   // Original draw: pick-based metrics. Match picks: betting/backup metrics.
   const pills = mode === 'original'
     ? [
-        { label: 'Draw Yld', val: score },
+        { label: 'Draw Yld', val: fmtScore(score) },
         drawAcc !== null ? { label: 'Draw %',  val: drawAcc } : null,
         health  !== null ? { label: 'Health',  val: health  } : null,
       ]
@@ -653,10 +653,12 @@ function renderViewerStats(s, mode = 'original') {
 
 // ── FORMAT ──
 
+export function fmtScore(n) { return n % 1 === 0 ? String(n) : n.toFixed(1) }
+
 export function formatStat(key, val) {
   if (val === null || val === undefined) return '—'
-  if (key === 'score' || key === 'avgScore') return val
-  if (key === 'baseScore') return val
+  if (key === 'score' || key === 'avgScore') return fmtScore(+val)
+  if (key === 'baseScore') return String(val)
   if (key === 'upsetScore') return val % 1 === 0 ? val : val.toFixed(1)
   if (key === 'drawsPlayed') return val
   if (key === 'drawAcc' || key === 'matchAcc') return Math.round(val * 100) + '%'

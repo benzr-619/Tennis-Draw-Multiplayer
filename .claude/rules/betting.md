@@ -9,14 +9,17 @@ Read this when working on odds, Match Yield scoring, the Odds tab, or name mappi
 - **Win:** `round(stake × (oddsDecimal − 1))`
 - **Loss:** `−stake`
 
-`oddsDecimal` = consensus decimal odds of the picked player, **frozen at pick-lock** (backup_picks lock fire time).
+`oddsDecimal` = consensus decimal odds of the picked player, **frozen at pick-lock** (original_picks lock for R0; backup_picks lock for R1+).
 
 Match Yield scores against `matchPickResult` (same as Match Accuracy), not `originalPickResult`. Covers all resolved matches where `odds_p1_locked` / `odds_p2_locked` is set.
 
 ## Odds Lifecycle
 
 1. **Live odds:** `fetch_all_active_odds()` PL/pgSQL runs every 3 hours via pg_cron (`fetch-odds` job). Fetches h2h from The Odds API, computes consensus = avg decimal across bookmakers, upserts into `odds_raw`, then pushes matched consensus to `matches.odds_p1_live` / `odds_p2_live` where `name_mappings` exist.
-2. **Locked odds:** `fire_scheduled_locks()` (extended) snapshots `odds_p*_live → odds_p*_locked` when a `backup_picks` lock fires. Condition: `odds_p1_live IS NOT NULL AND odds_p1_locked IS NULL` (no overwrites).
+2. **Locked odds:** `fire_scheduled_locks()` snapshots `odds_p*_live → odds_p*_locked` in two cases:
+   - **`original_picks` lock fires:** snapshots odds for all `round_index = 0` matches in the draw. R0 never gets a backup_picks lock, so this is the only opportunity to freeze those odds.
+   - **`backup_picks` lock fires:** snapshots odds for the covered `(round_index, match_index_start, match_index_end)` range.
+   - Both cases: condition `odds_p1_live IS NOT NULL AND odds_p1_locked IS NULL` (no overwrites).
 3. **Display:** Cards show American odds (live until locked, locked after). Post-result shows earned/lost yield.
 
 ## API Details
@@ -51,7 +54,7 @@ Unmatched names (normalised strings don't match) appear in Commissioner → Odds
 | `odds_raw` | Raw API event rows (home/away names, consensus decimals, fetched_at) |
 | `name_mappings` | api_name → draw_player_name, persists across slams |
 | `matches.odds_p1_live/p2_live` | Live consensus decimal, updated each fetch |
-| `matches.odds_p1_locked/p2_locked` | Frozen at backup-picks lock time |
+| `matches.odds_p1_locked/p2_locked` | Frozen at lock time (original_picks lock for R0; backup_picks lock for R1+) |
 | `fetch_all_active_odds()` | SQL poller, SECURITY DEFINER, reads vault key |
 | `refresh_odds_now()` | Commissioner RPC, calls fetch_all_active_odds(), enforces is_commissioner |
 | `normalise_player_name(text)` | SQL helper, mirrors JS normaliseName() |

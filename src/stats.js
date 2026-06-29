@@ -186,7 +186,8 @@ function _buildDrawerContent(s, hasResult) {
   const drawer = document.getElementById('stats-drawer')
   if (!drawer) return
 
-  const totalScore = hasResult ? Math.round(s.baseScore + s.skillBonus) : '—'
+  const _raw = s.baseScore + s.skillBonus
+  const totalScore = hasResult ? (_raw % 1 === 0 ? String(_raw) : _raw.toFixed(1)) : '—'
   const myldStr = hasResult && s.matchYieldResolved > 0 ? formatYield(s.matchYield) : '—'
   const slamIdxStr = hasResult && _poolSlamIndex !== null ? String(_poolSlamIndex) : '—'
 
@@ -369,7 +370,8 @@ export function renderStats() {
   // Gate all bar stats until at least one match result exists
   const hasResult = d.rounds.some(r => r.matches.some(m => m.winner))
 
-  const totalScore = hasResult ? Math.round(s.baseScore + s.skillBonus) : '—'
+  const _raw = s.baseScore + s.skillBonus
+  const totalScore = hasResult ? (_raw % 1 === 0 ? String(_raw) : _raw.toFixed(1)) : '—'
   const myldStr = hasResult && s.matchYieldResolved > 0 ? formatYield(s.matchYield) : '—'
   const slamIdxStr = hasResult && _poolSlamIndex !== null ? String(_poolSlamIndex) : '—'
 

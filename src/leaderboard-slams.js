@@ -147,7 +147,7 @@ async function _loadBaseline(group, profs, R) {
     _picksCache.get(d.db_id).forEach(p => { if (!byUser[p.user_id]) byUser[p.user_id] = []; byUser[p.user_id].push(p) })
     const ents = profs.map(p => {
       const s = calcStatsAsOf(assembleDrawForUser(d, byUser[p.id] || []), R - 1)
-      return { id: p.id, score: Math.round(s.baseScore + s.skillBonus), my: s.matchYieldResolved > 0 ? s.matchYield : 0, has: s.filled > 0 }
+      return { id: p.id, score: s.baseScore + s.skillBonus, my: s.matchYieldResolved > 0 ? s.matchYield : 0, has: s.filled > 0 }
     }).filter(e => e.has)
     const idxs = calcSlamIndex(ents.map(e => ({ score: e.score, matchYield: e.my })))
     ;[...ents].map((e, i) => ({ ...e, si: idxs[i] }))
