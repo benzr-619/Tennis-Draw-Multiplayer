@@ -799,10 +799,14 @@ function showRosterAlerts(d) {
     const a = pending[idx]
     const total = pending.length
     stepEl.textContent = total > 1 ? `${idx + 1} of ${total}` : ''
+    const ROUND_LABELS = ['R1','R2','R3','R4','the QF','the SF','the Final']
     const replaced = _escHtml(a.replaced_name || 'A player')
     const p1 = _escHtml(a.p1_name)
     const p2 = _escHtml(a.p2_name)
-    bodyEl.innerHTML = `<span class="ram-name">${replaced}</span> has withdrawn. Your match is now <span class="ram-matchup">${p1} vs ${p2}</span> — review your pick. If you don't repick, your score will be auto-assigned to the ELO favourite.`
+    const tail = a.pickedWithdrawn
+      ? `You had <strong>${replaced}</strong> to ${ROUND_LABELS[a.pickedThrough ?? 0]}, you'll need to repick.`
+      : `— review your pick.`
+    bodyEl.innerHTML = `<strong>${replaced}</strong> has withdrawn. R1 is now <strong>${p1}</strong> vs <strong>${p2}</strong>. ${tail}`
     nextBtn.textContent = idx === total - 1 ? 'Dismiss' : 'Skip'
     modal.style.display = 'flex'
   }

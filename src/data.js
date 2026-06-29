@@ -138,12 +138,18 @@ export async function loadDraw(drawRow) {
 
       m.editedAfterLock = true
       const stillInMatch = m.originalPick === m.p1.name || m.originalPick === m.p2.name
+      let pickedThrough = null
       if (!stillInMatch) {
+        const dep = m.replaced_name
+        pickedThrough = assembled.rounds.reduce((maxRi, round, rIdx) => {
+          if (rIdx === 0) return maxRi
+          return round.matches.some(fm => fm.matchPick === dep) ? rIdx : maxRi
+        }, 0)
         m.originalPick = null
         if (m.matchPick && m.matchPick !== m.p1.name && m.matchPick !== m.p2.name) m.matchPick = null
       }
 
-      assembled.rosterAlerts.push({ replaced_name: m.replaced_name, p1_name: m.p1.name, p2_name: m.p2.name, db_id: m.db_id, ri: 0, mi })
+      assembled.rosterAlerts.push({ replaced_name: m.replaced_name, p1_name: m.p1.name, p2_name: m.p2.name, db_id: m.db_id, ri: 0, mi, pickedWithdrawn: !stillInMatch, pickedThrough })
     })
   } else {
     // Pre-lock: clear stale in-memory picks (no editedAfterLock), push alerts.
@@ -154,9 +160,16 @@ export async function loadDraw(drawRow) {
       const repickedSinceChange = pickUpdatedAt && new Date(pickUpdatedAt) >= new Date(m.roster_changed_at)
       if (repickedSinceChange) return
 
+      let pickedWithdrawn = false
+      let pickedThrough = null
       if (m.matchPick && m.matchPick !== m.p1.name && m.matchPick !== m.p2.name) {
-        // Their pick points at the departed player — clear it and orphaned forward picks.
+        // Their pick points at the departed player — capture cascade depth, then clear.
+        pickedWithdrawn = true
         const stale = m.matchPick
+        pickedThrough = assembled.rounds.reduce((maxRi, round, rIdx) => {
+          if (rIdx === 0) return maxRi
+          return round.matches.some(fm => fm.matchPick === stale) ? rIdx : maxRi
+        }, 0)
         m.matchPick = null
         assembled.rounds.forEach((round, rIdx) => {
           if (rIdx === 0) return
@@ -164,7 +177,7 @@ export async function loadDraw(drawRow) {
         })
       }
 
-      assembled.rosterAlerts.push({ replaced_name: m.replaced_name, p1_name: m.p1.name, p2_name: m.p2.name, db_id: m.db_id, ri: 0, mi })
+      assembled.rosterAlerts.push({ replaced_name: m.replaced_name, p1_name: m.p1.name, p2_name: m.p2.name, db_id: m.db_id, ri: 0, mi, pickedWithdrawn, pickedThrough })
     })
   }
 
