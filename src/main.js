@@ -15,8 +15,6 @@ import { savePickToSupabase } from './picks.js'
 import { buildDrawView } from './draw-view.js'
 
 // ── INIT ──
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
-
 function $(id) { return document.getElementById(id) }
 
 function showScreen(id) {

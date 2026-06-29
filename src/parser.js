@@ -1,7 +1,25 @@
 // PDF parser — ported verbatim from reference app
 // Used on the commissioner screen to parse TNNS Live draw PDFs
 
+const _PDF_SRC    = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'
+const _PDF_WORKER = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
+let _pdfJsPromise = null
+
+function ensurePdfJs() {
+  if (window.pdfjsLib) return Promise.resolve()
+  if (_pdfJsPromise) return _pdfJsPromise
+  _pdfJsPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script')
+    s.src = _PDF_SRC
+    s.onload = () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = _PDF_WORKER; resolve() }
+    s.onerror = () => reject(new Error('Failed to load pdf.js'))
+    document.head.appendChild(s)
+  })
+  return _pdfJsPromise
+}
+
 export async function extractPdfText(file) {
+  await ensurePdfJs()
   const ab = await file.arrayBuffer()
   const pdf = await pdfjsLib.getDocument({ data: ab }).promise
   let text = ''
