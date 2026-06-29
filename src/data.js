@@ -5,60 +5,135 @@ import { supabase } from './supabase.js'
 import { state } from './state.js'
 import { buildDrawView } from './draw-view.js'
 
+// Background archive load — resolves when all inactive draws are merged into state.draws.
+// Leaderboard awaits this before rendering. null = not yet started / already complete.
+let _archiveLoadPromise = null
+
 /**
- * Load all draws from Supabase and assemble into state.draws.
- * Fetches matches + picks for each draw. Respects state.currentUser.
+ * Awaits the background archive load. No-op if archive is already loaded or there was
+ * nothing to load. Safe to call multiple times — returns the same in-flight promise.
+ */
+export function ensureAllDrawsLoaded() {
+  return _archiveLoadPromise ?? Promise.resolve()
+}
+
+/**
+ * Load draws from Supabase and assemble into state.draws.
+ * Active draws (is_active=true) are loaded synchronously before returning so the
+ * bracket screen can paint immediately. Inactive past draws load in the background
+ * and are merged into state.draws when ready; ensureAllDrawsLoaded() awaits them.
  */
 export async function loadAllDraws() {
   if (!state.currentUser) return
+  _archiveLoadPromise = null
 
-  // 1. Fetch all draws
+  // 1. Fetch the draws table (small, fast)
+  console.time('loadAllDraws:drawRows')
   const { data: drawRows, error: de } = await supabase
     .from('draws')
     .select('id, slam, draw_type, year, original_picks_locked, is_active, exclude_from_leaderboard, created_at, elo_synced_at')
     .order('created_at', { ascending: true })
+  console.timeEnd('loadAllDraws:drawRows')
 
   if (de) throw de
   if (!drawRows || drawRows.length === 0) {
     state.draws = []
+    _archiveLoadPromise = Promise.resolve()
     return
   }
 
-  // 2. For each draw, fetch matches + picks + lock_schedules in parallel
-  const assembled = await Promise.all(drawRows.map(dr => loadDraw(dr)))
-  state.draws = assembled
+  // 2. Partition: active draws block first render; inactive load in background
+  const activeRows   = drawRows.filter(dr =>  dr.is_active)
+  const inactiveRows = drawRows.filter(dr => !dr.is_active)
 
-  // Set activeTab to the active slam's MS draw (or WS if no MS, or last draw as fallback)
+  // Between-slams: no active draw exists, so the user needs the last draw available
+  // for the "tap to browse" overlay. Load everything synchronously (same as old behavior).
+  if (activeRows.length === 0) {
+    console.time('loadAllDraws:allDraws(between-slams)')
+    const allDraws = await Promise.all(drawRows.map(dr => loadDraw(dr)))
+    console.timeEnd('loadAllDraws:allDraws(between-slams)')
+    state.draws = allDraws
+    state.activeTab = allDraws.length - 1
+    await loadLockSchedules()
+    _archiveLoadPromise = Promise.resolve()
+    return
+  }
+
+  // 3. Load only the active draws before returning (unblocks first paint)
+  console.time('loadAllDraws:activeDraws')
+  const activeDraws = await Promise.all(activeRows.map(dr => loadDraw(dr)))
+  console.timeEnd('loadAllDraws:activeDraws')
+
+  state.draws = activeDraws
+
+  // 4. Set activeTab to the active slam's MS draw (or WS if no MS, or last as fallback)
   const activeMs = state.draws.findIndex(d => d.is_active && d.draw === 'MS')
   const activeWs = state.draws.findIndex(d => d.is_active && d.draw === 'WS')
   const activeIdx = activeMs >= 0 ? activeMs : activeWs >= 0 ? activeWs : state.draws.length - 1
   state.activeTab = Math.max(0, Math.min(activeIdx, state.draws.length - 1))
 
-  // Load lock schedules for active draw
+  // 5. Lock schedules only needed for the active draw — load them now
   await loadLockSchedules()
+
+  // 6. Load inactive past draws in the background — does NOT block the caller
+  if (inactiveRows.length === 0) {
+    _archiveLoadPromise = Promise.resolve()
+    return
+  }
+
+  _archiveLoadPromise = (async () => {
+    console.time('loadAllDraws:archiveDraws')
+    const inactiveDraws = await Promise.all(inactiveRows.map(dr => loadDraw(dr)))
+    console.timeEnd('loadAllDraws:archiveDraws')
+
+    // Preserve the user's current tab selection before the index shift
+    const currentDrawId = state.draws[state.activeTab]?.db_id
+
+    // Rebuild state.draws in original created_at order (active + inactive merged)
+    const byId = {}
+    ;[...activeDraws, ...inactiveDraws].forEach(d => { byId[d.db_id] = d })
+    state.draws = drawRows.map(dr => byId[dr.id]).filter(Boolean)
+
+    // Re-resolve activeTab: prefer to stay on whatever the user had selected
+    const restoredIdx = currentDrawId
+      ? state.draws.findIndex(d => d.db_id === currentDrawId)
+      : -1
+    if (restoredIdx >= 0) {
+      state.activeTab = restoredIdx
+    } else {
+      const ms = state.draws.findIndex(d => d.is_active && d.draw === 'MS')
+      const ws = state.draws.findIndex(d => d.is_active && d.draw === 'WS')
+      state.activeTab = ms >= 0 ? ms : ws >= 0 ? ws : state.draws.length - 1
+    }
+  })()
 }
 
 export async function loadDraw(drawRow) {
   const drawId = drawRow.id
   const userId = state.currentUser?.id
+  const _lbl = `${drawRow.slam}_${drawRow.year}_${drawRow.draw_type}`
 
   // Fetch matches
+  console.time(`loadDraw:matches:${_lbl}`)
   const { data: matchRows, error: me } = await supabase
     .from('matches')
     .select('id, round_index, match_index, p1_name, p1_seed, p1_country, p2_name, p2_seed, p2_country, winner, score, roster_changed_at, replaced_name, odds_p1_live, odds_p2_live, odds_fetched_at, odds_p1_locked, odds_p2_locked, odds_locked_at, elo_p1, elo_p2')
     .eq('draw_id', drawId)
     .order('round_index', { ascending: true })
+  console.timeEnd(`loadDraw:matches:${_lbl}`)
 
   if (me) throw me
 
   // Fetch picks for current user
   let pickMap = {}
   if (userId) {
+    console.time(`loadDraw:picks:${_lbl}`)
     const { data: pickRows, error: pe } = await supabase
       .from('picks')
       .select('match_id, match_pick, original_pick, original_pick_result, match_pick_result, high_confidence, edited_after_lock, notes, updated_at')
       .eq('draw_id', drawId)
       .eq('user_id', userId)
+    console.timeEnd(`loadDraw:picks:${_lbl}`)
 
     if (pe) throw pe
 

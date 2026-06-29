@@ -1,6 +1,6 @@
 import { state, activeDraw, applyTheme, isMobile, hasActiveDraw } from './state.js'
 import { login, signup, logout, restoreSession, updateDisplayName, fetchProfile, requestPasswordReset, handleRecoverySession } from './auth.js'
-import { loadAllDraws, refreshAll, reloadActiveDraw, slamKey, slamLabel } from './data.js'
+import { loadAllDraws, refreshAll, reloadActiveDraw, ensureAllDrawsLoaded, slamKey, slamLabel } from './data.js'
 import { renderBracket, renderBracketDirect, placeCard, setRenderBracketFn } from './bracket.js'
 import { renderBracketList } from './bracket-list.js'
 import { closeModal, confirmEditPlayer, renderCommRoundSelector } from './commissioner-results.js'
@@ -573,13 +573,20 @@ function _setNavActive(page) {
 }
 
 // ── NAV LINKS ──
+async function _openLeaderboard() {
+  _setNavActive('leaderboard')
+  showScreen('screen-leaderboard')
+  await ensureAllDrawsLoaded()
+  renderLeaderboard()
+}
+
 $('nav-bracket').addEventListener('click', () => { _setNavActive('bracket'); showBracketScreen() })
-$('nav-leaderboard').addEventListener('click', () => { _setNavActive('leaderboard'); showScreen('screen-leaderboard'); renderLeaderboard() })
+$('nav-leaderboard').addEventListener('click', _openLeaderboard)
 $('nav-bracket-from-lb').addEventListener('click', () => { _setNavActive('bracket'); showBracketScreen() })
 $('mobile-nav-bracket')?.addEventListener('click', () => { _setNavActive('bracket'); showBracketScreen() })
-$('mobile-nav-leaderboard')?.addEventListener('click', () => { _setNavActive('leaderboard'); showScreen('screen-leaderboard'); renderLeaderboard() })
+$('mobile-nav-leaderboard')?.addEventListener('click', _openLeaderboard)
 $('lb-mobile-nav-bracket')?.addEventListener('click', () => { _setNavActive('bracket'); showBracketScreen() })
-$('lb-mobile-nav-leaderboard')?.addEventListener('click', () => { _setNavActive('leaderboard'); showScreen('screen-leaderboard'); renderLeaderboard() })
+$('lb-mobile-nav-leaderboard')?.addEventListener('click', _openLeaderboard)
 
 // ── COMMISSIONER ENTER / EXIT ──
 function enterCommissioner() {
@@ -624,6 +631,7 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeAcc
 // ── VIEWER BACK ──
 $('viewer-back-btn-v').addEventListener('click', async () => {
   showScreen('screen-leaderboard')
+  await ensureAllDrawsLoaded()
   renderLeaderboard()
 })
 
@@ -638,7 +646,7 @@ async function doRefresh(btnId, after) {
     clearStatsCache()
     _clearRefreshBadge()
     _captureWinnerBaseline()
-    after()
+    await after()
   } finally {
     btn.disabled = false
     btn.classList.remove('spinning')
@@ -650,7 +658,7 @@ $('api-sync-btn').addEventListener('click', () => doRefresh('api-sync-btn', () =
   renderBracketDisplay()
   fetchPoolSlamIndex(activeDraw(), state.currentUser?.id).then(() => renderStats())
 }))
-$('api-sync-btn-lb')?.addEventListener('click', () => doRefresh('api-sync-btn-lb', () => renderLeaderboard()))
+$('api-sync-btn-lb')?.addEventListener('click', () => doRefresh('api-sync-btn-lb', async () => { await ensureAllDrawsLoaded(); renderLeaderboard() }))
 $('api-sync-btn-cmsr')?.addEventListener('click', () => doRefresh('api-sync-btn-cmsr', () => {
   const activeTab = (document.querySelector('#comm-hdr-nav .hdr-nav-link.active') ||
                      document.querySelector('#comm-mobile-hdr-nav .hdr-nav-link.active'))?.dataset.tab
@@ -925,20 +933,28 @@ async function init() {
   setCountdownClickHandler(handleCountdownClick)
   setRenderBracketFn(renderBracketDisplay)
   try {
+    console.time('boot:total')
     const isRecovery = await handleRecoverySession()
     if (isRecovery) {
       setAuthMode('reset')
       showScreen('screen-auth')
       return
     }
+    console.time('boot:restoreSession')
     const user = await restoreSession()
+    console.timeEnd('boot:restoreSession')
     if (!user) {
       if (new URLSearchParams(window.location.search).has('signup')) setAuthMode('signup')
       showScreen('screen-auth')
       return
     }
+    console.time('boot:loadAllDraws')
     await loadAllDraws()
+    console.timeEnd('boot:loadAllDraws')
+    console.time('boot:routeAfterAuth')
     await routeAfterAuth()
+    console.timeEnd('boot:routeAfterAuth')
+    console.timeEnd('boot:total')
   } catch (err) {
     console.error('Init error:', err)
     showScreen('screen-auth')
