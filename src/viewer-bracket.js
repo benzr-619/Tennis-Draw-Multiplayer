@@ -4,7 +4,17 @@
 
 import { renderBracketLayout } from './bracket-layout.js'
 import { formatAmerican } from './odds.js'
+import { eloMap } from './elo.js'
+import { isAutoAssign, withdrawnNames, eloFavourite } from './scoring.js'
 import { makeFlagEl } from './flags.js'
+
+let _viewerEloCache = { drawId: null, map: new Map(), withdrawn: new Set() }
+function _getViewerEloCache(d) {
+  if (_viewerEloCache.drawId !== d.db_id) {
+    _viewerEloCache = { drawId: d.db_id, map: eloMap(d), withdrawn: withdrawnNames(d) }
+  }
+  return _viewerEloCache
+}
 
 let _scrollHandler = null
 
@@ -138,6 +148,10 @@ function placeViewerCard(draw, m, ri, mi, x, y, wrap, mode) {
 
     const hasActuals = m.actualP1 !== undefined
 
+    const { map: _eloLookup, withdrawn: _withdrawnNm } = _getViewerEloCache(draw)
+    const _matchIsAuto = draw.original_picks_locked && isAutoAssign(m, _withdrawnNm)
+    const _autoFavName = _matchIsAuto ? eloFavourite(m, _eloLookup) : null
+
     const makeOrigRow = (p, side) => {
       const actualP = hasActuals ? (side === 'p1' ? m.actualP1 : m.actualP2) : null
       const predictedMissed =
@@ -157,6 +171,13 @@ function placeViewerCard(draw, m, ri, mi, x, y, wrap, mode) {
       row.appendChild(seedEl); row.appendChild(makeFlagEl(draw.countryMap?.[p.name]))
       const nameEl = document.createElement('span'); nameEl.className = 'pr-name'; nameEl.textContent = p.name || '—'
       row.appendChild(nameEl)
+      if (_autoFavName && p.name === _autoFavName) {
+        row.classList.add('s-elo-auto')
+        const autoBadge = document.createElement('span')
+        autoBadge.className = 'pr-elo-auto'
+        autoBadge.textContent = 'auto'
+        row.appendChild(autoBadge)
+      }
       return row
     }
 

@@ -1,6 +1,8 @@
 // Scoring logic — ported verbatim from reference app
 
 import { buildDrawView } from './draw-view.js'
+import { eloMap } from './elo.js'
+import { normaliseName } from './odds.js'
 
 export const ROUND_CONFIG = Array.from({ length: 7 }, (_, i) => ({ base: Math.round(Math.pow(1.78, i)) }))
 
@@ -30,6 +32,35 @@ export function isBackupPick(m) {
   return !!m.originalPick && m.matchPick && m.matchPick !== m.originalPick
 }
 
+// ── ELO AUTO-ASSIGN HELPERS ──
+// When a player's original pick is missing OR names a withdrawn player, Draw Yield
+// and Draw Health are auto-scored on the ELO favourite of the actual matchup.
+// Parallel to the Match Yield odds auto-pick; excluded from Draw Accuracy.
+
+export function withdrawnNames(d) {
+  return new Set((d.rounds[0]?.matches ?? []).map(m => m.replaced_name).filter(Boolean))
+}
+
+// Returns true when no valid original pick exists for this match slot.
+// No pick at all → true. Pick is a current occupant → false (valid live pick).
+// Pick is a withdrawn player → true (forward-cascaded stale pick).
+// Pick is simply a loser (normal wrong prediction) → false.
+export function isAutoAssign(m, withdrawnNm) {
+  if (!m.originalPick) return true
+  if (m.originalPick === m.p1?.name || m.originalPick === m.p2?.name) return false
+  if (withdrawnNm.has(m.originalPick)) return true
+  return false
+}
+
+// Returns the name of the ELO favourite (higher ELO = stronger), or null when
+// ELO is unavailable for either occupant. Uses the draw-level ELO map (R0 only).
+export function eloFavourite(m, eloLookup) {
+  const e1 = m.p1?.name ? (eloLookup.get(normaliseName(m.p1.name)) ?? null) : null
+  const e2 = m.p2?.name ? (eloLookup.get(normaliseName(m.p2.name)) ?? null) : null
+  if (e1 === null || e2 === null) return null
+  return e1 >= e2 ? m.p1.name : m.p2.name
+}
+
 // Draw Health numerator/denominator, "as of" round `filterRi` (Infinity = live).
 //
 // Single source of truth: reachability is read off buildDrawView's slot/elim
@@ -52,17 +83,33 @@ function calcHealthPts(d, filterRi) {
     buildDrawView(view)
   }
 
+  const withdrawnNm = withdrawnNames(view)
+  const eloLookup = eloMap(view)
+
   let maxHealthPts = 0, reachableHealthPts = 0
   view.rounds.forEach((r, ri) => r.matches.forEach(m => {
-    if (!m.originalPick) return
     const pts = ROUND_CONFIG[ri] ? ROUND_CONFIG[ri].base : 0
-    maxHealthPts += pts
-    if (m.winner) {
-      if (m.winner === m.originalPick) reachableHealthPts += pts
+    if (isAutoAssign(m, withdrawnNm)) {
+      // ELO auto-assign: treat the ELO favourite as the pick for health purposes
+      const fav = eloFavourite(m, eloLookup)
+      if (!fav) return  // no ELO for this matchup → skip
+      maxHealthPts += pts
+      if (m.winner) {
+        if (m.winner === fav) reachableHealthPts += pts
+      } else {
+        const favP = fav === m.p1.name ? m.p1 : fav === m.p2.name ? m.p2 : null
+        if (favP && !favP.elim) reachableHealthPts += pts
+      }
     } else {
-      const slot = m.originalPick === m.p1.name ? m.p1
-        : m.originalPick === m.p2.name ? m.p2 : null
-      if (slot && !slot.elim) reachableHealthPts += pts
+      if (!m.originalPick) return
+      maxHealthPts += pts
+      if (m.winner) {
+        if (m.winner === m.originalPick) reachableHealthPts += pts
+      } else {
+        const slot = m.originalPick === m.p1.name ? m.p1
+          : m.originalPick === m.p2.name ? m.p2 : null
+        if (slot && !slot.elim) reachableHealthPts += pts
+      }
     }
   }))
   return { maxHealthPts, reachableHealthPts }
@@ -75,6 +122,9 @@ export function calcStatsAsOf(d, upToRi = null) {
   let baseScore = 0, skillBonus = 0
   let cDrawOrig = 0, wDrawOrig = 0
   let matchYield = 0, matchYieldResolved = 0
+
+  const withdrawnNm = withdrawnNames(d)
+  const eloLookup = eloMap(d)
 
   d.rounds.forEach((r, ri) => r.matches.forEach(m => {
     total++
@@ -95,6 +145,14 @@ export function calcStatsAsOf(d, upToRi = null) {
           skillBonus += sc.skill
         } else if (m.originalPickResult === 'wrong') {
           wOrig++
+        } else if (isAutoAssign(m, withdrawnNm)) {
+          // ELO auto-assign: score if the ELO favourite won — excluded from accuracy
+          const fav = eloFavourite(m, eloLookup)
+          if (fav && m.winner === fav) {
+            const sc = calcMatchScore(m, ri)
+            baseScore += sc.base
+            skillBonus += sc.skill
+          }
         }
       } else {
         // Match Accuracy for backup picks — use matchPickResult

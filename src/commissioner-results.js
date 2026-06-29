@@ -2,6 +2,7 @@
 // Split from commissioner.js on 2026-06-01 (audit part E).
 
 import { activeDraw, state, isMobile } from './state.js'
+import { COUNTRY_DISPLAY_NAMES, countryNameToIoc } from './flags.js'
 import { reloadActiveDraw } from './data.js'
 import { applyWinner, undoWinner, clearMatchPickForward } from './picks.js'
 import { buildDrawView } from './draw-view.js'
@@ -260,6 +261,7 @@ export function openEditPlayerModal(ri, mi, side) {
   document.getElementById('epm-title').textContent = 'Edit player — ' + (m[side].name || 'empty slot')
   document.getElementById('epm-seed').value = m[side].seed || ''
   document.getElementById('epm-name').value = m[side].name || ''
+  document.getElementById('epm-country').value = COUNTRY_DISPLAY_NAMES[m[side].country] || ''
   document.getElementById('edit-player-modal').style.display = 'flex'
   setTimeout(() => document.getElementById('epm-name').focus(), 50)
 }
@@ -272,23 +274,43 @@ export async function confirmEditPlayer() {
   const oldName = m[side].name
   const newName = document.getElementById('epm-name').value.trim()
   const newSeed = document.getElementById('epm-seed').value.trim()
-  m[side] = { name: newName, seed: newSeed }
+  const rawCountry = document.getElementById('epm-country').value.trim()
+  const newIoc = rawCountry ? (countryNameToIoc(rawCountry) ?? null) : null
+  m[side] = { name: newName, seed: newSeed, country: newIoc }
   if (m.matchPick === oldName) m.matchPick = null
   if (m.originalPick === oldName) m.originalPick = null
 
-  // Post-lock round-0 roster change: stamp the match so every player's app can
-  // detect the change at load and reopen it for a one-time repick. Only when the
-  // name actually changed, the draw is locked, and this is a round-0 (actual draw) match.
-  const isPostLockRosterChange = d.locked && ri === 0 && oldName && oldName !== newName
-  const rosterChangedAt = isPostLockRosterChange ? new Date().toISOString() : null
+  // Any real round-0 swap stamps roster_changed_at + replaced_name so every player's app
+  // can detect the change at load (pre- or post-lock). The one-time-repick reopen
+  // (editedAfterLock) stays post-lock only — see the block below.
+  const isRealR0Swap = ri === 0 && oldName && oldName !== newName
+  const rosterChangedAt = isRealR0Swap ? new Date().toISOString() : null
 
   if (state.currentUser?.is_commissioner && m.db_id) {
     const update = {}
-    if (side === 'p1') { update.p1_name = newName; update.p1_seed = newSeed }
-    else { update.p2_name = newName; update.p2_seed = newSeed }
-    if (rosterChangedAt) update.roster_changed_at = rosterChangedAt
+    if (side === 'p1') { update.p1_name = newName; update.p1_seed = newSeed; update.p1_country = newIoc }
+    else { update.p2_name = newName; update.p2_seed = newSeed; update.p2_country = newIoc }
+    if (isRealR0Swap) {
+      update.roster_changed_at = rosterChangedAt
+      update.replaced_name = oldName
+    }
+    if (oldName && oldName !== newName) {
+      // H2H odds are relative, so a swap invalidates both prices.
+      update.odds_p1_live = null; update.odds_p2_live = null
+      update.odds_p1_locked = null; update.odds_p2_locked = null
+      // ELO is per-player; only the replaced side needs clearing.
+      if (side === 'p1') update.elo_p1 = null; else update.elo_p2 = null
+    }
     await supabase.from('matches').update(update).eq('id', m.db_id)
-    if (rosterChangedAt) m.roster_changed_at = rosterChangedAt
+    if (isRealR0Swap) {
+      m.roster_changed_at = rosterChangedAt
+      m.replaced_name = oldName
+    }
+    if (oldName && oldName !== newName) {
+      m.odds_p1_live = null; m.odds_p2_live = null
+      m.odds_p1_locked = null; m.odds_p2_locked = null
+      if (side === 'p1') m.elo_p1 = null; else m.elo_p2 = null
+    }
   }
 
   if (oldName && oldName !== newName) {
@@ -307,6 +329,10 @@ export async function confirmEditPlayer() {
 
   // Re-derive slot occupants so R2+ reflect the new player before rendering.
   buildDrawView(d)
+  // Patch countryMap so flag renders update immediately without a full reload.
+  if (oldName && oldName !== newName) delete d.countryMap[oldName]
+  if (newName && newIoc) d.countryMap[newName] = newIoc
+  else if (newName) delete d.countryMap[newName]
   closeModal(); editCtx = null
   renderResults()
 }

@@ -3,6 +3,44 @@
 // Only codes that differ from a naive 2-char truncation are strictly required,
 // but the table covers all nations regularly seen in Grand Slam draws for clarity.
 
+export const COUNTRY_DISPLAY_NAMES = {
+  // Africa
+  ALG: 'Algeria', EGY: 'Egypt', MAR: 'Morocco', NGR: 'Nigeria', RSA: 'South Africa', TUN: 'Tunisia',
+  // Americas
+  ARG: 'Argentina', BOL: 'Bolivia', BRA: 'Brazil', CAN: 'Canada', CHI: 'Chile', COL: 'Colombia',
+  ECU: 'Ecuador', MEX: 'Mexico', PAR: 'Paraguay', PER: 'Peru', PUR: 'Puerto Rico', URU: 'Uruguay',
+  USA: 'United States', VEN: 'Venezuela',
+  // Asia / Oceania
+  AUS: 'Australia', CHN: 'China', HKG: 'Hong Kong', INA: 'Indonesia', IND: 'India', JPN: 'Japan',
+  KAZ: 'Kazakhstan', KOR: 'South Korea', MAS: 'Malaysia', NZL: 'New Zealand', PAK: 'Pakistan',
+  PHI: 'Philippines', THA: 'Thailand', TPE: 'Chinese Taipei', UAE: 'UAE', UZB: 'Uzbekistan',
+  // Europe (canonical codes only — ROM/SPA legacy aliases omitted)
+  AND: 'Andorra', ARM: 'Armenia', AUT: 'Austria', AZE: 'Azerbaijan', BEL: 'Belgium', BIH: 'Bosnia',
+  BUL: 'Bulgaria', CRO: 'Croatia', CYP: 'Cyprus', CZE: 'Czech Republic', DEN: 'Denmark', ESP: 'Spain',
+  EST: 'Estonia', FIN: 'Finland', FRA: 'France', GBR: 'Great Britain', GEO: 'Georgia', GER: 'Germany',
+  GRE: 'Greece', HUN: 'Hungary', IRL: 'Ireland', ISR: 'Israel', ITA: 'Italy', LAT: 'Latvia',
+  LIB: 'Lebanon', LTU: 'Lithuania', MDA: 'Moldova', MKD: 'North Macedonia', MON: 'Monaco',
+  NED: 'Netherlands', NOR: 'Norway', POL: 'Poland', POR: 'Portugal', ROU: 'Romania', SLO: 'Slovenia',
+  SRB: 'Serbia', SUI: 'Switzerland', SVK: 'Slovakia', SWE: 'Sweden', TUR: 'Turkey', UKR: 'Ukraine',
+}
+
+/**
+ * Case-insensitive lookup: input string → IOC code.
+ * Tries exact match against display names first, then substring.
+ * Returns null if no match found.
+ */
+export function countryNameToIoc(input) {
+  if (!input) return null
+  const lower = input.toLowerCase()
+  for (const [ioc, name] of Object.entries(COUNTRY_DISPLAY_NAMES)) {
+    if (name.toLowerCase() === lower) return ioc
+  }
+  for (const [ioc, name] of Object.entries(COUNTRY_DISPLAY_NAMES)) {
+    if (name.toLowerCase().includes(lower)) return ioc
+  }
+  return null
+}
+
 const IOC_TO_ISO2 = {
   // Africa
   ALG: 'dz', EGY: 'eg', MAR: 'ma', NGR: 'ng', RSA: 'za', TUN: 'tn',

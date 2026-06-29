@@ -45,7 +45,7 @@ export async function loadDraw(drawRow) {
   // Fetch matches
   const { data: matchRows, error: me } = await supabase
     .from('matches')
-    .select('id, round_index, match_index, p1_name, p1_seed, p1_country, p2_name, p2_seed, p2_country, winner, score, roster_changed_at, odds_p1_live, odds_p2_live, odds_fetched_at, odds_p1_locked, odds_p2_locked, odds_locked_at, elo_p1, elo_p2')
+    .select('id, round_index, match_index, p1_name, p1_seed, p1_country, p2_name, p2_seed, p2_country, winner, score, roster_changed_at, replaced_name, odds_p1_live, odds_p2_live, odds_fetched_at, odds_p1_locked, odds_p2_locked, odds_locked_at, elo_p1, elo_p2')
     .eq('draw_id', drawId)
     .order('round_index', { ascending: true })
 
@@ -87,6 +87,7 @@ export async function loadDraw(drawRow) {
       winner: mr.winner ?? null,
       score: mr.score ?? '',
       roster_changed_at: mr.roster_changed_at ?? null,
+      replaced_name: mr.replaced_name ?? null,
       odds_p1_live: mr.odds_p1_live ?? null,
       odds_p2_live: mr.odds_p2_live ?? null,
       odds_fetched_at: mr.odds_fetched_at ?? null,
@@ -120,29 +121,50 @@ export async function loadDraw(drawRow) {
     rounds,
   }
 
-  // For locked draws: detect post-lock round-0 roster changes (in memory, no DB write).
-  // The commissioner's edit stamps the match's roster_changed_at. We reopen that match
-  // for a ONE-TIME repick for every player who hasn't already repicked since the change
-  // (their pick's updated_at predates the change, or they have no pick yet). This reaches
-  // ALL players — including those who picked the player who stayed — not just those whose
-  // pick vanished. A player who repicks advances their updated_at and won't be reopened.
+  // Unified roster-change detection: collect alerts + handle in-memory pick state.
+  // Uses roster_changed_at (stamped by the commissioner swap) and the user's pick
+  // updated_at to determine whether the player has already repicked since the change.
+  assembled.rosterAlerts = []
+
   if (assembled.locked) {
-    assembled.rounds[0]?.matches.forEach(m => {
+    // Post-lock: reopen the match for a one-time repick + push an alert.
+    // Reach ALL players (even those whose pick is still valid) — the prompt is a heads-up.
+    // A repick advances updated_at past roster_changed_at, silencing the alert on next load.
+    assembled.rounds[0]?.matches.forEach((m, mi) => {
       if (m.winner || !m.roster_changed_at) return
       const pickUpdatedAt = pickMap[m.db_id]?.updated_at
       const repickedSinceChange = pickUpdatedAt && new Date(pickUpdatedAt) >= new Date(m.roster_changed_at)
       if (repickedSinceChange) return
 
-      // Reopen the match for this player.
       m.editedAfterLock = true
       const stillInMatch = m.originalPick === m.p1.name || m.originalPick === m.p2.name
       if (!stillInMatch) {
-        // They picked the removed player (or had no valid pick): clear it — they must repick.
         m.originalPick = null
         if (m.matchPick && m.matchPick !== m.p1.name && m.matchPick !== m.p2.name) m.matchPick = null
       }
-      // If they picked the player who stayed, keep their pick — they may repick, but
-      // won't lose a valid pick by ignoring the prompt.
+
+      assembled.rosterAlerts.push({ replaced_name: m.replaced_name, p1_name: m.p1.name, p2_name: m.p2.name, db_id: m.db_id, ri: 0, mi })
+    })
+  } else {
+    // Pre-lock: clear stale in-memory picks (no editedAfterLock), push alerts.
+    // No DB writes — RLS prevents writing to other users' picks rows.
+    assembled.rounds[0]?.matches.forEach((m, mi) => {
+      if (m.winner || !m.roster_changed_at) return
+      const pickUpdatedAt = pickMap[m.db_id]?.updated_at
+      const repickedSinceChange = pickUpdatedAt && new Date(pickUpdatedAt) >= new Date(m.roster_changed_at)
+      if (repickedSinceChange) return
+
+      if (m.matchPick && m.matchPick !== m.p1.name && m.matchPick !== m.p2.name) {
+        // Their pick points at the departed player — clear it and orphaned forward picks.
+        const stale = m.matchPick
+        m.matchPick = null
+        assembled.rounds.forEach((round, rIdx) => {
+          if (rIdx === 0) return
+          round.matches.forEach(fm => { if (fm.matchPick === stale) fm.matchPick = null })
+        })
+      }
+
+      assembled.rosterAlerts.push({ replaced_name: m.replaced_name, p1_name: m.p1.name, p2_name: m.p2.name, db_id: m.db_id, ri: 0, mi })
     })
   }
 
@@ -206,7 +228,7 @@ function emptyMatch() {
     matchPick: null, originalPick: null,
     originalPickResult: null, matchPickResult: null,
     highConfidence: false, editedAfterLock: false, notes: '',
-    winner: null, score: '', roster_changed_at: null,
+    winner: null, score: '', roster_changed_at: null, replaced_name: null,
     odds_p1_live: null, odds_p2_live: null, odds_fetched_at: null,
     odds_p1_locked: null, odds_p2_locked: null, odds_locked_at: null,
     elo_p1: null, elo_p2: null,

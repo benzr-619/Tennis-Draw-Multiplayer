@@ -1,13 +1,23 @@
 // Bracket renderer — ported verbatim from reference, adapted for Supabase pick saving
 
 import { state, activeDraw } from './state.js'
-import { isBackupPick } from './scoring.js'
+import { isBackupPick, isAutoAssign, withdrawnNames, eloFavourite } from './scoring.js'
 import { handlePickClick, savePickToSupabase, findSeed } from './picks.js'
 import { isMatchLocked } from './lock.js'
 import { renderStats } from './stats.js'
 import { renderBracketLayout } from './bracket-layout.js'
 import { formatAmerican } from './odds.js'
+import { eloMap } from './elo.js'
 import { makeFlagEl } from './flags.js'
+
+// Per-draw ELO cache — rebuilt once when the draw ID changes, stable within a render pass
+let _eloCache = { drawId: null, map: new Map(), withdrawn: new Set() }
+function _getEloCache(d) {
+  if (_eloCache.drawId !== d.db_id) {
+    _eloCache = { drawId: d.db_id, map: eloMap(d), withdrawn: withdrawnNames(d) }
+  }
+  return _eloCache
+}
 
 let _renderOverride = null
 export function setRenderBracketFn(fn) { _renderOverride = fn }
@@ -72,6 +82,10 @@ export function placeCard(d, m, ri, mi, x, y, wrap) {
   card.style.cssText = `left:${x}px;top:${y}px`
   card.dataset.ri = ri
   card.dataset.mi = mi
+
+  const { map: _eloLookup, withdrawn: _withdrawnNm } = _getEloCache(d)
+  const _matchIsAuto = d.original_picks_locked && isAutoAssign(m, _withdrawnNm)
+  const _autoFavName = _matchIsAuto ? eloFavourite(m, _eloLookup) : null
 
   function makeRow(p, side) {
     // ── ELIM SLOT: original pick was knocked out in a previous round ──
@@ -173,6 +187,15 @@ export function placeCard(d, m, ri, mi, x, y, wrap) {
       oddsSpan.className = 'pr-odds' + (oddsLocked ? ' pr-odds-locked' : '')
       oddsSpan.textContent = formatAmerican(slotOdds)
       row.appendChild(oddsSpan)
+    }
+
+    // ELO auto-assign badge — shown on the favourite's row when no valid original pick exists
+    if (_autoFavName && p.name === _autoFavName) {
+      row.classList.add('s-elo-auto')
+      const autoBadge = document.createElement('span')
+      autoBadge.className = 'pr-elo-auto'
+      autoBadge.textContent = 'auto'
+      row.appendChild(autoBadge)
     }
 
     const isResolved = cls.includes('locked')

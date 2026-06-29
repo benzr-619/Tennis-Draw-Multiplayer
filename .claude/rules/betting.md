@@ -76,7 +76,7 @@ Unmatched names (normalised strings don't match) appear in Commissioner → Odds
 
 **Records tab:** Avg Score card | Match Yield card (Avg/Best toggle) | Top Brackets card
 
-## Auto-Pick Favourite (BUILT — scoring.js ~line 117)
+## Auto-Pick Favourite — Match Yield (Odds) (BUILT — scoring.js)
 
 When a player has no `matchPick` AND `odds_p1_locked` / `odds_p2_locked` exist AND the match has a result → scored for Match Yield as if they picked the **odds favourite** (lower decimal = favourite).
 
@@ -86,7 +86,27 @@ When a player has no `matchPick` AND `odds_p1_locked` / `odds_p2_locked` exist A
 - **Favourite determination:** `odds_p1_locked < odds_p2_locked` → p1 is favourite; otherwise p2
 - Tracked in the same `matchYield` accumulator and increments `matchYieldResolved`
 
-**Bracket card display** (`bracket.js` `placeCard`): When no pick + locked odds exist on an undecided match → shows favourite name with a grey-purple "auto" badge (`.mc-odds-auto`). Post-result → shows yield with "auto" label.
+## Auto-Pick Favourite — Draw Yield / Health (ELO) (BUILT — scoring.js)
+
+Twin of the odds auto-pick. When a player's **original pick is missing OR names a withdrawn player**, Draw Yield and Draw Health are auto-scored on the **ELO favourite** of the actual matchup (higher ELO = favourite).
+
+**`isAutoAssign(m, withdrawnNm)` (exported from `scoring.js`):**
+- `!m.originalPick` → true (never picked)
+- `originalPick === m.p1.name || m.p2.name` → false (valid live pick, score normally)
+- `originalPick ∈ withdrawnNames` → true (forward-cascaded stale pick after a withdrawal)
+- Otherwise (normal wrong prediction) → false
+
+**`eloFavourite(m, eloLookup)`** — uses the R0-only ELO map from `src/elo.js`; returns `null` when either occupant lacks ELO (no auto-scoring in that case).
+
+**`withdrawnNames(d)`** — builds the withdrawn-player Set from `d.rounds[0].matches.map(m => m.replaced_name)`.
+
+**Scoring (calcStatsAsOf):** in the `!backup` branch after `wOrig++`; adds `sc.base + sc.skill` (full upset bonus) when the ELO favourite won. Excluded from cDrawOrig/wDrawOrig (Draw Accuracy untouched).
+
+**Health (calcHealthPts):** when `isAutoAssign`, treats ELO favourite as the pick for `maxHealthPts` and `reachableHealthPts`. ELO missing → skipped (same as "no pick" was before).
+
+**Display (bracket.js, viewer-bracket.js original mode):** the favourite's row gets `.s-elo-auto` + a `.pr-elo-auto` "auto" badge (muted grey, uppercase mono). The badge fires when `isAutoAssign` is true and ELO resolves to a name; cleared by any valid real pick.
+
+**Alert copy:** the roster-change alert modal (`showRosterAlerts` in `main.js`) notes that unrepicked matches will be auto-scored to the ELO favourite.
 
 ## First-Slam Troubleshooting
 
@@ -95,6 +115,10 @@ When a player has no `matchPick` AND `odds_p1_locked` / `odds_p2_locked` exist A
 - If sport key is wrong (data returns empty), check The Odds API `/v4/sports` list and update the CASE statement in `fetch_all_active_odds()`.
 - If names don't auto-match, they appear in the "Unmatched API Names" section for manual assignment.
 - `odds_raw` table can be inspected directly via Supabase MCP `execute_sql` to debug what the API returned.
+
+## Commissioner Player Swap — Odds & ELO Clearing
+
+When `confirmEditPlayer()` swaps a player (`oldName !== newName`), it clears **both sides' live and locked odds** (h2h prices are relative, so either side alone is meaningless) and **only the swapped side's ELO** (the opponent's rating stays valid). The regular odds poller and ELO sync repopulate the cleared values once data for the new player exists.
 
 ## Display: American Odds
 

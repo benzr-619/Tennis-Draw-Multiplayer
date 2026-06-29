@@ -54,17 +54,21 @@ export function buildCountdownEl(d, s, { compact = false } = {}) {
     const stats = s || calcStatsAsOf(d, null)
     const allFilled = stats.filled === stats.total
     const urgentCls = !allFilled ? ' countdown-urgent' : ''
+    const hasEAL = d.rounds[0]?.matches.some(m => m.editedAfterLock && !m.winner)
+    const hasClick = !!_countdownClickHandler && (!allFilled || hasEAL)
 
     if (compact) {
       const el = document.createElement('div')
-      el.className = 'sc-countdown'
+      el.className = 'sc-countdown' + (hasClick ? ' countdown-clickable' : '')
       el.innerHTML = `${_lockSvg()}<span class="sc-countdown-txt${urgentCls}">picks lock in ${hh}:${mm}</span>`
+      if (hasClick) el.addEventListener('click', () => _countdownClickHandler(origSched))
       return el
     }
 
     const el = document.createElement('div')
-    el.className = 'stat-pill countdown-pill'
+    el.className = 'stat-pill countdown-pill' + (hasClick ? ' countdown-clickable' : '')
     el.style.cssText = 'flex-direction:row;align-items:center;gap:10px'
+    if (hasClick) el.addEventListener('click', () => _countdownClickHandler(origSched))
     el.innerHTML = `<span class="slbl" style="margin-bottom:0">picks lock in</span><span class="sval countdown-val${urgentCls}">${hh}:${mm}</span>`
     return el
   }

@@ -293,6 +293,18 @@ function _findUnpickedCard(d, lock) {
       }
     }
   } else {
+    // For original_picks locks: prioritise roster-change repick (editedAfterLock) matches.
+    // A repicker who chose the player who stayed still has a valid matchPick, so the
+    // regular !matchPick scan below wouldn't find them — we need the explicit flag check.
+    if (lock.lock_type === 'original_picks') {
+      const r0 = d.rounds[0]?.matches || []
+      for (let mi = 0; mi < r0.length; mi++) {
+        if (r0[mi].editedAfterLock && !r0[mi].winner) {
+          const card = document.querySelector(`.mc[data-ri="0"][data-mi="${mi}"]`)
+          if (card) return card
+        }
+      }
+    }
     for (let ri = 0; ri < d.rounds.length; ri++) {
       for (let mi = 0; mi < (d.rounds[ri]?.matches.length || 0); mi++) {
         const m = d.rounds[ri].matches[mi]
@@ -766,6 +778,57 @@ async function renderGettingReady() {
   </div>`
 }
 
+// ── ROSTER SWAP ALERTS ──
+const _rosterAlertsAcked = new Set()
+
+function _escHtml(s) { return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }
+
+function showRosterAlerts(d) {
+  if (!d?.rosterAlerts?.length) return
+  const pending = d.rosterAlerts.filter(a => !_rosterAlertsAcked.has(a.db_id))
+  if (!pending.length) return
+
+  let idx = 0
+  const modal = $('roster-alert-modal')
+  const bodyEl = $('ram-body')
+  const stepEl = $('ram-step')
+  const gotoBtn = $('ram-goto')
+  const nextBtn = $('ram-next')
+
+  function render() {
+    const a = pending[idx]
+    const total = pending.length
+    stepEl.textContent = total > 1 ? `${idx + 1} of ${total}` : ''
+    const replaced = _escHtml(a.replaced_name || 'A player')
+    const p1 = _escHtml(a.p1_name)
+    const p2 = _escHtml(a.p2_name)
+    bodyEl.innerHTML = `<span class="ram-name">${replaced}</span> has withdrawn. Your match is now <span class="ram-matchup">${p1} vs ${p2}</span> — review your pick. If you don't repick, your score will be auto-assigned to the ELO favourite.`
+    nextBtn.textContent = idx === total - 1 ? 'Dismiss' : 'Skip'
+    modal.style.display = 'flex'
+  }
+
+  function ackAll() { pending.forEach(a => _rosterAlertsAcked.add(a.db_id)) }
+
+  gotoBtn.onclick = () => {
+    const a = pending[idx]
+    modal.style.display = 'none'
+    ackAll()
+    const card = document.querySelector(`.mc[data-ri="${a.ri}"][data-mi="${a.mi}"]`)
+    if (card) {
+      card.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      card.classList.add('mc-roster-swap')
+      setTimeout(() => card.classList.remove('mc-roster-swap'), 1500)
+    }
+  }
+
+  nextBtn.onclick = () => {
+    if (idx < pending.length - 1) { idx++; render() }
+    else { modal.style.display = 'none'; ackAll() }
+  }
+
+  render()
+}
+
 // ── SHOW BRACKET SCREEN ──
 async function showBracketScreen() {
   if (!hasActiveDraw()) {
@@ -803,6 +866,7 @@ async function showBracketScreen() {
   renderBracketDisplay()
   showScreen('screen-bracket')
   fetchPoolSlamIndex(activeDraw(), state.currentUser?.id).then(() => renderStats())
+  showRosterAlerts(activeDraw())
 }
 
 // ── BOOT ──

@@ -180,6 +180,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 /* ── ODDS ON BRACKET CARDS ── */
 .pr-odds{font-family:var(--mono);font-size:11px;color:var(--text2);flex-shrink:0;margin-left:3px}
 .pr-odds-locked{color:var(--text)}
+.pr-elo-auto{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:0.06em;color:var(--text3);margin-left:auto;padding-left:4px;flex-shrink:0}
+.pr.s-elo-auto .pr-name{color:var(--text3)}
 .lb-cell-matchYield{width:72px;text-align:right}
 
 /* ── RESPONSIVE ── */
@@ -802,7 +804,11 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .pr-check{font-family:var(--mono);font-size:11px;color:var(--purple);margin-left:auto;padding-left:4px;flex-shrink:0}
 
 /* ── MODAL ── */
-#edit-player-modal,#pick-confirm-modal,#rename-modal,#elo-confirm-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:200;align-items:center;justify-content:center}
+#edit-player-modal,#pick-confirm-modal,#rename-modal,#elo-confirm-modal,#roster-alert-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:200;align-items:center;justify-content:center}
+.ram-name{font-family:var(--serif);font-style:italic;color:var(--text)}
+.ram-matchup{font-family:var(--serif);color:var(--text)}
+@keyframes mc-roster-pulse{0%,100%{box-shadow:0 0 0 3px var(--accent)}50%{box-shadow:none}}
+.mc.mc-roster-swap{animation:mc-roster-pulse 0.5s ease 3}
 
 ::-webkit-scrollbar{width:6px;height:6px}
 ::-webkit-scrollbar-track{background:var(--surface2)}
@@ -1162,9 +1168,36 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
   <div style="background:var(--surface);border:1px solid var(--border2);border-radius:12px;padding:22px;width:340px;max-width:92vw;box-shadow:0 8px 32px rgba(0,0,0,0.15)">
     <div style="font-family:var(--serif);font-size:17px;font-weight:400;margin-bottom:6px" id="epm-title">Edit player</div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:16px;line-height:1.6" id="epm-subtitle">Update name and seed. Picks for this player will be cleared.</div>
-    <div style="display:flex;gap:8px;margin-bottom:12px" id="epm-inputs">
-      <input id="epm-seed" type="text" maxlength="3" placeholder="Seed / Q / WC" style="width:80px;flex-shrink:0;background:var(--surface2);border:1px solid var(--border2);color:var(--text);padding:8px 10px;border-radius:6px;font-family:var(--mono);font-size:12px">
-      <input id="epm-name" type="text" placeholder="Player name" style="flex:1;background:var(--surface2);border:1px solid var(--border2);color:var(--text);padding:8px 10px;border-radius:6px;font-family:var(--sans);font-size:13px">
+    <div style="display:flex;flex-direction:column;margin-bottom:12px" id="epm-inputs">
+      <div style="display:flex;gap:8px">
+        <input id="epm-seed" type="text" maxlength="3" placeholder="Seed / Q / WC" style="width:80px;flex-shrink:0;background:var(--surface2);border:1px solid var(--border2);color:var(--text);padding:8px 10px;border-radius:6px;font-family:var(--mono);font-size:12px">
+        <input id="epm-name" type="text" placeholder="Player name" style="flex:1;background:var(--surface2);border:1px solid var(--border2);color:var(--text);padding:8px 10px;border-radius:6px;font-family:var(--sans);font-size:13px">
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <input id="epm-country" type="text" list="epm-country-list" placeholder="Country (optional)" autocomplete="off" style="flex:1;background:var(--surface2);border:1px solid var(--border2);color:var(--text);padding:8px 10px;border-radius:6px;font-family:var(--sans);font-size:13px">
+        <datalist id="epm-country-list">
+          <option value="Algeria"><option value="Andorra"><option value="Argentina"><option value="Armenia">
+          <option value="Australia"><option value="Austria"><option value="Azerbaijan"><option value="Belgium">
+          <option value="Bolivia"><option value="Bosnia"><option value="Brazil"><option value="Bulgaria">
+          <option value="Canada"><option value="Chile"><option value="China"><option value="Chinese Taipei">
+          <option value="Colombia"><option value="Croatia"><option value="Cyprus"><option value="Czech Republic">
+          <option value="Denmark"><option value="Ecuador"><option value="Egypt"><option value="Estonia">
+          <option value="Finland"><option value="France"><option value="Georgia"><option value="Germany">
+          <option value="Great Britain"><option value="Greece"><option value="Hong Kong"><option value="Hungary">
+          <option value="India"><option value="Indonesia"><option value="Ireland"><option value="Israel">
+          <option value="Italy"><option value="Japan"><option value="Kazakhstan"><option value="Latvia">
+          <option value="Lebanon"><option value="Lithuania"><option value="Malaysia"><option value="Mexico">
+          <option value="Moldova"><option value="Monaco"><option value="Morocco"><option value="Netherlands">
+          <option value="New Zealand"><option value="Nigeria"><option value="North Macedonia"><option value="Norway">
+          <option value="Pakistan"><option value="Paraguay"><option value="Peru"><option value="Philippines">
+          <option value="Poland"><option value="Portugal"><option value="Puerto Rico"><option value="Romania">
+          <option value="Serbia"><option value="Slovenia"><option value="South Africa"><option value="South Korea">
+          <option value="Spain"><option value="Sweden"><option value="Switzerland"><option value="Slovakia">
+          <option value="Thailand"><option value="Tunisia"><option value="Turkey"><option value="UAE">
+          <option value="Ukraine"><option value="United States"><option value="Uruguay"><option value="Uzbekistan">
+          <option value="Venezuela">
+        </datalist>
+      </div>
     </div>
     <div id="epm-btn-area" style="display:flex;gap:8px">
       <button id="epm-confirm" style="flex:1;padding:9px;background:var(--accent);color:var(--accent-text);border:none;border-radius:7px;font-family:var(--sans);font-size:13px;font-weight:600;cursor:pointer">Update player</button>
@@ -1193,6 +1226,21 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
     <div style="display:flex;gap:8px">
       <button id="ecm-confirm" style="flex:1;padding:9px;background:var(--accent);color:var(--accent-text);border:none;border-radius:7px;font-family:var(--sans);font-size:13px;font-weight:600;cursor:pointer">Auto-fill</button>
       <button id="ecm-cancel" style="padding:9px 16px;background:var(--surface2);border:1px solid var(--border2);color:var(--text);border-radius:7px;font-family:var(--sans);font-size:13px;cursor:pointer">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── ROSTER ALERT MODAL ── -->
+<div id="roster-alert-modal">
+  <div style="background:var(--surface);border:1px solid var(--border2);border-radius:12px;padding:22px;width:340px;max-width:92vw;box-shadow:0 8px 32px rgba(0,0,0,0.18)">
+    <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px">
+      <div style="font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--accent)">Draw Update</div>
+      <div id="ram-step" style="font-family:var(--mono);font-size:10px;color:var(--text3)"></div>
+    </div>
+    <div id="ram-body" style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.6"></div>
+    <div style="display:flex;gap:8px">
+      <button id="ram-goto" style="flex:1;padding:9px;background:var(--accent);color:var(--accent-text);border:none;border-radius:7px;font-family:var(--sans);font-size:13px;font-weight:600;cursor:pointer">Go to match</button>
+      <button id="ram-next" style="padding:9px 16px;background:var(--surface2);border:1px solid var(--border2);color:var(--text);border-radius:7px;font-family:var(--sans);font-size:13px;cursor:pointer">Dismiss</button>
     </div>
   </div>
 </div>
