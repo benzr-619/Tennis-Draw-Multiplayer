@@ -8,6 +8,7 @@ import { loadDrawStatsForAllUsers } from './leaderboard.js'
 let statsRoundFilter = null
 let _countdownClickHandler = null
 let _poolSlamIndex = null   // current user's Slam Index for the active draw
+let _poolFlatROI = null     // current user's flat-stake ROI for the active draw (e.g. 0.45 = +45%)
 let _drawerOpen = false
 let _drawerMathOpen = null  // id of the open math row (e.g. 'draw-yield')
 let _lastDrawId = null      // detect draw change → reset drawer state
@@ -20,12 +21,16 @@ export function setCountdownClickHandler(fn) { _countdownClickHandler = fn }
 // Fire-and-forget safe — resolves after Supabase fetch completes.
 export async function fetchPoolSlamIndex(draw, userId) {
   _poolSlamIndex = null
+  _poolFlatROI = null
   if (!draw || !userId) return
   try {
     const statsMap = await loadDrawStatsForAllUsers(draw)
     _poolSlamIndex = statsMap[userId]?.slamIndex ?? null
+    const { flatYield = 0, flatYieldResolved = 0 } = statsMap[userId] ?? {}
+    _poolFlatROI = flatYieldResolved > 0 ? flatYield / flatYieldResolved : null
   } catch (_) {
     _poolSlamIndex = null
+    _poolFlatROI = null
   }
 }
 
@@ -173,7 +178,7 @@ function _updateHealthUnderline(strip, s, hasResult) {
   el.innerHTML = `
     <div class="health-ul-labels-row">
       <span class="health-ul-pct" style="left:${labelLeft}%;color:${labelColor}">${pct}%</span>
-      <span class="health-ul-drw-lbl">Draw Health</span>
+      <span class="health-ul-drw-lbl" style="position:absolute;left:4px;bottom:0">Draw Health</span>
     </div>
     <div class="health-ul-track">
       <div class="health-ul-fill" style="width:${pct}%;background:${fillColor}"></div>
@@ -244,7 +249,7 @@ function _buildDrawerContent(s, hasResult) {
       label: 'Match Accuracy',
       value: matchAccVal,
       valueStyle: '',
-      def: `Match-time picks you got right. · ${matchAccFrac}`,
+      def: `Match-time picks you got right. · ${matchAccFrac}${_poolFlatROI !== null ? ` · ${_poolFlatROI >= 0 ? '+' : ''}${Math.round(_poolFlatROI * 100)}% flat-stake ROI` : ''}`,
       math: null,
     },
     {

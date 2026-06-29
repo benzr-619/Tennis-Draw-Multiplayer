@@ -262,8 +262,6 @@ export async function loadDrawStatsForAllUsers(baseDraw) {
 // ── RENDER ENTRY ──
 
 export async function renderLeaderboard() {
-  statsCache.clear()
-
   const root = document.getElementById('lb-root')
   if (!root) return
   root.innerHTML = '<div class="lb-loading">Loading…</div>'

@@ -130,10 +130,11 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .acct-chev{font-size:9px;color:var(--text3);transition:transform 0.15s}
 .acct-chip.open .acct-chev{transform:rotate(180deg)}
 /* refresh icon button (borderless) */
-.icon-btn{display:flex;align-items:center;justify-content:center;width:30px;height:30px;background:none;border:none;border-radius:6px;color:var(--text2);font-size:15px;cursor:pointer;transition:all 0.15s;padding:0}
+.icon-btn{display:flex;align-items:center;justify-content:center;width:30px;height:30px;background:none;border:none;border-radius:6px;color:var(--text2);font-size:15px;cursor:pointer;transition:all 0.15s;padding:0;position:relative}
 .icon-btn:hover{background:var(--surface2);color:var(--text)}
 .icon-btn:disabled{opacity:0.5;cursor:default}
 .icon-btn.spinning{animation:icon-spin 0.8s linear infinite}
+.icon-btn.has-new-results::after{content:'';position:absolute;top:4px;right:4px;width:8px;height:8px;border-radius:50%;background:var(--accent);pointer-events:none}
 @keyframes icon-spin{to{transform:rotate(360deg)}}
 .acct-menu{position:absolute;top:calc(100% + 6px);right:0;background:var(--surface);border:1px solid var(--border2);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.12);min-width:160px;z-index:100;overflow:hidden;display:none;padding:4px}
 .acct-menu.open{display:block}
@@ -418,7 +419,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .health-underline{position:absolute;bottom:0;left:0;right:0;pointer-events:none;z-index:2}
 .health-ul-labels-row{display:flex;align-items:flex-end;position:relative;height:13px;padding:0 16px}
 .health-ul-pct{position:absolute;font-family:var(--mono);font-size:10px;font-weight:500;line-height:1;transform:translateX(-50%)}
-.health-ul-drw-lbl{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);line-height:1;margin-left:auto;white-space:nowrap}
+.health-ul-drw-lbl{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);line-height:1;position:absolute;left:4px;white-space:nowrap}
 .health-ul-track{height:3px;background:var(--surface3)}
 .health-ul-fill{height:100%;transition:width 0.4s,background 0.4s}
 /* Stats details drawer */
@@ -496,6 +497,15 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
   .pr-star{display:none}
   .pr-hc-dot{display:none}
   .pr-star-mobile{display:inline-flex;align-items:center}
+  /* Eliminate iOS two-tap hover activation on all match cards and player rows */
+  .pr,.mc{touch-action:manipulation}
+  /* Replace hover bg with active state so tappable rows respond on first touch */
+  .pr:active:not(.no-pick):not(.locked):not(.pick-locked){background:var(--surface2)}
+  /* res-clickable rows are always pressable — show accent bg unconditionally */
+  .pr.res-clickable{background:var(--accent-dim)!important}
+  .pr.res-clickable:active{filter:brightness(0.93)}
+  /* Edit pencil is hover-only on desktop; always visible on touch */
+  .pr-edit-btn{display:block;position:static;transform:none;margin-left:auto}
 }
 /* Persistent gold dot at left edge — at-a-glance high-confidence status (desktop only) */
 .pr-hc-dot{position:absolute;left:4px;top:50%;transform:translateY(-50%);width:4px;height:4px;border-radius:50%;background:#c9a227;pointer-events:none}
@@ -830,6 +840,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
   .lb-row-standings{grid-template-columns:18px 1fr 56px 56px 56px;column-gap:8px}
   .lb-cell-draws{display:none}
   .lb-rec-td-row{grid-template-columns:18px 1fr 56px 56px 56px;column-gap:8px}
+}
+@media(max-width:768px){
+  input,textarea,select{font-size:16px!important}
 }
 @media print{body{display:none!important}}
 </style>

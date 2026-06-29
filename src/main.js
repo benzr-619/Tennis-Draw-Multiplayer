@@ -24,6 +24,48 @@ function showScreen(id) {
   $(id).classList.add('active')
 }
 
+// ── RESULTS BADGE POLLING ──
+let _lastWinnerCount = 0
+let _lastWinnerDrawId = null
+let _pollInterval = null
+
+function _captureWinnerBaseline() {
+  const d = activeDraw()
+  if (!d) return
+  _lastWinnerDrawId = d.db_id
+  _lastWinnerCount = d.rounds.flatMap(r => r.matches).filter(m => m.winner).length
+}
+
+function _showRefreshBadge() {
+  $('api-sync-btn')?.classList.add('has-new-results')
+  $('api-sync-btn-lb')?.classList.add('has-new-results')
+  $('api-sync-btn-cmsr')?.classList.add('has-new-results')
+}
+
+function _clearRefreshBadge() {
+  $('api-sync-btn')?.classList.remove('has-new-results')
+  $('api-sync-btn-lb')?.classList.remove('has-new-results')
+  $('api-sync-btn-cmsr')?.classList.remove('has-new-results')
+}
+
+function _startResultsPoll() {
+  if (_pollInterval) clearInterval(_pollInterval)
+  _pollInterval = setInterval(async () => {
+    if (!_lastWinnerDrawId) return
+    if ($('api-sync-btn')?.classList.contains('has-new-results')) return
+    const { count } = await supabase
+      .from('matches')
+      .select('id', { count: 'exact', head: true })
+      .eq('draw_id', _lastWinnerDrawId)
+      .not('winner', 'is', null)
+    if (count !== null && count > _lastWinnerCount) _showRefreshBadge()
+  }, 3 * 60 * 1000)
+}
+
+function _stopResultsPoll() {
+  if (_pollInterval) { clearInterval(_pollInterval); _pollInterval = null }
+}
+
 // ── SEGMENTED CONTROL STATE ──
 let _segPrevIdx = -1
 
@@ -510,6 +552,7 @@ $('print-btn').addEventListener('click', doPrint)
 
 // ── LOGOUT ──
 async function doLogout() {
+  _stopResultsPoll()
   await logout()
   showScreen('screen-auth')
   setAuthMode('login')
@@ -593,6 +636,8 @@ async function doRefresh(btnId, after) {
   try {
     await refreshAll()
     clearStatsCache()
+    _clearRefreshBadge()
+    _captureWinnerBaseline()
     after()
   } finally {
     btn.disabled = false
@@ -871,6 +916,8 @@ async function showBracketScreen() {
   showScreen('screen-bracket')
   fetchPoolSlamIndex(activeDraw(), state.currentUser?.id).then(() => renderStats())
   showRosterAlerts(activeDraw())
+  _captureWinnerBaseline()
+  _startResultsPoll()
 }
 
 // ── BOOT ──

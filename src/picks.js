@@ -206,7 +206,11 @@ export async function applyWinner(d, ri, mi, winnerName, { renderStats, renderBr
   // Re-derive advancers, eliminations, and labels from the new winner.
   buildDrawView(d)
 
-  // DB persistence (commissioner only)
+  // Render immediately — in-memory state is already correct.
+  renderStats()
+  renderBracket()
+
+  // DB persistence (commissioner only) — runs in background after render.
   if (state.currentUser?.is_commissioner && m.db_id) {
     await supabase.from('matches')
       .update({ winner: winnerName, score: m.score || null })
@@ -222,13 +226,7 @@ export async function applyWinner(d, ri, mi, winnerName, { renderStats, renderBr
         match_pick_result:    matchPickResult,
       }).eq('id', pk.id)
     }
-    // Update local result fields for current user
-    m.originalPickResult = m.originalPick ? (m.originalPick === winnerName ? 'correct' : 'wrong') : null
-    m.matchPickResult    = m.matchPick    ? (m.matchPick    === winnerName ? 'correct' : 'wrong') : null
   }
-
-  renderStats()
-  renderBracket()
 }
 
 export async function undoWinner(d, ri, mi, { renderStats, renderBracket }) {

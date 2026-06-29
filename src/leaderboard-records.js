@@ -75,15 +75,16 @@ function buildAllBrackets(profs, draws, statsMaps) {
 }
 
 function buildPoolBestUpset(profs, draws, statsMaps) {
-  let best = null
+  const all = []
   draws.forEach((draw, i) => {
     statsMaps[i] && profs.forEach(prof => {
       const s = statsMaps[i][prof.id]
-      if (!s?.bestUpset) return
-      if (!best || s.bestUpset.yld > best.yld) best = { ...s.bestUpset, prof, draw }
+      if (s?.bestUpset) all.push({ ...s.bestUpset, prof, draw })
     })
   })
-  return best  // { yld, ri, pickedName, opponent, decimalOdds, prof, draw } | null
+  if (!all.length) return []
+  const maxYld = Math.max(...all.map(e => e.yld))
+  return all.filter(e => e.yld === maxYld)
 }
 
 // ── RE-RENDER HELPERS ──
@@ -246,7 +247,7 @@ function buildStandingsTable(profs, agg) {
       const ak = AGG_KEY[recSort.col] ?? 'avgSlamIndex'
       const va = agg[a.id]?.[ak] ?? -Infinity
       const vb = agg[b.id]?.[ak] ?? -Infinity
-      if (va !== vb) return (va < vb ? -1 : 1) * recSort.dir * -1
+      if (va !== vb) return (va < vb ? -1 : 1) * recSort.dir
       return (agg[b.id]?.avgDrawHealth ?? -1) - (agg[a.id]?.avgDrawHealth ?? -1)
     })
 
@@ -330,7 +331,7 @@ function buildHonorsRow(profs, brackets, agg, bestUpset) {
   return row
 }
 
-// ── HONOR CHIP: BEST SINGLE DRAW ──
+// ── HONOR CHIP: HIGHEST SINGLE DRAW YIELD ──
 
 function buildBestDrawChip(profs, brackets) {
   const sorted = [...brackets].sort((a, b) => b.score - a.score)
@@ -339,12 +340,12 @@ function buildBestDrawChip(profs, brackets) {
   chip.className = 'lb-rec-card rec-honor-chip'
   const hdr = document.createElement('div'); hdr.className = 'lb-rec-card-header'
   const title = document.createElement('span'); title.className = 'lb-rec-card-title'
-  title.textContent = 'BEST SINGLE DRAW'; hdr.appendChild(title); chip.appendChild(hdr)
+  title.textContent = 'HIGHEST SINGLE DRAW YIELD'; hdr.appendChild(title); chip.appendChild(hdr)
   if (!best || best.score === 0) { chip.appendChild(mkEmpty()); return chip }
   const cfg = SLAM_CONFIG[best.draw.slam] || {}
   const body = document.createElement('div')
   body.className = 'rec-honor-body rec-honor-clickable'
-  body.addEventListener('click', () => openListModal('Best Single Draw', sorted.map(e => {
+  body.addEventListener('click', () => openListModal('Highest Single Draw Yield', sorted.map(e => {
     const ec = SLAM_CONFIG[e.draw.slam] || {}
     return { name: e.prof.display_name, sub: (ec.name || e.draw.slam) + ' ' + e.draw.year + ' ' + e.draw.draw, val: fmtScore(e.score) }
   })))
@@ -354,7 +355,7 @@ function buildBestDrawChip(profs, brackets) {
   return chip
 }
 
-// ── HONOR CHIP: SHARPEST BETTOR ──
+// ── HONOR CHIP: BEST MATCH PICK VALUE ──
 // Flat-stake ROI: each resolved matchPick with locked odds = $1 bet.
 // Win: +(oddsDecimal − 1). Loss: −1. Average over all bets = ROI per unit.
 // Normalises out round stakes so early-round and final-round bets count equally.
@@ -363,7 +364,7 @@ function buildSharpestBettorChip(profs, agg) {
   const chip = document.createElement('div')
   chip.className = 'lb-rec-card rec-honor-chip'
   const hdr = document.createElement('div'); hdr.className = 'lb-rec-card-header'
-  const title = document.createElement('span'); title.className = 'lb-rec-card-title'; title.textContent = 'SHARPEST BETTOR'
+  const title = document.createElement('span'); title.className = 'lb-rec-card-title'; title.textContent = 'BEST MATCH PICK VALUE'
   const sub = document.createElement('span'); sub.className = 'lb-rec-card-title'
   sub.style.cssText = 'font-size:9px;opacity:0.7'; sub.textContent = 'FLAT-STAKE ROI'
   hdr.append(title, sub); chip.appendChild(hdr)
@@ -377,19 +378,19 @@ function buildSharpestBettorChip(profs, agg) {
   const best = sorted[0], bs = agg[best.id], bPct = Math.round(bs.flatROI * 100)
   const body = document.createElement('div')
   body.className = 'rec-honor-body rec-honor-clickable'
-  body.addEventListener('click', () => openListModal('Sharpest Bettor', sorted.map(p => {
+  body.addEventListener('click', () => openListModal('Best Match Pick Value', sorted.map(p => {
     const s = agg[p.id], pct = Math.round(s.flatROI * 100), pos = pct >= 0
-    return { name: p.display_name, sub: s.totalFlatBets + (s.totalFlatBets === 1 ? ' bet' : ' bets'), val: (pos ? '+' : '−') + Math.abs(pct) + '%', valClass: pos ? 'lb-modal-val-pos' : '' }
+    return { name: p.display_name, sub: s.totalFlatBets + (s.totalFlatBets === 1 ? ' pick' : ' picks'), val: (pos ? '+' : '−') + Math.abs(pct) + '%', valClass: pos ? 'lb-modal-val-pos' : '' }
   })))
   const main = document.createElement('div'); main.className = 'rec-honor-main'
-  main.textContent = `${best.display_name} · ${bPct >= 0 ? '+' : '−'}${Math.abs(bPct)}% · ${bs.totalFlatBets} bet${bs.totalFlatBets !== 1 ? 's' : ''}`
+  main.textContent = `${best.display_name} · ${bPct >= 0 ? '+' : '−'}${Math.abs(bPct)}% · ${bs.totalFlatBets} pick${bs.totalFlatBets !== 1 ? 's' : ''}`
   body.appendChild(main); chip.appendChild(body)
   return chip
 }
 
-// ── HONOR CHIP: BIGGEST UPSET CALL ──
+// ── HONOR CHIP: BIGGEST UPSET ──
 
-function buildBiggestUpsetChip(bestUpset) {
+function buildBiggestUpsetChip(bestUpsets) {
   const chip = document.createElement('div')
   chip.className = 'lb-rec-card rec-honor-chip'
 
@@ -397,27 +398,32 @@ function buildBiggestUpsetChip(bestUpset) {
   hdr.className = 'lb-rec-card-header'
   const title = document.createElement('span')
   title.className = 'lb-rec-card-title'
-  title.textContent = 'BIGGEST UPSET CALL'
+  title.textContent = 'BIGGEST UPSET'
   hdr.appendChild(title)
   chip.appendChild(hdr)
 
-  if (!bestUpset) { chip.appendChild(mkEmpty()); return chip }
+  if (!bestUpsets.length) { chip.appendChild(mkEmpty()); return chip }
 
+  const first = bestUpsets[0]
   const body = document.createElement('div')
   body.className = 'rec-honor-body rec-honor-clickable'
   body.addEventListener('click', () => {
-    const cfg = SLAM_CONFIG[bestUpset.draw.slam] || {}
-    openListModal('Biggest Upset Call', [{
-      name: bestUpset.prof.display_name,
-      sub: `Beat ${bestUpset.opponent} · ${cfg.name || bestUpset.draw.slam} ${bestUpset.draw.year} · ${ROUND_LBL[bestUpset.ri] || 'R' + (bestUpset.ri + 1)}`,
-      val: `+${bestUpset.yld}`,
-      valClass: 'lb-modal-val-pos',
-    }])
+    openListModal('Biggest Upset', bestUpsets.map(e => {
+      const cfg = SLAM_CONFIG[e.draw.slam] || {}
+      return {
+        name: e.prof.display_name,
+        sub: `Beat ${e.opponent} · ${cfg.name || e.draw.slam} ${e.draw.year} · ${ROUND_LBL[e.ri] || 'R' + (e.ri + 1)}`,
+        val: `+${e.yld}`,
+        valClass: 'lb-modal-val-pos',
+      }
+    }))
   })
 
   const main = document.createElement('div')
   main.className = 'rec-honor-main'
-  main.textContent = `${bestUpset.prof.display_name} · ${bestUpset.pickedName} ${formatAmerican(bestUpset.decimalOdds)}`
+  main.textContent = bestUpsets.length > 1
+    ? `${bestUpsets.length} players · ${first.pickedName} ${formatAmerican(first.decimalOdds)}`
+    : `${first.pickedName} ${formatAmerican(first.decimalOdds)}`
   body.appendChild(main)
 
   chip.appendChild(body)

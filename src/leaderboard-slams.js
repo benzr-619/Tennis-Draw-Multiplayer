@@ -73,10 +73,10 @@ export async function renderSlamsTab(container, profs) {
   const sorted = [...groups.values()].sort((a, b) =>
     b.year !== a.year ? b.year - a.year : SLAM_ORDER.indexOf(a.slam) - SLAM_ORDER.indexOf(b.slam))
 
+  const allDraws = sorted.flatMap(g => g.draws)
+  const allResults = await Promise.all(allDraws.map(d => loadDrawStatsForAllUsers(d)))
   const allMaps = new Map()
-  for (const g of sorted)
-    for (const d of g.draws)
-      allMaps.set(d.db_id, await loadDrawStatsForAllUsers(d))
+  allDraws.forEach((d, i) => allMaps.set(d.db_id, allResults[i]))
 
   const active = sorted.find(g => g.draws.some(d => d.is_active))
   const past   = sorted.filter(g => g !== active)
@@ -115,7 +115,7 @@ async function _renderFull(el, group, allMaps, profs, isActive) {
     const R = _deepestR(group.draws)
     if (R > 0) baseline = await _loadBaseline(group, profs, R)
   }
-  _buildCards(mwRow, group, allMaps, profs, color, baseline)
+  _buildCards(mwRow, group, allMaps, profs, color, baseline, isActive)
   section.appendChild(mwRow)
   _buildChipsRow(section, group, allMaps, profs)
   el.appendChild(section)
@@ -159,10 +159,10 @@ async function _loadBaseline(group, profs, R) {
 
 // ── SLAM CARDS ──
 
-function _buildCards(mwRow, group, allMaps, profs, color, baseline) {
+function _buildCards(mwRow, group, allMaps, profs, color, baseline, isActive) {
   const cards = []
   for (const draw of group.draws) {
-    const { card, table, sortHdrs } = _buildCard(draw, profs, allMaps.get(draw.db_id), color, baseline)
+    const { card, table, sortHdrs } = _buildCard(draw, profs, allMaps.get(draw.db_id), color, baseline, isActive)
     mwRow.appendChild(card); cards.push({ table, sortHdrs, draw })
   }
   cards.forEach(({ sortHdrs }) => sortHdrs.forEach(({ col, cell: hc }) => {
@@ -198,7 +198,7 @@ function _buildCards(mwRow, group, allMaps, profs, color, baseline) {
   }))
 }
 
-function _buildCard(draw, profs, statsMap, color, baseline) {
+function _buildCard(draw, profs, statsMap, color, baseline, isActive) {
   const card = document.createElement('div')
   card.className = 'lb-draw-card'; card.style.setProperty('--lb-slam-color', color)
 
@@ -213,6 +213,11 @@ function _buildCard(draw, profs, statsMap, color, baseline) {
     cardHdr.innerHTML = drawLabel
   }
   card.appendChild(cardHdr)
+
+  if (isActive && statsMap) {
+    const eligible = profs.filter(p => statsMap[p.id]?.hasAnyPicks && statsMap[p.id]?.slamIndex !== null)
+    if (eligible.length >= 3) card.appendChild(_buildSlamPodium(draw, statsMap, profs))
+  }
 
   const sortedProfs = [...profs].filter(p => statsMap[p.id]?.hasAnyPicks)
     .sort((a, b) => {
@@ -286,76 +291,105 @@ function _buildCard(draw, profs, statsMap, color, baseline) {
   return { card, table, sortHdrs }
 }
 
+// ── SLAM PODIUM ──
+
+function _buildSlamPodium(draw, statsMap, profs) {
+  const eligible = profs
+    .filter(p => statsMap[p.id]?.hasAnyPicks && statsMap[p.id]?.slamIndex !== null)
+    .sort((a, b) => (statsMap[b.id]?.slamIndex ?? -Infinity) - (statsMap[a.id]?.slamIndex ?? -Infinity))
+  const top3 = eligible.slice(0, 3)
+  const wrap = document.createElement('div'); wrap.className = 'rec-podium'
+  ;[[top3[1], 2], [top3[0], 1], [top3[2], 3]].forEach(([prof, rank]) => {
+    if (!prof) return
+    const s = statsMap[prof.id]
+    const block = document.createElement('div')
+    block.className = 'rec-pod-block' + (rank === 1 ? ' rec-pod-top' : '')
+    const nameEl = document.createElement('div')
+    nameEl.className = 'rec-pod-name' + (prof.id === state.currentUser?.id ? ' rec-pod-you' : '')
+    nameEl.dataset.id = prof.id
+    nameEl.textContent = prof.display_name
+    const sub = document.createElement('div'); sub.className = 'rec-pod-stat'
+    sub.textContent = `INDEX ${s.slamIndex} · ${draw.draw}`
+    const rankEl = document.createElement('div')
+    rankEl.className = 'rec-pod-rank' + (rank === 1 ? ' rec-pod-rank-1' : '')
+    rankEl.textContent = rank === 1 ? '1ST' : rank === 2 ? '2ND' : '3RD'
+    block.appendChild(nameEl); block.appendChild(sub); block.appendChild(rankEl)
+    wrap.appendChild(block)
+  })
+  return wrap
+}
+
 // ── STORYLINE CHIPS ──
 
 function _buildChipsRow(section, group, allMaps, profs) {
   const row = document.createElement('div'); row.className = 'lb-chip-row'
 
-  let bestCall = null
+  // CHIP A — BIGGEST UPSET
+  const upsetEntries = []
   profs.forEach(p => group.draws.forEach(d => {
     const s = allMaps.get(d.db_id)?.[p.id]
-    if (s?.bestUpset && (!bestCall || s.bestUpset.yld > bestCall.yld)) bestCall = { ...s.bestUpset, draw: d, prof: p }
+    if (s?.bestUpset) upsetEntries.push({ ...s.bestUpset, draw: d, prof: p })
   }))
-  const c1 = _mkChip('BEST CALL SO FAR')
-  if (!bestCall) { c1.appendChild(_emptyChip()) } else {
-    const body = document.createElement('div'); body.className = 'lb-chip-body'
-    body.innerHTML = `<div class="lb-chip-val">${_esc(bestCall.prof.display_name)} · ${_esc(bestCall.pickedName)} ${_esc(formatAmerican(bestCall.decimalOdds))}</div>`
-    body.addEventListener('click', () => openListModal('Best Call So Far', _bestCallRows(group, allMaps, profs)))
-    c1.appendChild(body)
+  const cA = _mkChip('BIGGEST UPSET')
+  if (!upsetEntries.length) { cA.appendChild(_emptyChip()) } else {
+    const maxYld = Math.max(...upsetEntries.map(e => e.yld))
+    const topEntries = upsetEntries.filter(e => e.yld === maxYld)
+    const first = topEntries[0]
+    const chipText = topEntries.length > 1
+      ? `${topEntries.length} players · ${first.pickedName} ${formatAmerican(first.decimalOdds)}`
+      : `${first.pickedName} ${formatAmerican(first.decimalOdds)}`
+    const body = document.createElement('div'); body.className = 'rec-honor-body rec-honor-clickable'
+    const main = document.createElement('div'); main.className = 'rec-honor-main'; main.textContent = chipText
+    body.appendChild(main)
+    body.addEventListener('click', () => openListModal('Biggest Upset', topEntries.map(e => {
+      const cfg = SLAM_CONFIG[e.draw.slam] || {}
+      return { name: e.prof.display_name, sub: `Beat ${e.opponent} · ${cfg.name || e.draw.slam} ${e.draw.year} · ${ROUND_LBL[e.ri] || 'R' + (e.ri + 1)}`, val: `+${e.yld}`, valClass: 'lb-modal-val-pos' }
+    })))
+    cA.appendChild(body)
   }
-  row.appendChild(c1)
+  row.appendChild(cA)
 
-  const anyLocked = group.draws.some(d => d.locked)
-  const hasResults = _deepestR(group.draws) >= 0
-  let bestH = null
-  if (anyLocked && hasResults) {
-    profs.forEach(p => group.draws.forEach(d => {
+  // CHIP B — BEST MATCH PICK VALUE
+  const roiEntries = []
+  profs.forEach(p => {
+    let totalFlatYield = 0, totalResolved = 0
+    group.draws.forEach(d => {
       const s = allMaps.get(d.db_id)?.[p.id]
-      if (s?.hasAnyPicks && s.drawHealth !== null && (!bestH || s.drawHealth > bestH.h)) bestH = { h: s.drawHealth, draw: d, prof: p }
-    }))
+      if (!s) return
+      totalFlatYield += s.flatYield ?? 0
+      totalResolved += s.flatYieldResolved ?? 0
+    })
+    if (totalResolved > 0) roiEntries.push({ prof: p, roi: totalFlatYield / totalResolved, n: totalResolved })
+  })
+  roiEntries.sort((a, b) => b.roi - a.roi)
+  const cB = _mkChip('BEST MATCH PICK VALUE')
+  const subLbl = document.createElement('span'); subLbl.className = 'lb-rec-card-title'
+  subLbl.style.cssText = 'font-size:9px;opacity:0.7'; subLbl.textContent = 'FLAT-STAKE ROI'
+  cB.querySelector('.lb-rec-card-header').appendChild(subLbl)
+  if (!roiEntries.length) { cB.appendChild(_emptyChip()) } else {
+    const best = roiEntries[0], bPct = Math.round(best.roi * 100)
+    const body = document.createElement('div'); body.className = 'rec-honor-body rec-honor-clickable'
+    const main = document.createElement('div'); main.className = 'rec-honor-main'
+    main.textContent = `${best.prof.display_name} · ${bPct >= 0 ? '+' : '−'}${Math.abs(bPct)}%`
+    body.appendChild(main)
+    body.addEventListener('click', () => openListModal('Best Match Pick Value', roiEntries.map(e => {
+      const p = Math.round(e.roi * 100)
+      return { name: e.prof.display_name, sub: `${e.n} pick${e.n !== 1 ? 's' : ''}`, val: (p >= 0 ? '+' : '−') + Math.abs(p) + '%', valClass: p >= 0 ? 'lb-modal-val-pos' : '' }
+    })))
+    cB.appendChild(body)
   }
-  const c2 = _mkChip('HEALTHIEST DRAW')
-  if (!bestH) { c2.appendChild(_emptyChip()) } else {
-    const pct = Math.round(bestH.h * 100), hue = healthHue(pct)
-    const body = document.createElement('div'); body.className = 'lb-chip-body'
-    body.innerHTML = `<div class="lb-chip-val">${_esc(bestH.prof.display_name)} · <span style="color:hsl(${hue},65%,34%)">${pct}%</span> · ${_esc(bestH.draw.draw)}</div>`
-    body.addEventListener('click', () => openListModal('Healthiest Draw', _healthRows(group, allMaps, profs)))
-    c2.appendChild(body)
-  }
-  row.appendChild(c2); section.appendChild(row)
+  row.appendChild(cB); section.appendChild(row)
 }
 
 function _mkChip(title) {
-  const el = document.createElement('div'); el.className = 'lb-slam-chip'
-  el.innerHTML = `<div class="lb-chip-hdr">${_esc(title)}</div>`; return el
+  const el = document.createElement('div'); el.className = 'lb-rec-card rec-honor-chip'
+  const hdr = document.createElement('div'); hdr.className = 'lb-rec-card-header'
+  const titleEl = document.createElement('span'); titleEl.className = 'lb-rec-card-title'
+  titleEl.textContent = title; hdr.appendChild(titleEl); el.appendChild(hdr)
+  return el
 }
 function _emptyChip() {
-  const el = document.createElement('div'); el.className = 'lb-chip-empty'; el.textContent = '—'; return el
-}
-
-function _bestCallRows(group, allMaps, profs) {
-  const rows = []
-  profs.forEach(p => {
-    let best = null
-    group.draws.forEach(d => {
-      const s = allMaps.get(d.db_id)?.[p.id]
-      if (s?.bestUpset && (!best || s.bestUpset.yld > best.yld)) best = { ...s.bestUpset, draw: d }
-    })
-    if (!best) return
-    rows.push({ name: p.display_name, sub: `Beat ${best.opponent} · ${ROUND_LBL[best.ri] || 'R' + (best.ri + 1)} · ${best.draw.draw}`, val: '+' + best.yld, valClass: 'lb-modal-val-pos' })
-  })
-  return rows.sort((a, b) => parseInt(b.val) - parseInt(a.val))
-}
-
-function _healthRows(group, allMaps, profs) {
-  const rows = []
-  profs.forEach(p => group.draws.forEach(d => {
-    const s = allMaps.get(d.db_id)?.[p.id]
-    if (!s?.hasAnyPicks || s.drawHealth === null) return
-    const pct = Math.round(s.drawHealth * 100)
-    rows.push({ name: p.display_name, sub: d.draw, val: pct + '%', valStyle: `color:hsl(${healthHue(pct)},65%,34%)`, _h: s.drawHealth })
-  }))
-  return rows.sort((a, b) => b._h - a._h)
+  const el = document.createElement('div'); el.className = 'rec-honor-empty'; el.textContent = '—'; return el
 }
 
 // ── PAST SLAM COMPACT CARD ──

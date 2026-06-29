@@ -118,10 +118,10 @@ function _placeResultCard(d, m, ri, mi, x, y, wrap) {
     }
 
     if (clickable && p.name) {
-      row.addEventListener('click', async () => {
+      row.addEventListener('click', () => {
         row.style.pointerEvents = 'none'
-        await applyWinner(d, ri, mi, p.name, { renderStats: () => {}, renderBracket: () => {} })
-        renderResults()
+        applyWinner(d, ri, mi, p.name, { renderStats: () => {}, renderBracket: renderResults })
+          .catch(err => console.error('Winner save failed:', err))
       })
     }
     return row
