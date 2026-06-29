@@ -570,10 +570,10 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .lb-row:last-child{border-bottom:none}
 .lb-header-row{background:var(--surface2);min-height:30px}
 .lb-row-alt{background:var(--surface2)}
-.lb-row-self{background:var(--accent-dim)}
+.lb-row-self{background:inherit}
 .lb-cell{font-family:var(--mono);font-size:12px;color:var(--text2);padding:2px 0;text-align:right}
 .lb-cell-name{font-family:var(--sans);font-size:13px;color:var(--text);display:flex;align-items:center;gap:8px;text-align:left}
-.lb-cell-score{font-weight:600;color:var(--text)}
+.lb-cell-score{font-weight:500;color:var(--text)}
 .lb-header-row .lb-cell{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);font-weight:500;white-space:nowrap}
 
 .lb-sortable{cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:flex-end;gap:2px}
@@ -644,7 +644,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 /* Card grid: name + draw yield + match yield + index (4 cols) */
 .lb-row-card{grid-template-columns:1fr 72px 72px 72px}
 /* Active-sort column = prominent; inactive = muted. Scoped to card and standings rows. */
-.lb-row-card .lb-cell-active-col,.lb-row-standings .lb-cell-active-col{color:var(--text)!important;font-weight:600!important}
+.lb-row-card .lb-cell-active-col,.lb-row-standings .lb-cell-active-col{color:var(--text)!important;font-weight:500!important}
 .lb-row-card .lb-cell:not(.lb-cell-name):not(.lb-cell-active-col),
 .lb-row-standings .lb-cell:not(.lb-cell-name):not(.lb-cell-active-col){color:var(--text3)!important;font-weight:normal!important}
 /* Detail table grid: name + 8 stat cols (Draw Yld/Base/Upset/Match Yld/Draw%/Match%/Health/Index) */
@@ -818,7 +818,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
   .lb-row-detail .lb-cell-name{background:var(--surface)}
   .lb-header-row.lb-row-detail .lb-cell-name{background:var(--surface2)}
   .lb-row-alt .lb-cell-name{background:var(--surface2)}
-  .lb-row-self .lb-cell-name{background:var(--accent-dim)}
+  .lb-row-self .lb-cell-name{background:inherit}
   /* Leaderboard Slams + Records mobile layout */
   .lb-content{padding:16px 12px}
   .lb-row-card{grid-template-columns:1fr 56px 56px 56px;column-gap:8px}

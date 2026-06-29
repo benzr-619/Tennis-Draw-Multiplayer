@@ -174,7 +174,8 @@ function _buildCards(mwRow, group, allMaps, profs, color, baseline) {
         const rows = [...table.querySelectorAll('[data-uid]')]
         rows.sort((a, b) => {
           const va = parseFloat(a.dataset[col]) ?? -Infinity, vb = parseFloat(b.dataset[col]) ?? -Infinity
-          return va === vb ? 0 : (va < vb ? -1 : 1) * slamSort.dir * -1
+          if (va !== vb) return (va < vb ? -1 : 1) * slamSort.dir * -1
+          return parseFloat(b.dataset.drawHealth ?? -1) - parseFloat(a.dataset.drawHealth ?? -1)
         })
         rows.forEach(r => table.appendChild(r))
         requestAnimationFrame(() => rows.forEach(r => {
@@ -214,7 +215,12 @@ function _buildCard(draw, profs, statsMap, color, baseline) {
   card.appendChild(cardHdr)
 
   const sortedProfs = [...profs].filter(p => statsMap[p.id]?.hasAnyPicks)
-    .sort((a, b) => (statsMap[b.id]?.[slamSort.col] ?? -Infinity) - (statsMap[a.id]?.[slamSort.col] ?? -Infinity))
+    .sort((a, b) => {
+      const va = statsMap[a.id]?.[slamSort.col] ?? -Infinity
+      const vb = statsMap[b.id]?.[slamSort.col] ?? -Infinity
+      if (va !== vb) return vb - va
+      return (statsMap[b.id]?.drawHealth ?? -1) - (statsMap[a.id]?.drawHealth ?? -1)
+    })
 
   const table = document.createElement('div'); table.className = 'lb-table'
 
@@ -241,6 +247,7 @@ function _buildCard(draw, profs, statsMap, color, baseline) {
       row.className = `lb-row lb-row-card${rank % 2 ? ' lb-row-alt' : ''}${isSelf ? ' lb-row-self' : ''}`
       row.dataset.uid = prof.id; row.dataset.slamIndex = s.slamIndex ?? -Infinity
       row.dataset.score = s.score ?? -Infinity; row.dataset.matchYield = s.matchYield ?? -Infinity
+      row.dataset.drawHealth = s.drawHealth ?? -1
 
       const nameCell = document.createElement('div'); nameCell.className = 'lb-cell lb-cell-name'
       const rnkEl = document.createElement('span'); rnkEl.className = 'lb-rank'; rnkEl.textContent = '#' + (rank + 1)
@@ -266,7 +273,7 @@ function _buildCard(draw, profs, statsMap, color, baseline) {
         cell.textContent = formatStat(col.key, s[col.key]); row.appendChild(cell)
       })
 
-      if (s.drawHealth !== null && s.drawHealth !== undefined) {
+      if (s.drawHealth !== null && s.drawHealth !== undefined && _deepestR([draw]) >= 0) {
         const pct = Math.round(s.drawHealth * 100), bar = document.createElement('div')
         bar.className = 'lb-health-bar'
         bar.style.cssText = `width:${pct}%;background:hsl(${healthHue(pct)},75%,48%);transition:width 0.3s ease`
@@ -299,8 +306,9 @@ function _buildChipsRow(section, group, allMaps, profs) {
   row.appendChild(c1)
 
   const anyLocked = group.draws.some(d => d.locked)
+  const hasResults = _deepestR(group.draws) >= 0
   let bestH = null
-  if (anyLocked) {
+  if (anyLocked && hasResults) {
     profs.forEach(p => group.draws.forEach(d => {
       const s = allMaps.get(d.db_id)?.[p.id]
       if (s?.hasAnyPicks && s.drawHealth !== null && (!bestH || s.drawHealth > bestH.h)) bestH = { h: s.drawHealth, draw: d, prof: p }

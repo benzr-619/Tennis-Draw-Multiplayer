@@ -25,12 +25,17 @@ const ROUND_LBL = ['R1', 'R2', 'R3', 'R4', 'QF', 'SF', 'Final']
 
 // ── DATA HELPERS ──
 
+function hasAnyResults(draws) {
+  return draws.some(d => d.rounds.some(r => r.matches.some(m => m.winner)))
+}
+
 function buildAllTimeAgg(profs, draws, statsMaps) {
   const agg = {}
   profs.forEach(prof => {
     let totalScore = 0, drawsPlayed = 0
     let totalMY = 0, myCount = 0, totalSI = 0, siCount = 0
     let totalFlatYield = 0, totalFlatBets = 0
+    let totalDH = 0, dhCount = 0
     statsMaps.forEach(sm => {
       const s = sm[prof.id]
       if (!s?.hasAnyPicks) return
@@ -39,6 +44,7 @@ function buildAllTimeAgg(profs, draws, statsMaps) {
       if (s.matchYield !== null) { totalMY += s.matchYield; myCount++ }
       if (s.slamIndex  !== null) { totalSI += s.slamIndex;  siCount++ }
       if (s.flatYieldResolved > 0) { totalFlatYield += s.flatYield; totalFlatBets += s.flatYieldResolved }
+      if (s.drawHealth !== null && s.drawHealth !== undefined) { totalDH += s.drawHealth; dhCount++ }
     })
     agg[prof.id] = {
       drawsPlayed,
@@ -49,6 +55,7 @@ function buildAllTimeAgg(profs, draws, statsMaps) {
       avgSlamIndex:    siCount > 0   ? Math.round(totalSI / siCount)        : null,
       flatROI:         totalFlatBets > 0 ? totalFlatYield / totalFlatBets   : null,
       totalFlatBets,
+      avgDrawHealth:   dhCount > 0 ? totalDH / dhCount : null,
     }
   })
   return agg
@@ -133,7 +140,7 @@ function renderPeriodContent(content) {
   const aggKey     = AGG_KEY[recSort.col] ?? 'avgSlamIndex'
 
   const eligible = _recProfs.filter(p => agg[p.id]?.hasAnyPicks && agg[p.id]?.[aggKey] !== null)
-  if (eligible.length >= 3) content.appendChild(buildPodium(eligible, agg, aggKey))
+  if (eligible.length >= 3 && hasAnyResults(periodDraws)) content.appendChild(buildPodium(eligible, agg, aggKey))
   content.appendChild(buildStandingsTable(_recProfs, agg))
   content.appendChild(buildHonorsRow(_recProfs, brackets, agg, bestUpset))
 
@@ -179,7 +186,11 @@ function buildPeriodPicker() {
 
 function buildPodium(eligible, agg, aggKey) {
   const top3 = [...eligible]
-    .sort((a, b) => (agg[b.id]?.[aggKey] ?? -Infinity) - (agg[a.id]?.[aggKey] ?? -Infinity))
+    .sort((a, b) => {
+      const da = agg[a.id]?.[aggKey] ?? -Infinity, db = agg[b.id]?.[aggKey] ?? -Infinity
+      if (da !== db) return db - da
+      return (agg[b.id]?.avgDrawHealth ?? -1) - (agg[a.id]?.avgDrawHealth ?? -1)
+    })
     .slice(0, 3)
 
   const wrap = document.createElement('div')
@@ -235,7 +246,8 @@ function buildStandingsTable(profs, agg) {
       const ak = AGG_KEY[recSort.col] ?? 'avgSlamIndex'
       const va = agg[a.id]?.[ak] ?? -Infinity
       const vb = agg[b.id]?.[ak] ?? -Infinity
-      return va === vb ? 0 : (va < vb ? -1 : 1) * recSort.dir * -1
+      if (va !== vb) return (va < vb ? -1 : 1) * recSort.dir * -1
+      return (agg[b.id]?.avgDrawHealth ?? -1) - (agg[a.id]?.avgDrawHealth ?? -1)
     })
 
   // Header
@@ -328,7 +340,7 @@ function buildBestDrawChip(profs, brackets) {
   const hdr = document.createElement('div'); hdr.className = 'lb-rec-card-header'
   const title = document.createElement('span'); title.className = 'lb-rec-card-title'
   title.textContent = 'BEST SINGLE DRAW'; hdr.appendChild(title); chip.appendChild(hdr)
-  if (!best) { chip.appendChild(mkEmpty()); return chip }
+  if (!best || best.score === 0) { chip.appendChild(mkEmpty()); return chip }
   const cfg = SLAM_CONFIG[best.draw.slam] || {}
   const body = document.createElement('div')
   body.className = 'rec-honor-body rec-honor-clickable'
