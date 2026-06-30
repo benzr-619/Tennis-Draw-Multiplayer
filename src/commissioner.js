@@ -21,6 +21,7 @@ const ROUND_SIZES = [64, 32, 16, 8, 4, 2, 1]
 let _initialized = false
 let parsedR1 = null  // [{p1_name, p1_seed, p2_name, p2_seed}]
 let _existingDrawsExpanded = false
+let _healthBandsExpanded = false
 
 // ── INIT ──
 export function initCommissioner() {
@@ -79,6 +80,7 @@ export function initCommissioner() {
   $c('comm-confirm-btn')?.addEventListener('click', handleConfirmDraw)
   renderExistingDraws()
   renderGettingReadySection()
+  renderHealthBandsSection()
   const _ad = activeDraw()
   if (_ad) renderPickCompletion(_ad)
 }
@@ -418,6 +420,79 @@ async function renderGettingReadySection() {
   $c('comm-switch-getting-ready-btn')?.addEventListener('click', handleSwitchToGettingReady)
 }
 
+// ── DRAW HEALTH BANDS ──
+function renderHealthBandsSection() {
+  const wrap = $c('comm-health-bands-wrap')
+  if (!wrap) return
+
+  const hdrRow = document.createElement('div')
+  hdrRow.style.cssText = 'display:flex;align-items:center;cursor:pointer;user-select:none'
+  hdrRow.innerHTML = `
+    <div class="comm-section-title" style="margin-bottom:0;flex:1">Draw Health Bands</div>
+    <span style="font-family:var(--mono);font-size:13px;color:var(--text3)">${_healthBandsExpanded ? '▾' : '▸'}</span>`
+  hdrRow.addEventListener('click', () => { _healthBandsExpanded = !_healthBandsExpanded; renderHealthBandsSection() })
+
+  wrap.innerHTML = ''
+  wrap.appendChild(hdrRow)
+  if (!_healthBandsExpanded) return
+
+  const body = document.createElement('div')
+  body.style.cssText = 'margin-top:12px'
+  body.innerHTML = `
+    <p style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.6">
+      Calibrates the health colour scale against the historical P25/P75 distribution at each
+      tournament stage. Bands recompute automatically when you go to Getting Ready; this is the
+      one-time setup and manual override.
+    </p>
+    <button class="comm-btn comm-btn-secondary" id="comm-init-bands-btn">Initialize health bands</button>
+    <div class="comm-msg" id="comm-bands-msg"></div>`
+  wrap.appendChild(body)
+
+  $c('comm-init-bands-btn')?.addEventListener('click', handleInitBands)
+}
+
+// Reloads state.healthBands from the DB and re-renders whatever consumes it
+// (leaderboard health bars + the bracket stats-bar underline, if either is
+// currently mounted). Without this, a freshly recomputed health_bands table
+// sits unused — state.healthBands is only otherwise refreshed on draw load
+// and after a live result confirm/undo (picks.js), so Initialize/Getting Ready
+// would silently keep rendering the old (or empty, pre-init) calibration.
+async function _refreshHealthBandsCache() {
+  const [{ loadHealthBands }, { renderLeaderboard }, { renderStats }] = await Promise.all([
+    import('./health-bands.js'),
+    import('./leaderboard.js'),
+    import('./stats.js'),
+  ])
+  state.healthBands = await loadHealthBands()
+  renderLeaderboard()
+  renderStats()
+}
+
+async function handleInitBands() {
+  if (!state.currentUser?.is_commissioner) return
+  const btn = $c('comm-init-bands-btn')
+  const msg = $c('comm-bands-msg')
+  if (btn) btn.disabled = true
+  if (msg) { msg.className = 'comm-msg'; msg.textContent = 'Computing…' }
+
+  // Fire-and-forget: initializeAllBands yields internally so the tab never freezes.
+  const { initializeAllBands } = await import('./health-bands.js')
+  initializeAllBands(p => {
+    if (!msg) return
+    if (p.done) {
+      msg.className = 'comm-msg success'
+      msg.textContent = `Done — ${p.totalDraws} draws, ${p.sampleCount} samples in ${(p.durationMs / 1000).toFixed(1)}s`
+      if (btn) btn.disabled = false
+      _refreshHealthBandsCache()
+    } else {
+      msg.textContent = `Computing… (draw ${p.draw}/${p.totalDraws})`
+    }
+  }).catch(err => {
+    if (msg) { msg.className = 'comm-msg error'; msg.textContent = 'Error: ' + err.message }
+    if (btn) btn.disabled = false
+  })
+}
+
 async function handleSwitchToGettingReady() {
   if (!state.currentUser?.is_commissioner) return
   if (!window.confirm('This will deactivate the current slam and show a getting-ready screen to all players. Continue?')) return
@@ -443,7 +518,27 @@ async function handleSwitchToGettingReady() {
     renderCommHeader()
     renderExistingDraws()
     await renderGettingReadySection()
+    renderHealthBandsSection()
     if (msg) { msg.className = 'comm-msg success'; msg.textContent = 'Getting-ready mode active. All draws deactivated.' }
+
+    // Permanent between-slams recompute: re-simulate any synthetic-ordered draws
+    // with real winner_confirmed_at ordering. Fire-and-forget — yields internally.
+    _healthBandsExpanded = true
+    renderHealthBandsSection()
+    import('./health-bands.js').then(({ addSlamToBands }) => {
+      addSlamToBands(undefined, p => {
+        const bm = $c('comm-bands-msg')
+        if (!bm) return
+        if (p.done) {
+          bm.className = 'comm-msg success'
+          bm.textContent = `Health bands recomputed — ${p.totalDraws} draws, ${p.sampleCount} samples in ${(p.durationMs / 1000).toFixed(1)}s`
+          _refreshHealthBandsCache()
+        } else {
+          bm.className = 'comm-msg'
+          bm.textContent = `Recomputing health bands… (draw ${p.draw}/${p.totalDraws})`
+        }
+      }).catch(() => {})
+    })
   } catch (err) {
     if (msg) { msg.className = 'comm-msg error'; msg.textContent = 'Error: ' + err.message }
   } finally {

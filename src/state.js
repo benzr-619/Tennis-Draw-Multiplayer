@@ -5,6 +5,7 @@ export const state = {
   activeTab: 0,
   currentUser: null,   // Profile | null
   lockSchedules: [],   // lock_schedules rows for active draw
+  healthBands: new Map(),  // Map<n(1..127), {p25,p75}> for health-hue calibration
 }
 
 export function activeDraw() {

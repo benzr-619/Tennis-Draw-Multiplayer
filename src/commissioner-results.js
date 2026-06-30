@@ -16,6 +16,25 @@ import { supabase } from './supabase.js'
 let _pendingSearch = null
 export function setPendingSearch(q) { _pendingSearch = q }
 
+// ── HEALTH BANDS STATUS LINE ──
+// Driven by the fire-and-forget band recompute in picks.js applyWinner/undoWinner.
+let _bandsStatusTimer = null
+export function onBandsUpdating() {
+  const el = $c('comm-bands-status')
+  if (!el) return
+  if (_bandsStatusTimer) { clearTimeout(_bandsStatusTimer); _bandsStatusTimer = null }
+  el.textContent = 'Updating bands…'
+  el.style.display = ''
+}
+export function onBandsUpdated(ms) {
+  const el = $c('comm-bands-status')
+  if (!el) return
+  el.textContent = `Bands updated in ${(ms / 1000).toFixed(1)}s`
+  el.style.display = ''
+  if (_bandsStatusTimer) clearTimeout(_bandsStatusTimer)
+  _bandsStatusTimer = setTimeout(() => { el.textContent = ''; el.style.display = 'none' }, 5000)
+}
+
 // ── MOBILE ROUND STATE ──
 let _commMobileRound = 0
 export function getCommMobileRound() { return _commMobileRound }

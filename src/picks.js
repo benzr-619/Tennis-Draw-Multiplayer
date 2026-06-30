@@ -5,6 +5,28 @@ import { isBackupPick } from './scoring.js'
 import { isMatchLocked } from './lock.js'
 import { supabase } from './supabase.js'
 import { buildDrawView } from './draw-view.js'
+import { HEALTH_BANDS_LIVE_MODE, updateBandAtN, revertBandAtN } from './health-bands.js'
+import { loadAllProfiles } from './leaderboard.js'
+import { onBandsUpdating, onBandsUpdated } from './commissioner-results.js'
+
+// Fire-and-forget health-band recompute after a commissioner result change.
+// `fn` is updateBandAtN (confirm) or revertBandAtN (undo). Never awaited — the
+// band module yields internally so the commissioner tab never freezes.
+function _refreshBands(fn, d, renderStats) {
+  if (!HEALTH_BANDS_LIVE_MODE) return
+  onBandsUpdating()
+  const confirmedN = d.rounds.reduce((a, r) => a + r.matches.filter(m => m.winner).length, 0)
+  loadAllProfiles()
+    .then(profs => fn(confirmedN, d, profs.map(p => p.id)))
+    .then(res => {
+      onBandsUpdated(res.durationMs)
+      // Refresh the cached bands so the next stats render uses fresh calibration.
+      return import('./health-bands.js')
+        .then(m => m.loadHealthBands())
+        .then(bands => { state.healthBands = bands; renderStats() })
+    })
+    .catch(() => {})
+}
 
 // ── HELPERS ──
 export function findSeed(d, name) {
@@ -213,7 +235,7 @@ export async function applyWinner(d, ri, mi, winnerName, { renderStats, renderBr
   // DB persistence (commissioner only) — runs in background after render.
   if (state.currentUser?.is_commissioner && m.db_id) {
     await supabase.from('matches')
-      .update({ winner: winnerName, score: m.score || null })
+      .update({ winner: winnerName, score: m.score || null, winner_confirmed_at: new Date().toISOString() })
       .eq('id', m.db_id)
 
     const { data: matchPicks } = await supabase
@@ -226,6 +248,9 @@ export async function applyWinner(d, ri, mi, winnerName, { renderStats, renderBr
         match_pick_result:    matchPickResult,
       }).eq('id', pk.id)
     }
+
+    // Recompute the health band at this confirmation count (fire-and-forget).
+    _refreshBands(updateBandAtN, d, renderStats)
   }
 }
 
@@ -239,9 +264,12 @@ export async function undoWinner(d, ri, mi, { renderStats, renderBracket }) {
   // DB persistence (commissioner only)
   if (state.currentUser?.is_commissioner && m.db_id) {
     await supabase.from('matches')
-      .update({ winner: null, score: null }).eq('id', m.db_id)
+      .update({ winner: null, score: null, winner_confirmed_at: null }).eq('id', m.db_id)
     await supabase.from('picks')
       .update({ original_pick_result: null, match_pick_result: null }).eq('match_id', m.db_id)
+
+    // Revert the health band at this confirmation count (fire-and-forget).
+    _refreshBands(revertBandAtN, d, renderStats)
   }
 
   renderStats()

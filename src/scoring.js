@@ -117,6 +117,55 @@ function calcHealthPts(d, filterRi) {
   return { maxHealthPts, reachableHealthPts }
 }
 
+// Draw Health numerator/denominator for an ARBITRARY set of confirmed matches,
+// rather than "everything up to round filterRi". Same clone-and-replay shape as
+// calcHealthPts — the only difference is the null-out condition: we forget every
+// winner whose match db_id is NOT in `confirmedIds`, then re-derive the view.
+//
+// `confirmedIds` is a Set of match db_id strings. Callers must pass a coherent set
+// — matches in proper bracket order (e.g. ordered by winner_confirmed_at) so
+// buildDrawView never sees a later-round result without its feeder.
+//
+// Used by the health-bands calibration (src/health-bands.js) to compute a draw's
+// health trajectory match-by-match. Body kept verbatim with calcHealthPts.
+export function calcHealthAtMatchSet(d, confirmedIds) {
+  const view = structuredClone(d)
+  view.rounds.forEach(r => r.matches.forEach(m => {
+    if (!confirmedIds.has(m.db_id)) { m.winner = null; m.score = null }
+  }))
+  buildDrawView(view)
+
+  const withdrawnNm = withdrawnNames(view)
+  const eloLookup = eloMap(view)
+
+  let maxHealthPts = 0, reachableHealthPts = 0
+  view.rounds.forEach((r, ri) => r.matches.forEach(m => {
+    const pts = ROUND_CONFIG[ri] ? ROUND_CONFIG[ri].base : 0
+    if (isAutoAssign(m, withdrawnNm)) {
+      const fav = eloFavourite(m, eloLookup)
+      if (!fav) return
+      maxHealthPts += pts
+      if (m.winner) {
+        if (m.winner === fav) reachableHealthPts += pts
+      } else {
+        const favP = fav === m.p1.name ? m.p1 : fav === m.p2.name ? m.p2 : null
+        if (favP && !favP.elim) reachableHealthPts += pts
+      }
+    } else {
+      if (!m.originalPick) return
+      maxHealthPts += pts
+      if (m.winner) {
+        if (m.winner === m.originalPick) reachableHealthPts += pts
+      } else {
+        const slot = m.originalPick === m.p1.name ? m.p1
+          : m.originalPick === m.p2.name ? m.p2 : null
+        if (slot && !slot.elim) reachableHealthPts += pts
+      }
+    }
+  }))
+  return { maxHealthPts, reachableHealthPts }
+}
+
 export function calcStatsAsOf(d, upToRi = null) {
   const isLive = upToRi === null
   const filterRi = isLive ? Infinity : upToRi
@@ -193,9 +242,23 @@ export function calcStatsAsOf(d, upToRi = null) {
 
 export function calcStats(d) { return calcStatsAsOf(d, null) }
 
-// Health hue: remap 25-90% → red-to-green. Shared by stats bar and leaderboard rows.
-export function healthHue(pct) {
-  return 4 + Math.max(0, Math.min(100, (pct - 25) * 100 / 65)) * 1.4
+// Health hue: red-to-green. Calibrated against the historical health distribution
+// at the same tournament stage (n confirmed matches) — a bracket is green at/above
+// the historical gradient ceiling at this stage, red at/below the floor, and smoothly
+// interpolated in between. Floor/ceil are LOW_PCTL/HIGH_PCTL percentiles (currently
+// 10th/90th — see health-bands.js) rather than min/max, so a single outlier sample
+// can't dominate the whole scale. Falls back to the static 25/90 band when no
+// calibration data is available.
+//   pct         — this bracket's current health %
+//   n           — stage fraction (confirmedMatches / 127)
+//   healthBands — Map<n(1..127), {lo, hi}> from loadHealthBands(), or null
+export function healthHue(pct, n, healthBands) {
+  const band = healthBands?.get(Math.round(n * 127))
+  const floor = band?.lo ?? 25
+  const ceil  = band?.hi ?? 90
+  return 4 + Math.max(0, Math.min(100,
+    (pct - floor) * 100 / Math.max(1, ceil - floor)
+  )) * 1.4
 }
 
 // Pool-adjusted composite metric.

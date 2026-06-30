@@ -60,6 +60,30 @@ Unmatched names (normalised strings don't match) appear in Commissioner → Odds
 | `normalise_player_name(text)` | SQL helper, mirrors JS normaliseName() |
 | pg_cron `fetch-odds` | `0 */3 * * *` — every 3 hours |
 
+## Round-2+ Occupant Resolution in `fetch_all_active_odds()` (fixed 2026-06-30)
+
+`matches.p1_name`/`p2_name` are only ever populated for `round_index = 0` (the
+derived-state model never writes the round-2+ occupant back to the match row — see
+CLAUDE.md §5). The odds poller's name-matching UPDATE originally joined directly on
+`m.p1_name`/`m.p2_name`, so it silently never matched (and never wrote
+`odds_p1_live`/`odds_p2_live`) for any match past round 0 — match cards for round 2+
+showed no odds even though the Odds tab correctly showed odds arriving from the API
+into `odds_raw`. Found by directly querying `matches` for `round_index=1` and seeing
+empty `p1_name`/`p2_name` + null odds columns alongside populated `odds_raw` rows.
+
+Fix: the UPDATE now joins to a subquery (`em`, aliased per match `id`) that computes
+an effective `eff_p1`/`eff_p2` — for `round_index = 0` these are just `p1_name`/
+`p2_name` as before; for `round_index > 0` they're the `winner` of the two feeder
+matches one round back (self-join on `draw_id`, `round_index - 1`,
+`match_index * 2` / `match_index * 2 + 1`). This must be a plain subquery joined via
+`em.id = m.id` in the WHERE clause, **not** a `LATERAL` join — Postgres rejects a
+`LATERAL` item that references the UPDATE target table (`m`) from within its own
+FROM-clause list (`42P10: invalid reference to FROM-clause entry for table "m"`).
+
+Run `select fetch_all_active_odds();` directly via Supabase MCP `execute_sql` to
+backfill immediately after a round advances, rather than waiting for the next
+3-hour pg_cron tick.
+
 ## JS Modules
 
 - `src/odds.js` — `STAKE_BY_ROUND`, `normaliseName`, `decimalToAmerican`, `formatAmerican`, `formatYield`, `pickedLockedOdds`, `liveOdds`, data access functions

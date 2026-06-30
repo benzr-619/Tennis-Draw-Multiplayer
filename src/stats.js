@@ -170,7 +170,7 @@ function _getOrCreateHealthEl(strip) {
   return el
 }
 
-function _updateHealthUnderline(strip, s, hasResult) {
+function _updateHealthUnderline(strip, s, hasResult, d) {
   const el = _getOrCreateHealthEl(strip)
   if (!s || !hasResult || s.maxHealthPts === 0) {
     el.style.display = 'none'
@@ -178,7 +178,8 @@ function _updateHealthUnderline(strip, s, hasResult) {
   }
   el.style.display = ''
   const pct = Math.max(0, Math.min(100, Math.round(s.reachableHealthPts / s.maxHealthPts * 100)))
-  const hue = _hHue(pct)
+  const confirmedCount = d ? d.rounds.reduce((a, r) => a + r.matches.filter(m => m.winner).length, 0) : 0
+  const hue = _hHue(pct, confirmedCount / 127, state.healthBands)
   const fillColor = `hsl(${hue},75%,48%)`
   const labelColor = `hsl(${hue},65%,34%)`
   // Clamp label position so it never clips at the edges
@@ -375,7 +376,7 @@ export function renderStats() {
     _updateMobileCountdownWrap(d, s)
 
     // Health underline and drawer hidden pre-lock
-    _updateHealthUnderline(strip, null, false)
+    _updateHealthUnderline(strip, null, false, d)
     const drawer = document.getElementById('stats-drawer')
     if (drawer) { drawer.classList.remove('open'); drawer.innerHTML = '' }
     _drawerOpen = false
@@ -486,7 +487,7 @@ export function renderStats() {
   _updateMobileCountdownWrap(d, s)
 
   // 6. Health underline (appended last so it sits on top z-index within strip)
-  _updateHealthUnderline(strip, s, hasResult)
+  _updateHealthUnderline(strip, s, hasResult, d)
 
   // Build drawer content (restores open state via _drawerOpen / _drawerMathOpen)
   _buildDrawerContent(s, hasResult)

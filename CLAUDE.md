@@ -26,6 +26,7 @@ Current rules files:
 - `.claude/rules/flags.md` — player country flags: parser capture, IOC→ISO2 table location, per-draw name→country map, always-rendered .pr-flag gutter, renderers touched
 - `.claude/rules/data-fetching.md` — PostgREST 1,000-row cap: fetchAllRows paginator, snapshot_original_picks + pick_completion RPCs, canonical cross-user query sites
 - `.claude/rules/roster-changes.md` — replaced_name column, always-stamp-on-swap, unified rosterAlerts detection (pre/post-lock), alert modal
+- `.claude/rules/health-bands.md` — stage-calibrated health hue: winner_confirmed_at + health_bands/health_band_samples tables, calcHealthAtMatchSet, healthHue(pct,n,bands), src/health-bands.js compute/store/live-update functions, commissioner Health Bands + Getting Ready wiring
 
 ---
 

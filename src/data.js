@@ -265,6 +265,13 @@ export async function loadDraw(drawRow) {
   })
   assembled.countryMap = countryMap
 
+  // Refresh health-band calibration in the background (same fire-and-forget pattern
+  // as fetchPoolSlamIndex). Dynamic import avoids a static data ↔ health-bands cycle.
+  import('./health-bands.js')
+    .then(m => m.loadHealthBands())
+    .then(bands => { state.healthBands = bands })
+    .catch(() => {})
+
   // Derive all round-2+ slots, elimination flags, and displaced-pick labels in
   // one pure pass. (Replaces the old inline reconstruction + markLoserForward replay.)
   return buildDrawView(assembled)

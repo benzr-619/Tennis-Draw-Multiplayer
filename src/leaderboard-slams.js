@@ -13,6 +13,7 @@ import {
 const STATUS_NAMES = ['Round 1', 'Round 2', 'Round 3', 'Round 4', 'Quarterfinals', 'Semifinals', 'Final']
 const ROUND_LBL    = ['R1', 'R2', 'R3', 'R4', 'QF', 'SF', 'F']
 const COLS = [
+  { key: 'drawHealth', label: 'Health', noValue: true },
   { key: 'score',      label: 'Draw Yld' },
   { key: 'matchYield', label: 'Match Yld' },
   { key: 'slamIndex',  label: 'Index' },
@@ -275,13 +276,15 @@ function _buildCard(draw, profs, statsMap, color, baseline, isActive) {
         const cell = document.createElement('div')
         cell.className = 'lb-cell lb-cell-' + col.key + (col.key === slamSort.col ? ' lb-cell-active-col' : '')
         cell.dataset.col = col.key
-        cell.textContent = formatStat(col.key, s[col.key]); row.appendChild(cell)
+        if (!col.noValue) cell.textContent = formatStat(col.key, s[col.key])
+        row.appendChild(cell)
       })
 
       if (s.drawHealth !== null && s.drawHealth !== undefined && _deepestR([draw]) >= 0) {
         const pct = Math.round(s.drawHealth * 100), bar = document.createElement('div')
+        const confirmedCount = draw.rounds.reduce((a, r) => a + r.matches.filter(m => m.winner).length, 0)
         bar.className = 'lb-health-bar'
-        bar.style.cssText = `width:${pct}%;background:hsl(${healthHue(pct)},75%,48%);transition:width 0.3s ease`
+        bar.style.cssText = `width:${pct}%;background:hsl(${healthHue(pct, confirmedCount / 127, state.healthBands)},75%,48%);transition:width 0.3s ease`
         row.appendChild(bar)
       }
       table.appendChild(row)
