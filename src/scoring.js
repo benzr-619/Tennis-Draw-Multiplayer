@@ -28,8 +28,10 @@ export function calcMatchScore(m, ri) {
   return { base: cfg.base, skill: skillBonus }
 }
 
-export function isBackupPick(m) {
-  return !!m.originalPick && m.matchPick && m.matchPick !== m.originalPick
+export function isBackupPick(m, locked) {
+  if (!!m.originalPick && m.matchPick && m.matchPick !== m.originalPick) return true
+  if (locked && m.matchPick && !m.originalPick) return true
+  return false
 }
 
 // ── ELO AUTO-ASSIGN HELPERS ──
@@ -132,7 +134,7 @@ export function calcStatsAsOf(d, upToRi = null) {
     if (!m.p1.name && !m.p2.name) return
 
     if (ri <= filterRi && m.winner) {
-      const backup = isBackupPick(m)
+      const backup = isBackupPick(m, d.locked)
       // Draw Accuracy — based on original pick result only
       if (m.originalPickResult === 'correct') cDrawOrig++
       else if (m.originalPickResult === 'wrong') wDrawOrig++

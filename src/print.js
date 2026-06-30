@@ -52,7 +52,7 @@ export function buildPrintHTML(d) {
     if (!p || !p.name) return '<div style="height:' + rowH.toFixed(2) + 'mm"></div>'
     const isOrig = m.originalPick && m.originalPick === p.name
     const isPick = m.matchPick && m.matchPick === p.name
-    const backup = isBackupPick(m)
+    const backup = isBackupPick(m, d.locked)
     const isBackupRow = isPick && backup
     const isElim = m.winner && m.winner !== p.name
     const isCorrect = isOrig && m.originalPickResult === 'correct'

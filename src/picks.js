@@ -131,7 +131,7 @@ export async function handlePickClick(ri, mi, p, { renderStats, renderBracket })
   const drawLocked = d.locked
   const isWithdrawalRepick = drawLocked && m.editedAfterLock
 
-  if (drawLocked && m.originalPickResult && !isBackupPick(m) && !m.editedAfterLock) return
+  if (drawLocked && m.originalPickResult && !isBackupPick(m, drawLocked) && !m.editedAfterLock) return
 
   // Block backup picks on matches whose backup pick window is locked
   if (drawLocked && !isWithdrawalRepick && isMatchLocked(ri, mi, 'backup_picks')) return

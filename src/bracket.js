@@ -108,11 +108,11 @@ export function placeCard(d, m, ri, mi, x, y, wrap) {
     // ── NORMAL SLOT ──
     const isOrigPick = m.originalPick && m.originalPick === p.name
     const isLivePick = m.matchPick && m.matchPick === p.name
-    const isBackup = isLivePick && isBackupPick(m)
+    const isBackup = isLivePick && isBackupPick(m, d.locked)
     const backupWrong = isBackup && m.winner && m.winner !== p.name
     const backupCorrect = isBackup && m.matchPickResult === 'correct'
     const isElim = m.winner && m.winner !== p.name && p.name && !isLivePick
-    const origInactive = d.locked && !m.winner && isOrigPick && !isLivePick && (m.originalPick && (!m.matchPick || isBackupPick(m)))
+    const origInactive = d.locked && !m.winner && isOrigPick && !isLivePick && (m.originalPick && (!m.matchPick || isBackupPick(m, d.locked)))
 
     let cls = 'pr'
     if (!p.name) {

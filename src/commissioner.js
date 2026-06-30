@@ -531,21 +531,43 @@ async function renderPickCompletion(d) {
   if (!d) { wrap.style.display = 'none'; return }
   wrap.style.display = ''
 
+  const postLock = !!d.locked
+  const colLabel = postLock ? 'Original Picks' : 'Picks Filled'
+  const TOTAL = d.rounds.flatMap(r => r.matches).filter(m => m.db_id).length
+
   wrap.innerHTML = '<div class="comm-section-title" style="margin-bottom:10px">Pick Completion</div>' +
     '<div style="color:var(--text3);font-family:var(--mono);font-size:11px">Loading…</div>'
 
   try {
-    const TOTAL = d.rounds.flatMap(r => r.matches).filter(m => m.db_id).length
     if (TOTAL === 0) { wrap.style.display = 'none'; return }
 
-    const [{ data: completionRows, error: ce }, { data: profiles }] = await Promise.all([
-      supabase.rpc('pick_completion', { p_draw_id: d.db_id }),
-      supabase.from('profiles').select('id, display_name'),
-    ])
-    if (ce) throw ce
+    let byUser = {}
+    const { data: profiles } = await supabase.from('profiles').select('id, display_name')
 
-    const byUser = {}
-    ;(completionRows ?? []).forEach(r => { byUser[r.user_id] = { filled: Number(r.filled) } })
+    if (postLock) {
+      // Paginate to avoid the 1,000-row PostgREST cap (~20 users × 127 matches = ~2,540 rows)
+      const PAGE = 1000
+      let from = 0
+      while (true) {
+        const { data: origRows, error: oe } = await supabase
+          .from('picks')
+          .select('user_id')
+          .eq('draw_id', d.db_id)
+          .not('original_pick', 'is', null)
+          .range(from, from + PAGE - 1)
+        if (oe) throw oe
+        ;(origRows ?? []).forEach(r => {
+          byUser[r.user_id] = byUser[r.user_id] || { filled: 0 }
+          byUser[r.user_id].filled++
+        })
+        if ((origRows ?? []).length < PAGE) break
+        from += PAGE
+      }
+    } else {
+      const { data: completionRows, error: ce } = await supabase.rpc('pick_completion', { p_draw_id: d.db_id })
+      if (ce) throw ce
+      ;(completionRows ?? []).forEach(r => { byUser[r.user_id] = { filled: Number(r.filled) } })
+    }
 
     const profMap = Object.fromEntries((profiles ?? []).map(p => [p.id, p.display_name]))
 
@@ -561,7 +583,7 @@ async function renderPickCompletion(d) {
 
     const headerRow = `<div style="display:grid;grid-template-columns:1fr 60px 90px;gap:6px;padding:0 0 6px;border-bottom:1px solid var(--border);margin-bottom:4px">
       <span style="font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase">Player</span>
-      <span style="font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase;text-align:right">Picks</span>
+      <span style="font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase;text-align:right">${colLabel}</span>
       <span style="font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase;text-align:right">Status</span>
     </div>`
 
