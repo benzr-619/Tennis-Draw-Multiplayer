@@ -100,13 +100,100 @@ function renderRoundSelector(d) {
     const btn = document.createElement('button')
     btn.className = 'round-sel-btn' + (ri === _mobileActiveRound ? ' active' : '')
     btn.textContent = r.label
-    btn.addEventListener('click', () => {
-      _mobileActiveRound = ri
-      renderBracketDisplay()
-    })
+    btn.addEventListener('click', () => switchMobileRound(ri))
     bar.appendChild(btn)
   })
 }
+
+// Finds the match card nearest the vertical center of the (scrolled) list body —
+// used as the "anchor" match to preserve position across round switches.
+function _mobileAnchorMatch(body) {
+  const cards = body.querySelectorAll('.mc[data-mi]')
+  if (!cards.length) return null
+  const bodyRect = body.getBoundingClientRect()
+  const centerY = bodyRect.top + bodyRect.height / 2
+  let best = null, bestDist = Infinity
+  cards.forEach(card => {
+    const r = card.getBoundingClientRect()
+    const dist = Math.abs((r.top + r.height / 2) - centerY)
+    if (dist < bestDist) { bestDist = dist; best = card }
+  })
+  return best ? parseInt(best.dataset.mi, 10) : null
+}
+
+// Maps a match index from one round to another by walking the feeder/winner
+// relationship one round at a time (each round has exactly half the matches of
+// the previous one). Forward = the match this one feeds into; backward = the
+// top feeder of the pair that produced it.
+function _mapAnchorAcrossRounds(mi, fromRi, toRi) {
+  let m = mi
+  for (let ri = fromRi; ri < toRi; ri++) m = Math.floor(m / 2)
+  for (let ri = fromRi; ri > toRi; ri--) m = m * 2
+  return m
+}
+
+function _scrollToAnchorMatch(body, ri, mi) {
+  const card = body.querySelector(`.mc[data-ri="${ri}"][data-mi="${mi}"]`)
+  card?.scrollIntoView({ block: 'center', behavior: 'auto' })
+}
+
+// Switches the mobile round list while keeping the same area of the draw in view —
+// e.g. if you're looking at two R2 matches, switching to R3 scrolls to where their
+// winners meet; switching back to R2 scrolls to the feeder pair.
+function switchMobileRound(newRi) {
+  const d = activeDraw()
+  if (!d || !d.rounds[newRi] || newRi === _mobileActiveRound) return
+  const body = $('bracket-body')
+  const oldRi = _mobileActiveRound
+  const anchorMi = body ? _mobileAnchorMatch(body) : null
+  _mobileActiveRound = newRi
+  renderBracketDisplay()
+  if (anchorMi != null) {
+    const targetMi = _mapAnchorAcrossRounds(anchorMi, oldRi, newRi)
+    requestAnimationFrame(() => _scrollToAnchorMatch($('bracket-body'), newRi, targetMi))
+  }
+}
+
+// ── MOBILE ROUND SWIPE ──
+// Swipe left/right on the bracket list to move between rounds, mirroring the
+// round-selector bar. Only active on mobile; a swipe must be clearly more
+// horizontal than vertical to avoid hijacking normal list scrolling.
+;(function setupMobileRoundSwipe() {
+  const body = $('bracket-body')
+  if (!body) return
+  const SWIPE_THRESHOLD = 60
+  const SLOPE = 1.2
+  let startX = 0, startY = 0, tracking = false, axis = null
+
+  body.addEventListener('touchstart', e => {
+    if (!isMobile() || e.touches.length !== 1) { tracking = false; return }
+    startX = e.touches[0].clientX
+    startY = e.touches[0].clientY
+    tracking = true
+    axis = null
+  }, { passive: true })
+
+  body.addEventListener('touchmove', e => {
+    if (!tracking) return
+    const dx = e.touches[0].clientX - startX
+    const dy = e.touches[0].clientY - startY
+    if (axis === null && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) {
+      axis = Math.abs(dx) > Math.abs(dy) * SLOPE ? 'x' : 'y'
+    }
+  }, { passive: true })
+
+  body.addEventListener('touchend', e => {
+    if (!tracking) return
+    tracking = false
+    if (axis !== 'x') return
+    const dx = e.changedTouches[0].clientX - startX
+    if (Math.abs(dx) < SWIPE_THRESHOLD) return
+    const d = activeDraw()
+    if (!d) return
+    if (dx < 0 && _mobileActiveRound < d.rounds.length - 1) switchMobileRound(_mobileActiveRound + 1)
+    else if (dx > 0 && _mobileActiveRound > 0) switchMobileRound(_mobileActiveRound - 1)
+  }, { passive: true })
+})()
 
 // ── AUTH SCREEN ──
 let authMode = 'login'
@@ -243,8 +330,12 @@ $('auth-form').addEventListener('submit', async e => {
 
 // ── ROUTING ──
 async function routeAfterAuth() {
+  const isCommish = !!state.currentUser?.is_commissioner
   document.querySelectorAll('.commish-nav').forEach(b => {
-    b.hidden = !state.currentUser?.is_commissioner
+    b.hidden = !isCommish
+  })
+  ;[$('slam-name-label'), $('lb-slam-name-label'), $('comm-slam-name')].forEach(el => {
+    el?.classList.toggle('commish-clickable', isCommish)
   })
   await showBracketScreen()
 }
@@ -587,21 +678,41 @@ $('lb-mobile-nav-bracket')?.addEventListener('click', () => { _setNavActive('bra
 $('lb-mobile-nav-leaderboard')?.addEventListener('click', _openLeaderboard)
 
 // ── COMMISSIONER ENTER / EXIT ──
+let _preCommishScreen = 'bracket' // 'bracket' | 'leaderboard' — restored on exit
+
 function enterCommissioner() {
   if (!state.currentUser?.is_commissioner) return
   closeAcctMenus()
+  _preCommishScreen = $('screen-leaderboard').classList.contains('active') ? 'leaderboard' : 'bracket'
   initCommissioner()
   showScreen('screen-commissioner')
+  document.querySelector('#comm-hdr-nav .hdr-nav-link[data-tab="results"]')?.click()
 }
+
+async function exitCommissioner() {
+  closeAcctMenus()
+  if (_preCommishScreen === 'leaderboard') await _openLeaderboard()
+  else { _setNavActive('bracket'); await showBracketScreen() }
+}
+
+function _quickToggleCommish() {
+  if (!state.currentUser?.is_commissioner) return
+  if ($('screen-commissioner').classList.contains('active')) exitCommissioner()
+  else enterCommissioner()
+}
+$('slam-name-label')?.addEventListener('click', _quickToggleCommish)
+$('lb-slam-name-label')?.addEventListener('click', _quickToggleCommish)
+$('comm-slam-name')?.addEventListener('click', _quickToggleCommish)
+
 $('commish-btn')?.addEventListener('click', enterCommissioner)
 $('commish-btn-lb')?.addEventListener('click', enterCommissioner)
-$('exit-commish-btn')?.addEventListener('click', () => { closeAcctMenus(); showBracketScreen() })
+$('exit-commish-btn')?.addEventListener('click', exitCommissioner)
 
 document.addEventListener('keydown', (e) => {
   if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'e' || e.shiftKey || e.altKey) return
   if (!state.currentUser?.is_commissioner) return
   e.preventDefault()
-  if ($('screen-commissioner').classList.contains('active')) showBracketScreen()
+  if ($('screen-commissioner').classList.contains('active')) exitCommissioner()
   else enterCommissioner()
 })
 

@@ -95,7 +95,7 @@ export function buildCountdownEl(d, s, { compact = false, mobileIcon = false } =
     if (compact) {
       const el = document.createElement('div')
       el.className = 'sc-countdown' + (hasClick ? ' countdown-clickable' : '') + urgentCls
-      el.innerHTML = `${_lockSvg()}<span class="sc-countdown-txt${urgentCls}">picks lock in ${hh}:${mm}</span>`
+      el.innerHTML = `<span class="sc-countdown-lbl${urgentCls}">picks lock in</span><span class="sc-countdown-row">${_lockSvg()}<span class="sc-countdown-txt${urgentCls}">${hh}:${mm}</span></span>`
       if (hasClick) el.addEventListener('click', () => _countdownClickHandler(origSched))
       return el
     }
@@ -147,8 +147,8 @@ export function buildCountdownEl(d, s, { compact = false, mobileIcon = false } =
   if (compact) {
     const el = document.createElement('div')
     el.className = 'sc-countdown' + (hasClick ? ' countdown-clickable' : '') + urgentCls
-    const labelStr = upcoming.label ? `${upcoming.label} ` : ''
-    el.innerHTML = `${_lockSvg()}<span class="sc-countdown-txt${urgentCls}">${labelStr}${displayTime}</span>`
+    const labelStr = upcoming.label || 'next lock'
+    el.innerHTML = `<span class="sc-countdown-lbl${urgentCls}">${labelStr}</span><span class="sc-countdown-row">${_lockSvg()}<span class="sc-countdown-txt${urgentCls}">${displayTime}</span></span>`
     if (hasClick) el.addEventListener('click', () => _countdownClickHandler(upcoming))
     return el
   }

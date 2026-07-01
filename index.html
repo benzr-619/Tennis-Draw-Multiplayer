@@ -67,6 +67,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .hdr-row1{background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;flex-shrink:0;height:48px;padding:0 16px;gap:10px;position:relative;z-index:20;overflow:visible}
 .hdr-left{display:flex;align-items:center;gap:8px;flex-shrink:0}
 .slam-name-label{font-family:var(--serif);font-size:14px;font-weight:600;color:var(--accent);white-space:nowrap;flex-shrink:0}
+.slam-name-label.commish-clickable{cursor:pointer}
+.slam-name-label.commish-clickable:hover{opacity:0.72}
 .slam-dropdown-btn{display:flex;align-items:center;gap:6px;background:none;border:1px solid var(--border2);border-radius:6px;padding:5px 10px;font-family:var(--serif);font-size:14px;font-weight:600;color:var(--accent);cursor:pointer;white-space:nowrap;transition:all 0.15s}
 .slam-dropdown-btn:hover{background:var(--accent-dim)}
 .slam-dropdown-btn .chevron{font-size:9px;color:var(--text3);transition:transform 0.15s}
@@ -404,8 +406,11 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .sc-yield-val{font-family:var(--mono);font-size:16px;font-weight:500;color:var(--text);line-height:1}
 .sc-yield-val.sc-dim{color:var(--text3)}
 /* Compact countdown in post-lock bar */
-.sc-countdown{display:flex;flex-direction:row;align-items:center;gap:6px;padding:9px 16px 18px 0;flex-shrink:0;cursor:default}
-.sc-countdown-txt{font-family:var(--mono);font-size:11px;color:var(--accent);white-space:nowrap;line-height:1;letter-spacing:0.03em}
+.sc-countdown{display:flex;flex-direction:column;align-items:flex-end;gap:3px;padding:9px 16px 18px 0;flex-shrink:0;cursor:default}
+.sc-countdown-lbl{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);white-space:nowrap;line-height:1}
+.sc-countdown-lbl.countdown-urgent{color:var(--red)}
+.sc-countdown-row{display:flex;align-items:center;gap:6px}
+.sc-countdown-txt{font-family:var(--mono);font-size:13px;color:var(--accent);white-space:nowrap;line-height:1;letter-spacing:0.03em}
 .sc-countdown.countdown-clickable{cursor:pointer}
 .sc-countdown.countdown-clickable:hover{background:var(--accent-dim)}
 .sc-countdown.countdown-clickable .sc-countdown-txt{text-decoration-line:underline;text-decoration-color:transparent;text-underline-offset:2px;transition:text-decoration-color 0.15s}
