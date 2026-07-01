@@ -174,7 +174,6 @@ export async function handlePickClick(ri, mi, p, { renderStats, renderBracket })
     // No cascadeMatchPickForward — future rounds derive from originalPick via buildDrawView.
 
     buildDrawView(d)
-    await savePickToSupabase(m, d.db_id)
 
     // Reopen the next round only if THIS repick changed who this match sends forward —
     // i.e. the next-round matchup is now different. Offer the repick whether or not their
@@ -183,25 +182,32 @@ export async function handlePickClick(ri, mi, p, { renderStats, renderBracket })
     // pick); clear it only if it's no longer in the matchup. (buildDrawView above already
     // refreshed nm.p1/p2 to the new projection.)
     const next = getNextSlot(d, ri, mi)
+    let nm = null
     if (next && prevOrigPick !== p.name) {
-      const nm = d.rounds[next.nri].matches[next.nmi]
+      nm = d.rounds[next.nri].matches[next.nmi]
       if (!nm.winner && nm.originalPick) {
         nm.editedAfterLock = true
         const stillValid = nm.originalPick === nm.p1?.name || nm.originalPick === nm.p2?.name
         if (!stillValid) { nm.originalPick = null; nm.matchPick = null }
-        if (nm.db_id) await savePickToSupabase(nm, d.db_id)
+      } else {
+        nm = null
       }
     }
 
+    // Render immediately — in-memory state is already correct — then persist in the
+    // background so the tap resolves straight to its final pick color with no
+    // intermediate flash while waiting on the network round-trip.
     renderStats(); renderBracket()
+    await savePickToSupabase(m, d.db_id)
+    if (nm?.db_id) await savePickToSupabase(nm, d.db_id)
     return
   } else if (drawLocked) {
     // Backup pick: cascade matchPick into future rounds + save all affected matches
     m.matchPick = m.matchPick === p.name ? null : p.name
     buildDrawView(d)
-    await savePickToSupabase(m, d.db_id)
     renderStats()
     renderBracket()
+    await savePickToSupabase(m, d.db_id)
     return
   } else {
     // Pre-lock: just record the pick; slots are derived by buildDrawView.
@@ -209,12 +215,12 @@ export async function handlePickClick(ri, mi, p, { renderStats, renderBracket })
     m.matchPick = m.matchPick === p.name ? null : p.name
     const cleared = (prev && prev !== m.matchPick) ? clearMatchPickForward(d, ri, mi, prev) : []
     buildDrawView(d)
+    renderStats()
+    renderBracket()
     await savePickToSupabase(m, d.db_id)
     await Promise.all(cleared.filter(nm => nm.db_id).map(nm => savePickToSupabase(nm, d.db_id)))
+    return
   }
-
-  renderStats()
-  renderBracket()
 }
 
 // ── APPLY WINNER ──

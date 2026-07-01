@@ -47,11 +47,33 @@ function _lockSvg() {
   return `<svg width="11" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>`
 }
 
+// True when the given lock schedule still covers at least one undecided match
+// with no matchPick — i.e. there's actually something left for the current
+// user to do before it fires. original_picks covers all of round 0.
+function _lockHasUnfilled(ls) {
+  const draw = state.draws.find(dr => dr.db_id === ls.draw_id)
+  if (!draw) return false
+  if (ls.lock_type === 'original_picks') {
+    return draw.rounds[0]?.matches.some(m => !m.matchPick && !m.winner) ?? false
+  }
+  if (ls.lock_type === 'backup_picks') {
+    const ri = ls.round_index
+    if (ri == null || !draw.rounds[ri]) return false
+    return draw.rounds[ri].matches.some((m, mi) => {
+      const inRange = (ls.match_index_start == null || mi >= ls.match_index_start) &&
+                      (ls.match_index_end == null || mi <= ls.match_index_end)
+      return inRange && !m.matchPick && !m.winner
+    })
+  }
+  return false
+}
+
 // ── COUNTDOWN ELEMENT BUILDER ──
 // Returns a countdown Element for the next upcoming lock, or null if none.
 // compact=true → slim .sc-countdown element for the new post-lock bar.
-// compact=false → .stat-pill.countdown-pill for pre-lock or mobile wrap.
-export function buildCountdownEl(d, s, { compact = false } = {}) {
+// compact=false → .stat-pill.countdown-pill for pre-lock desktop pill.
+// mobileIcon=true → stacked label-over-(icon+time) layout for #mobile-countdown-wrap.
+export function buildCountdownEl(d, s, { compact = false, mobileIcon = false } = {}) {
   if (!d) return null
 
   if (!d.locked) {
@@ -72,24 +94,37 @@ export function buildCountdownEl(d, s, { compact = false } = {}) {
 
     if (compact) {
       const el = document.createElement('div')
-      el.className = 'sc-countdown' + (hasClick ? ' countdown-clickable' : '')
+      el.className = 'sc-countdown' + (hasClick ? ' countdown-clickable' : '') + urgentCls
       el.innerHTML = `${_lockSvg()}<span class="sc-countdown-txt${urgentCls}">picks lock in ${hh}:${mm}</span>`
       if (hasClick) el.addEventListener('click', () => _countdownClickHandler(origSched))
       return el
     }
 
+    if (mobileIcon) {
+      const el = document.createElement('div')
+      el.className = 'stat-pill countdown-pill' + (hasClick ? ' countdown-clickable' : '') + urgentCls
+      el.style.cssText = 'flex-direction:column;align-items:flex-end;gap:1px'
+      if (hasClick) el.addEventListener('click', () => _countdownClickHandler(origSched))
+      const labelHTML = origSched.label ? `<span class="countdown-lbl${urgentCls}">${origSched.label}</span>` : ''
+      el.innerHTML = `${labelHTML}<span class="sval countdown-val${urgentCls}" style="display:flex;align-items:center;gap:4px">${_lockSvg()}${hh}:${mm}</span>`
+      return el
+    }
+
     const el = document.createElement('div')
-    el.className = 'stat-pill countdown-pill' + (hasClick ? ' countdown-clickable' : '')
+    el.className = 'stat-pill countdown-pill' + (hasClick ? ' countdown-clickable' : '') + urgentCls
     el.style.cssText = 'flex-direction:row;align-items:center;gap:10px'
     if (hasClick) el.addEventListener('click', () => _countdownClickHandler(origSched))
     el.innerHTML = `<span class="slbl" style="margin-bottom:0">picks lock in</span><span class="sval countdown-val${urgentCls}">${hh}:${mm}</span>`
     return el
   }
 
-  // Post-lock: next backup picks lock
+  // Post-lock: next backup picks lock. Priority: has unfilled picks > soonest > current draw's gender.
   const allUpcoming = (state.lockSchedules || [])
     .filter(ls => !ls.locked_at && ls.scheduled_at && new Date(ls.scheduled_at) > new Date())
     .sort((a, b) => {
+      const aUnfilled = _lockHasUnfilled(a)
+      const bUnfilled = _lockHasUnfilled(b)
+      if (aUnfilled !== bUnfilled) return aUnfilled ? -1 : 1
       const diff = new Date(a.scheduled_at) - new Date(b.scheduled_at)
       if (diff !== 0) return diff
       if (a.draw_id === d.db_id && b.draw_id !== d.db_id) return -1
@@ -105,28 +140,28 @@ export function buildCountdownEl(d, s, { compact = false } = {}) {
   const mm = String(totalMins % 60).padStart(2, '0')
   const displayTime = `${hh}h:${mm}m`
 
-  const upcomingDraw = state.draws.find(dr => dr.db_id === upcoming.draw_id)
-  let allFilled = true
-  if (upcoming.lock_type === 'backup_picks' && upcomingDraw) {
-    const ri = upcoming.round_index
-    if (ri != null && upcomingDraw.rounds[ri]) {
-      upcomingDraw.rounds[ri].matches.forEach((m, mi) => {
-        const inRange = (upcoming.match_index_start == null || mi >= upcoming.match_index_start) &&
-                        (upcoming.match_index_end == null || mi <= upcoming.match_index_end)
-        if (inRange && !m.matchPick && !m.winner) allFilled = false
-      })
-    }
-  }
-
+  const allFilled = !_lockHasUnfilled(upcoming)
   const urgentCls = !allFilled ? ' countdown-urgent' : ''
   const hasClick = !allFilled && _countdownClickHandler
 
   if (compact) {
     const el = document.createElement('div')
-    el.className = 'sc-countdown' + (hasClick ? ' countdown-clickable' : '')
+    el.className = 'sc-countdown' + (hasClick ? ' countdown-clickable' : '') + urgentCls
     const labelStr = upcoming.label ? `${upcoming.label} ` : ''
     el.innerHTML = `${_lockSvg()}<span class="sc-countdown-txt${urgentCls}">${labelStr}${displayTime}</span>`
     if (hasClick) el.addEventListener('click', () => _countdownClickHandler(upcoming))
+    return el
+  }
+
+  if (mobileIcon) {
+    const el = document.createElement('div')
+    el.className = 'stat-pill countdown-pill' + (hasClick ? ' countdown-clickable' : '') + urgentCls
+    el.style.cssText = 'flex-direction:column;align-items:flex-end;gap:1px'
+    if (hasClick) el.addEventListener('click', () => _countdownClickHandler(upcoming))
+    const labelHTML = upcoming.label
+      ? `<span class="countdown-lbl${urgentCls}" style="font-style:italic">${upcoming.label}</span>`
+      : ''
+    el.innerHTML = `${labelHTML}<span class="sval countdown-val${urgentCls}" style="display:flex;align-items:center;gap:4px">${_lockSvg()}${displayTime}</span>`
     return el
   }
 
@@ -135,7 +170,7 @@ export function buildCountdownEl(d, s, { compact = false } = {}) {
     : 'next lock'
 
   const el = document.createElement('div')
-  el.className = 'stat-pill countdown-pill'
+  el.className = 'stat-pill countdown-pill' + urgentCls
   el.style.cssText = 'flex-direction:row;align-items:center;gap:10px'
   if (hasClick) {
     el.classList.add('countdown-clickable')
@@ -149,7 +184,7 @@ function _updateMobileCountdownWrap(d, s) {
   const wrap = document.getElementById('mobile-countdown-wrap')
   if (!wrap) return
   wrap.innerHTML = ''
-  const el = buildCountdownEl(d, s)
+  const el = buildCountdownEl(d, s, { mobileIcon: true })
   if (el) {
     el.style.borderRight = 'none'
     el.style.padding = '0'

@@ -156,11 +156,13 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 /* ── LOCK COUNTDOWN PILL ── */
 .countdown-val{font-family:var(--mono);font-size:13px;font-weight:500;color:var(--text)}
 .countdown-lbl{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.1em;white-space:nowrap;line-height:1;color:var(--text)}
-.countdown-urgent{color:var(--accent);animation:countdown-pulse 2s ease-in-out infinite}
-@keyframes countdown-pulse{0%,100%{opacity:1}50%{opacity:0.5}}
 .countdown-clickable{transition:opacity 0.15s}
 .countdown-clickable:hover{opacity:0.6}
 .countdown-pill:not(.countdown-clickable):hover{background:none}
+.countdown-pill.countdown-urgent{background:var(--red-bg);border:1px solid var(--red-border);border-radius:8px;animation:countdown-urgent-glow 1.6s ease-in-out infinite}
+.countdown-pill.countdown-urgent .countdown-lbl,.countdown-pill.countdown-urgent .countdown-val{color:var(--red)}
+.countdown-pill.countdown-urgent .countdown-val{font-weight:600}
+.countdown-pill.countdown-urgent .countdown-val{font-weight:600}
 
 /* ── BACKUP PICK GLOW ── */
 .mc.needs-backup-pick{border-color:var(--purple-border);border-width:1.5px}
@@ -248,8 +250,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 /* ── MOBILE HDR ROW 2 (nav tabs + countdown) ── */
 #mobile-hdr-row2{
   background:var(--surface);border-bottom:1px solid var(--border);
-  display:none;align-items:center;flex-shrink:0;height:44px;
-  padding:0 4px 0 12px;position:relative;z-index:15
+  display:none;align-items:center;flex-shrink:0;min-height:52px;height:auto;
+  padding:6px 4px 6px 12px;position:relative;z-index:15
 }
 @media(max-width:768px){#mobile-hdr-row2{display:flex}}
 #mobile-hdr-row2 .hdr-nav{display:flex;flex:1}
@@ -259,11 +261,17 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 }
 #mobile-countdown-wrap .stat-pill{
   border-right:none;padding:0;height:auto;background:none;cursor:default;
-  flex-direction:row;align-items:center;gap:8px
+  flex-direction:column!important;align-items:flex-end!important;gap:3px!important
+}
+#mobile-countdown-wrap .stat-pill.countdown-urgent{
+  padding:5px 10px!important;border-radius:11px
 }
 #mobile-countdown-wrap .slbl{margin-bottom:0;font-size:9px}
 #mobile-countdown-wrap .sval{font-size:14px}
 #mobile-countdown-wrap .countdown-val{font-size:14px}
+#mobile-countdown-wrap .slbl,#mobile-countdown-wrap .countdown-lbl{
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:210px
+}
 /* ── COMMISSIONER MOBILE HDR ROW 2 (tab nav) ── */
 #comm-mobile-hdr-row2{
   background:var(--surface);border-bottom:1px solid var(--border);
@@ -396,13 +404,22 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .sc-yield-val{font-family:var(--mono);font-size:16px;font-weight:500;color:var(--text);line-height:1}
 .sc-yield-val.sc-dim{color:var(--text3)}
 /* Compact countdown in post-lock bar */
-.sc-countdown{display:flex;flex-direction:row;align-items:center;gap:6px;padding:9px 0 18px;flex-shrink:0;cursor:default}
+.sc-countdown{display:flex;flex-direction:row;align-items:center;gap:6px;padding:9px 16px 18px 0;flex-shrink:0;cursor:default}
 .sc-countdown-txt{font-family:var(--mono);font-size:11px;color:var(--accent);white-space:nowrap;line-height:1;letter-spacing:0.03em}
-.sc-countdown-txt.countdown-urgent{animation:countdown-pulse 2s ease-in-out infinite}
 .sc-countdown.countdown-clickable{cursor:pointer}
 .sc-countdown.countdown-clickable:hover{background:var(--accent-dim)}
 .sc-countdown.countdown-clickable .sc-countdown-txt{text-decoration-line:underline;text-decoration-color:transparent;text-underline-offset:2px;transition:text-decoration-color 0.15s}
 .sc-countdown.countdown-clickable:hover .sc-countdown-txt{text-decoration-color:var(--accent)}
+/* Urgent countdown — unfilled picks against an approaching lock. Filled pill +
+   glow pulse only while there's actually something left to pick; once picks
+   are complete the countdown reverts to plain borderless text (no urgentCls). */
+.sc-countdown.countdown-urgent{background:var(--red-bg);border:1px solid var(--red-border);border-radius:14px;padding:5px 12px 5px 10px;margin:9px 16px 13px 0;animation:countdown-urgent-glow 1.6s ease-in-out infinite}
+.sc-countdown.countdown-urgent .sc-countdown-txt{color:var(--red);font-weight:600}
+.sc-countdown.countdown-urgent svg{color:var(--red)}
+.sc-countdown.countdown-urgent.countdown-clickable:hover{background:var(--red-bg)}
+.sc-countdown.countdown-urgent.countdown-clickable .sc-countdown-txt{text-decoration-color:transparent}
+.sc-countdown.countdown-urgent.countdown-clickable:hover .sc-countdown-txt{text-decoration-color:var(--red)}
+@keyframes countdown-urgent-glow{0%,100%{box-shadow:0 0 0 0 rgba(192,57,43,0.3)}50%{box-shadow:0 0 0 5px rgba(192,57,43,0.14)}}
 /* DETAILS pill button */
 .sc-guide-btn{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);background:transparent;border:1px solid var(--border2);border-radius:13px;padding:4px 10px;cursor:pointer;display:flex;align-items:center;gap:5px;flex-shrink:0;white-space:nowrap;transition:background 0.15s,color 0.15s,border-color 0.15s;align-self:center;outline:none}
 .sc-guide-btn:hover,.sc-guide-btn.open{background:var(--surface2);color:var(--text2)}
@@ -436,6 +453,22 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .sd-math.open{max-height:200px}
 .sd-math-inner{padding:0 8px 10px 8px;font-family:var(--sans);font-size:12px;color:var(--text2);line-height:1.6}
 .sd-math-title{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--accent);padding:6px 0 4px;display:block}
+/* Mobile stats bar + drawer compaction — must stay after the base .sc-*/.sd-* rules above to win the cascade */
+@media(max-width:768px){
+  .stats-strip{gap:8px}
+  .sc-hero{padding:9px 0 9px 12px;gap:5px}
+  .sc-hero-val{font-size:22px}
+  .sc-yields{gap:6px;padding:9px 0}
+  .sc-guide-btn{font-size:8.5px;padding:4px 8px;gap:3px}
+  /* Drawer rows: label+value sit adjacent (not spread across the row), definition wraps full-width below */
+  .sd-inner{padding:0 12px 8px 12px}
+  .sd-row{display:flex;flex-wrap:wrap;align-items:baseline;column-gap:10px;row-gap:3px;padding:8px 0}
+  .sd-def{flex-basis:100%}
+  /* Drawer as a fixed bottom sheet — escapes .screen{overflow:hidden} so it can actually scroll
+     regardless of the (variable-height) mobile header above it */
+  .stats-drawer{position:fixed;top:auto;bottom:0;left:0;right:0;border-top:1px solid var(--border2);border-bottom:none;border-radius:16px 16px 0 0;box-shadow:0 -4px 16px rgba(0,0,0,0.15);z-index:200}
+  .stats-drawer.open{max-height:75vh;overflow-y:auto}
+}
 .round-labels-bar{background:var(--bg);border-bottom:1px solid var(--border);flex-shrink:0;overflow:hidden;height:26px;display:flex;align-items:center;z-index:8}
 .round-labels-inner{display:flex;align-items:center;padding-left:24px;min-width:max-content;will-change:transform}
 
@@ -452,12 +485,14 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .mc.st-correct{border-color:var(--green-border)}
 .mc.st-wrong{border-color:var(--red-border)}
 .mc.st-needs-repick{border-color:#e8900a;border-width:2px}
-.pr{display:flex;align-items:center;gap:5px;padding:4px 7px;cursor:pointer;transition:background 0.1s;border-bottom:1px solid var(--border);min-height:26px;user-select:none}
+.pr{display:flex;align-items:center;gap:5px;padding:4px 7px;cursor:pointer;transition:background 0.1s;border-bottom:1px solid var(--border);min-height:26px;user-select:none;-webkit-tap-highlight-color:transparent}
 .pr:last-of-type{border-bottom:none}
 .pr.no-pick{cursor:default}
 .pr.locked{cursor:default}
 .pr.pick-locked{cursor:default}
-.pr:hover:not(.no-pick):not(.locked):not(.pick-locked){background:var(--surface2)}
+@media(hover:hover){
+  .pr:hover:not(.no-pick):not(.locked):not(.pick-locked){background:var(--surface2)}
+}
 .pr.s-orig{background:var(--blue-bg)}
 .pr.s-orig-inactive{background:var(--blue-bg);opacity:0.45}
 .pr.s-orig-ok{background:var(--green-bg)}
@@ -497,8 +532,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
   .pr-star-mobile{display:inline-flex;align-items:center}
   /* Eliminate iOS two-tap hover activation on all match cards and player rows */
   .pr,.mc{touch-action:manipulation}
-  /* Replace hover bg with active state so tappable rows respond on first touch */
-  .pr:active:not(.no-pick):not(.locked):not(.pick-locked){background:var(--surface2)}
+  /* No grey :active flash on pickable rows — the tap goes straight to its resulting
+     pick color (s-orig/s-backup/etc, set synchronously in handlePickClick) instead of
+     flashing surface2 first. */
   /* res-clickable rows are always pressable — show accent bg unconditionally */
   .pr.res-clickable{background:var(--accent-dim)!important}
   .pr.res-clickable:active{filter:brightness(0.93)}
