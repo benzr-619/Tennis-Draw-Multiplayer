@@ -2,6 +2,89 @@
 
 Read this when working on headers, navigation, or segmented controls.
 
+## Mobile Stats Guide Drawer (`#stats-drawer`)
+
+Opened by tapping `.sc-guide-btn` ("STATS GUIDE") in the stats bar, on both desktop and
+mobile (`_buildDrawerContent`/toggle logic in `src/stats.js`).
+
+- **Desktop:** `.stats-drawer{position:absolute;top:100%}` — sits directly under
+  `#stats-strip` in normal flow, `max-height:700px` on `.open`.
+- **Mobile:** `.stats-drawer{position:fixed;top:0}` (index.html, late `@media(max-width:768px)`
+  block) so it escapes `.screen{overflow:hidden}` and can scroll regardless of the
+  variable-height mobile header above it. It must visually **drop down from the stats bar**,
+  not slide up as a bottom sheet — `top` and `max-height` are set as **inline styles by
+  `_positionMobileDrawer(drawer)`** (stats.js), computed from `#stats-strip`'s live
+  `getBoundingClientRect().bottom` (the strip's height varies with round-filter/countdown
+  content, so a static CSS `top` can't track it). Called both from the guideBtn click handler
+  (on open) and from `renderStats()`'s state-restore path (`if (drawer && _drawerOpen)`), since
+  a re-render can change the strip's height while the drawer is already open.
+  `max-height:calc(100dvh - <stripBottom>px - 12px)` caps it just above the browser's own
+  bottom toolbar; the CSS `.stats-drawer.open{max-height:min(75vh,70dvh)}` is only a pre-JS
+  fallback. Rounded corners are on the **bottom** (`border-radius:0 0 16px 16px`) and the
+  shadow points **down** (`box-shadow:0 4px 16px ...`) — bottom-sheet chrome (top-rounded,
+  upward shadow, anchored to `bottom:0`) reads as "slides up from the screen edge," which
+  users found disorienting given the trigger is up in the header (fixed 2026-07-01).
+
+Row layout: `.sd-row` uses narrow name+stat columns and a wide description column —
+`58px 36px 1fr` on mobile (`.sd-lbl`/`.sd-val`/`.sd-def`) vs. `140px 90px 1fr` on desktop.
+
+**Gotcha: inline `max-height` must be cleared on close, not just the `.open` class.**
+`_positionMobileDrawer` sets `drawer.style.maxHeight` as an inline style — inline styles
+beat every stylesheet rule regardless of specificity or class, so removing `.open` alone
+left the drawer permanently pinned to its open height (looked "stuck open" both on
+tapping the guideBtn again and on tapping outside via `_wireOutsideTouch`, since both
+paths only toggled the class). Fixed by adding `_clearMobileDrawerPosition(drawer)`
+(`drawer.style.maxHeight = ''`) — called from **every** place the drawer closes: the
+guideBtn click handler's close branch, `_wireOutsideTouch`'s document-level outside-tap
+handler, the pre-lock early-return path, and the draw-change reset in `renderStats()`.
+Any new close path must call it too, or the same bug reappears.
+
+**Gotcha: `_clearMobileDrawerPosition` must NOT reset `top` (only `max-height`)** (found
+2026-07-01, same session). `top` isn't part of the CSS `transition` (only `max-height`
+is), so clearing it on close snapped the drawer's top edge from "under the stats bar"
+instantly up to the mobile `.stats-drawer{top:0}` fallback while `max-height` was still
+mid-transition down to 0 — visually the drawer "jumped up to the header" as it closed.
+`top` is left stale while closed (harmless — nothing is visible at `max-height:0`) and
+gets a fresh, correct value from `_positionMobileDrawer` the next time it opens.
+
+**Gotcha: `document.addEventListener('touchstart', ...)` is passive by default in Chrome
+and most mobile browsers** — `e.preventDefault()` inside the handler silently no-ops
+unless you pass `{ passive: false }` explicitly. `_wireOutsideTouch`'s handler needs
+`preventDefault()` (+ `stopPropagation()`) so that the tap used to dismiss the drawer
+doesn't *also* fall through as a normal tap on whatever bracket element is underneath
+(e.g. registering a pick) — without the `{ passive: false }` option this call was a
+silent no-op and the underlying element's click fired anyway on the very first outside
+tap. Confirmed with a Playwright touch-context test: registering `{ passive: false }`
+took the "outside tap also picks a player" click count from 1 (bug) to 0 (fixed) on the
+dismiss tap, with a genuine second tap still registering normally.
+
+## Gotcha: `*/` inside a CSS comment silently kills everything after it (found 2026-07-01)
+
+A comment right before the late mobile-override block in `index.html` read
+`/* ... must stay after the base .sc-*/.sd-* rules ... */` — the `.sc-*/` fragment
+contains a literal `*/`, which closes the CSS comment early. Everything from
+`.sd-* rules above to win the cascade */` onward was parsed as garbage selector
+tokens, which corrupted the parser's recovery through the entire following
+`@media(max-width:768px){...}` block (mobile `.stats-strip`, `.sc-hero`,
+`.sc-guide-btn`, `.sd-row`/`.sd-lbl`/`.sd-val`/`.sd-def`, `.stats-drawer` sizing/position
+overrides for the stats bar + drawer). **None of that block ever actually applied on
+any real device** — confirmed by dumping `document.styleSheets` in a live Chromium
+page and seeing the whole media rule missing entirely, even though the source looked
+correct and `window.matchMedia('(max-width:768px)').matches` was `true`. Fixed by
+rewording the comment to avoid `*/` appearing mid-sentence (`.sc- / .sd-` instead of
+`.sc-*/.sd-*`).
+
+**Never write `.sc-*` / `.sd-*`-style "any rule starting with X" shorthand inside a
+CSS comment right next to another `*`-prefixed fragment** — `*/` anywhere inside a
+`/* ... */` comment ends it immediately, silently, with no console warning. When a
+mobile override block seems to have zero effect despite correct source order and a
+matching media query, dump `document.styleSheets` (walk `cssRules`, flattening
+`CSSMediaRule`s) in a real browser rather than trusting a visual read of the source —
+a parse error upstream can eat an entire later block without any syntax highlighting
+or linter catching it in this vanilla-CSS-in-HTML setup (no build-time CSS linting).
+
+## Header Layout — Player Screens (bracket + leaderboard)
+
 ## Header Layout — Player Screens (bracket + leaderboard)
 
 - **Row 1 left:** slam name → `.hdr-nav` tabs (`#nav-bracket` "Draw" / `#nav-leaderboard` "Leaderboard"; `.hdr-nav-link`, DM Sans 14px, accent underline when active)

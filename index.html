@@ -458,21 +458,28 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .sd-math.open{max-height:200px}
 .sd-math-inner{padding:0 8px 10px 8px;font-family:var(--sans);font-size:12px;color:var(--text2);line-height:1.6}
 .sd-math-title{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--accent);padding:6px 0 4px;display:block}
-/* Mobile stats bar + drawer compaction — must stay after the base .sc-*/.sd-* rules above to win the cascade */
+/* Mobile stats bar + drawer compaction — must stay after the base .sc- / .sd- rules above to win the cascade */
 @media(max-width:768px){
   .stats-strip{gap:8px}
   .sc-hero{padding:9px 0 9px 12px;gap:5px}
   .sc-hero-val{font-size:22px}
   .sc-yields{gap:6px;padding:9px 0}
   .sc-guide-btn{font-size:8.5px;padding:4px 8px;gap:3px}
-  /* Drawer rows: label+value sit adjacent (not spread across the row), definition wraps full-width below */
-  .sd-inner{padding:0 12px 8px 12px}
-  .sd-row{display:flex;flex-wrap:wrap;align-items:baseline;column-gap:10px;row-gap:3px;padding:8px 0}
-  .sd-def{flex-basis:100%}
-  /* Drawer as a fixed bottom sheet — escapes .screen{overflow:hidden} so it can actually scroll
-     regardless of the (variable-height) mobile header above it */
-  .stats-drawer{position:fixed;top:auto;bottom:0;left:0;right:0;border-top:1px solid var(--border2);border-bottom:none;border-radius:16px 16px 0 0;box-shadow:0 -4px 16px rgba(0,0,0,0.15);z-index:200}
-  .stats-drawer.open{max-height:75vh;overflow-y:auto}
+  /* Drawer rows: name + stat columns squeezed down to their content width so the
+     description column (the actual thing worth reading) gets the rest of the row */
+  .sd-inner{padding:0 12px calc(10px + env(safe-area-inset-bottom,0px)) 12px}
+  .sd-row{display:grid;grid-template-columns:58px 36px 1fr;column-gap:8px;align-items:baseline;padding:8px 0}
+  .sd-lbl{white-space:normal;font-size:9px;line-height:1.25}
+  .sd-val{font-size:13px}
+  .sd-def{font-size:11.5px}
+  /* Drawer drops down from the stats bar (position:fixed, not absolute) — escapes
+     .screen{overflow:hidden} so it can actually scroll regardless of the (variable-height)
+     mobile header above it. `top` is set inline by JS (_positionMobileDrawer in stats.js) to
+     the live bottom edge of #stats-strip, since that edge shifts with round-filter/countdown
+     content. `max-height` is set inline alongside it so the drawer never runs behind the
+     browser's own bottom toolbar; the value here is just a pre-JS fallback. */
+  .stats-drawer{position:fixed;top:0;bottom:auto;left:0;right:0;border-top:none;border-bottom:1px solid var(--border2);border-radius:0 0 16px 16px;box-shadow:0 4px 16px rgba(0,0,0,0.15);z-index:200}
+  .stats-drawer.open{max-height:min(75vh,70dvh);overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
 }
 .round-labels-bar{background:var(--bg);border-bottom:1px solid var(--border);flex-shrink:0;overflow:hidden;height:26px;display:flex;align-items:center;z-index:8}
 .round-labels-inner{display:flex;align-items:center;padding-left:24px;min-width:max-content;will-change:transform}

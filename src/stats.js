@@ -21,6 +21,31 @@ function _removeOutsideTouchHandler() {
   }
 }
 
+// Pins the mobile drawer's top edge to the live bottom of #stats-strip (which shifts with
+// round-filter/countdown content) and caps its height so it never runs behind the browser's
+// own bottom toolbar. No-op on desktop, where the drawer stays position:absolute;top:100%.
+function _positionMobileDrawer(drawer) {
+  if (!isMobile() || !drawer) return
+  const strip = document.getElementById('stats-strip')
+  if (!strip) return
+  const top = strip.getBoundingClientRect().bottom
+  drawer.style.top = `${top}px`
+  drawer.style.maxHeight = `calc(100dvh - ${top}px - 12px)`
+}
+
+// Inline styles win over any stylesheet rule regardless of class, so the open-state
+// max-height set by _positionMobileDrawer must be cleared on close — otherwise removing
+// the .open class can't fall back to the base .stats-drawer{max-height:0} closed state
+// and the drawer stays visually stuck open. `top` is intentionally left alone: only
+// `max-height` is transitioned (CSS `transition:max-height`), so clearing `top` too would
+// snap the drawer's top edge from under the stats bar up to the mobile `top:0` fallback
+// instantly, mid-collapse — it reads as the drawer "jumping up to the header" while
+// closing. `top` gets a fresh, correct value from _positionMobileDrawer next time it opens.
+function _clearMobileDrawerPosition(drawer) {
+  if (!drawer) return
+  drawer.style.maxHeight = ''
+}
+
 export function resetStatsFilter() { statsRoundFilter = null }
 export function getStatsFilter() { return statsRoundFilter }
 export function setCountdownClickHandler(fn) { _countdownClickHandler = fn }
@@ -376,7 +401,7 @@ export function renderStats() {
     _drawerOpen = false
     _drawerMathOpen = null
     const drawer = document.getElementById('stats-drawer')
-    if (drawer) drawer.classList.remove('open')
+    if (drawer) { drawer.classList.remove('open'); _clearMobileDrawerPosition(drawer) }
   }
 
   const s = calcStatsAsOf(d, statsRoundFilter)
@@ -413,7 +438,7 @@ export function renderStats() {
     // Health underline and drawer hidden pre-lock
     _updateHealthUnderline(strip, null, false, d)
     const drawer = document.getElementById('stats-drawer')
-    if (drawer) { drawer.classList.remove('open'); drawer.innerHTML = '' }
+    if (drawer) { drawer.classList.remove('open'); _clearMobileDrawerPosition(drawer); drawer.innerHTML = '' }
     _drawerOpen = false
     return
   }
@@ -484,13 +509,21 @@ export function renderStats() {
         const stp = document.getElementById('stats-strip')
         const dr = document.getElementById('stats-drawer')
         if ((stp && stp.contains(e.target)) || (dr && dr.contains(e.target))) return
+        // Consume this touch — it dismisses the drawer only, it must not also fall through
+        // to whatever's underneath (e.g. registering a pick on a bracket card). preventDefault
+        // on touchstart suppresses the synthetic click the browser would otherwise fire on the
+        // same target after touchend, so a second, separate tap is needed for a bracket action.
+        e.preventDefault()
+        e.stopPropagation()
         _drawerOpen = false
         guideBtn.classList.remove('open')
         guideBtn.setAttribute('aria-expanded', 'false')
-        if (dr) dr.classList.remove('open')
+        if (dr) { dr.classList.remove('open'); _clearMobileDrawerPosition(dr) }
         _removeOutsideTouchHandler()
       }
-      document.addEventListener('touchstart', _outsideTouchHandler)
+      // { passive: false } is required — Chrome (and most mobile browsers) treat document-level
+      // touchstart listeners as passive by default, which silently no-ops preventDefault().
+      document.addEventListener('touchstart', _outsideTouchHandler, { passive: false })
     }
 
     guideBtn.addEventListener('click', () => {
@@ -498,7 +531,11 @@ export function renderStats() {
       guideBtn.classList.toggle('open', _drawerOpen)
       guideBtn.setAttribute('aria-expanded', String(_drawerOpen))
       const drawer = document.getElementById('stats-drawer')
-      if (drawer) drawer.classList.toggle('open', _drawerOpen)
+      if (drawer) {
+        if (_drawerOpen) _positionMobileDrawer(drawer)
+        else _clearMobileDrawerPosition(drawer)
+        drawer.classList.toggle('open', _drawerOpen)
+      }
       if (_drawerOpen) _wireOutsideTouch()
       else _removeOutsideTouchHandler()
     })
@@ -527,5 +564,8 @@ export function renderStats() {
   // Build drawer content (restores open state via _drawerOpen / _drawerMathOpen)
   _buildDrawerContent(s, hasResult)
   const drawer = document.getElementById('stats-drawer')
-  if (drawer && _drawerOpen) drawer.classList.add('open')
+  if (drawer && _drawerOpen) {
+    _positionMobileDrawer(drawer)
+    drawer.classList.add('open')
+  }
 }
