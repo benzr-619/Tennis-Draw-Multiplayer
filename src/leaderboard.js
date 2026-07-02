@@ -2,7 +2,7 @@
 
 import { supabase } from './supabase.js'
 import { state } from './state.js'
-import { calcStats, calcSlamIndex } from './scoring.js'
+import { calcStats, calcSlamIndex, isPoolEligible } from './scoring.js'
 import { slamKey, SLAM_CONFIG, SLAM_COLORS } from './data.js'
 import { buildDrawView } from './draw-view.js'
 import { animateSegThumb } from './seg-thumb.js'
@@ -236,6 +236,7 @@ export async function loadDrawStatsForAllUsers(baseDraw) {
       matchYield: s.matchYieldResolved > 0 ? s.matchYield : null,
       matchYieldResolved: s.matchYieldResolved,
       hasAnyPicks: s.filled > 0,
+      poolEligible: isPoolEligible(userDraw),
       slamIndex: null, // filled below after pool is complete
       bestUpset,
       flatYield,
@@ -244,7 +245,7 @@ export async function loadDrawStatsForAllUsers(baseDraw) {
   })
 
   // Compute pool-adjusted Slam Index across all players with picks in this draw
-  const eligibleProfs = profs.filter(p => result[p.id]?.hasAnyPicks)
+  const eligibleProfs = profs.filter(p => result[p.id]?.hasAnyPicks && result[p.id]?.poolEligible)
   if (eligibleProfs.length > 0) {
     const entries = eligibleProfs.map(p => ({
       score: result[p.id].score ?? 0,
@@ -380,7 +381,7 @@ function buildDetailTable(cols, profs, statsMap, draw) {
   // Sort
   const sortKey = lbSort.col
   const sorted = [...profs]
-    .filter(p => statsMap[p.id]?.hasAnyPicks)
+    .filter(p => statsMap[p.id]?.hasAnyPicks && statsMap[p.id]?.poolEligible)
     .sort((a, b) => {
       const va = statsMap[a.id]?.[sortKey] ?? -Infinity
       const vb = statsMap[b.id]?.[sortKey] ?? -Infinity

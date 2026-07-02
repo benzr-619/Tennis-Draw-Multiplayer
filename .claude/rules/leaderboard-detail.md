@@ -2,6 +2,49 @@
 
 Read this when working on the leaderboard, viewer, or slam color theming.
 
+## Pool Eligibility — Minimum Participation Gate (decided 2026-07-02)
+
+**Rule:** a player counts toward a draw's leaderboard ranking and Slam Index z-score
+population only if they have `original_pick IS NOT NULL` on at least 50%
+(`POOL_ELIGIBILITY_THRESHOLD` in `scoring.js`) of that draw's total matches (127 → 65).
+Measured against the whole draw, not just Round 1.
+
+**Why:** a player with very few original picks still had every unpicked match scored
+via the existing ELO auto-assign fallback (`isAutoAssign`, see `.claude/rules/betting.md`
+"Auto-Pick Favourite — Draw Yield / Health (ELO)"). Auto-assign exists so a handful of
+missed/withdrawn picks don't zero out an otherwise-real bracket — it was never meant to
+carry a near-empty bracket to a competitive ranking. Confirmed against live data
+2026-07-02: a player with only 18/127 original picks filled was sitting 2nd on the
+men's leaderboard and combined leaderboard purely off auto-assigned scoring on the
+other ~109 matches.
+
+**Scope:** pool membership only — the auto-assign scoring mechanism itself is
+unchanged; a player who clears the threshold is still auto-scored on any remaining
+gaps exactly as before. **Your Draws tab is explicitly exempt** — a player can always
+view their own bracket via `openViewerOriginalPicks` regardless of completion; that
+tab doesn't read `hasAnyPicks`/`poolEligible` at all (it queries `picks` directly).
+
+**Implementation:** `isPoolEligible(d)` (scoring.js) — one shared helper, no duplicated
+threshold logic. Takes an assembled draw (`d.rounds[].matches[].originalPick`) and
+returns `total > 0 && picked/total >= POOL_ELIGIBILITY_THRESHOLD`. Two call patterns:
+- **Via `loadDrawStatsForAllUsers`** (leaderboard.js): computed once per user per draw
+  as `poolEligible` on the per-user result object, alongside the pre-existing
+  `hasAnyPicks` (`s.filled > 0`, which counts `matchPick` not `originalPick` — kept
+  separate since they answer different questions). Every downstream consumer of that
+  result object (Slams tab summary cards/podium/past-slam top3 in
+  `leaderboard-slams.js`, draw detail table in `leaderboard.js`, Records tab
+  `buildAllTimeAgg`/`buildAllBrackets`/`buildPoolBestUpset` in `leaderboard-records.js`)
+  filters on `hasAnyPicks && poolEligible` (or reads the already-gated `hasAnyPicks`
+  field the Records aggregates themselves expose downstream).
+- **Via direct call** in `_loadBaseline` (leaderboard-slams.js) — this function computes
+  its own stats independently of `loadDrawStatsForAllUsers` (for the round-R-1 baseline
+  used by movement arrows), so it calls `isPoolEligible(ud)` directly on the assembled
+  draw it builds.
+
+**Retroactive by design:** this is a render-time filter over existing `original_pick`
+counts — no backfill migration, applies automatically to all historical draws on next
+render.
+
 ## ASI Gotcha — leading `[` after an unterminated statement (fixed 2026-06-26)
 
 `src/leaderboard-records.js` uses semicolon-free style. Any statement immediately followed by a line that begins with `[` (an array literal you intend as a new statement) will be mis-parsed as index access on the previous expression. `buildPodium` crashed with `Cannot read properties of undefined (reading 'forEach')` because `wrap.className = 'rec-podium'` (no semicolon) chained into `[[top3...]].forEach` → `'rec-podium'[...].forEach`. Fix: prefix the array-literal statement with a leading `;` (idiom already used at the `;['all', ..._recYears]` line). Same applies to lines starting with `(`.

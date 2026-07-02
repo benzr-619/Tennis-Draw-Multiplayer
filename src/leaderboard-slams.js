@@ -2,7 +2,7 @@
 
 import { state } from './state.js'
 import { SLAM_CONFIG, SLAM_COLORS, slamKey } from './data.js'
-import { calcStatsAsOf, calcSlamIndex, healthHue } from './scoring.js'
+import { calcStatsAsOf, calcSlamIndex, healthHue, isPoolEligible } from './scoring.js'
 import { supabase } from './supabase.js'
 import { formatAmerican } from './odds.js'
 import {
@@ -147,8 +147,9 @@ async function _loadBaseline(group, profs, R) {
     const byUser = {}
     _picksCache.get(d.db_id).forEach(p => { if (!byUser[p.user_id]) byUser[p.user_id] = []; byUser[p.user_id].push(p) })
     const ents = profs.map(p => {
-      const s = calcStatsAsOf(assembleDrawForUser(d, byUser[p.id] || []), R - 1)
-      return { id: p.id, score: s.baseScore + s.skillBonus, my: s.matchYieldResolved > 0 ? s.matchYield : 0, has: s.filled > 0 }
+      const ud = assembleDrawForUser(d, byUser[p.id] || [])
+      const s = calcStatsAsOf(ud, R - 1)
+      return { id: p.id, score: s.baseScore + s.skillBonus, my: s.matchYieldResolved > 0 ? s.matchYield : 0, has: s.filled > 0 && isPoolEligible(ud) }
     }).filter(e => e.has)
     const idxs = calcSlamIndex(ents.map(e => ({ score: e.score, matchYield: e.my })))
     ;[...ents].map((e, i) => ({ ...e, si: idxs[i] }))
@@ -216,11 +217,11 @@ function _buildCard(draw, profs, statsMap, color, baseline, isActive) {
   card.appendChild(cardHdr)
 
   if (isActive && statsMap) {
-    const eligible = profs.filter(p => statsMap[p.id]?.hasAnyPicks && statsMap[p.id]?.slamIndex !== null)
+    const eligible = profs.filter(p => statsMap[p.id]?.hasAnyPicks && statsMap[p.id]?.poolEligible && statsMap[p.id]?.slamIndex !== null)
     if (eligible.length >= 3) card.appendChild(_buildSlamPodium(draw, statsMap, profs))
   }
 
-  const sortedProfs = [...profs].filter(p => statsMap[p.id]?.hasAnyPicks)
+  const sortedProfs = [...profs].filter(p => statsMap[p.id]?.hasAnyPicks && statsMap[p.id]?.poolEligible)
     .sort((a, b) => {
       const va = statsMap[a.id]?.[slamSort.col] ?? -Infinity
       const vb = statsMap[b.id]?.[slamSort.col] ?? -Infinity
@@ -298,7 +299,7 @@ function _buildCard(draw, profs, statsMap, color, baseline, isActive) {
 
 function _buildSlamPodium(draw, statsMap, profs) {
   const eligible = profs
-    .filter(p => statsMap[p.id]?.hasAnyPicks && statsMap[p.id]?.slamIndex !== null)
+    .filter(p => statsMap[p.id]?.hasAnyPicks && statsMap[p.id]?.poolEligible && statsMap[p.id]?.slamIndex !== null)
     .sort((a, b) => (statsMap[b.id]?.slamIndex ?? -Infinity) - (statsMap[a.id]?.slamIndex ?? -Infinity))
   const top3 = eligible.slice(0, 3)
   const wrap = document.createElement('div'); wrap.className = 'rec-podium'
@@ -404,7 +405,7 @@ async function _renderPastCompact(wrapper, group, allMaps, profs) {
 
   const combined = {}
   profs.forEach(p => {
-    const sis = group.draws.map(d => allMaps.get(d.db_id)?.[p.id]).filter(s => s?.hasAnyPicks && s.slamIndex !== null).map(s => s.slamIndex)
+    const sis = group.draws.map(d => allMaps.get(d.db_id)?.[p.id]).filter(s => s?.hasAnyPicks && s.poolEligible && s.slamIndex !== null).map(s => s.slamIndex)
     if (sis.length) combined[p.id] = Math.round(sis.reduce((a, b) => a + b, 0) / sis.length)
   })
   const top3 = profs.filter(p => combined[p.id] !== undefined).sort((a, b) => combined[b.id] - combined[a.id]).slice(0, 3)

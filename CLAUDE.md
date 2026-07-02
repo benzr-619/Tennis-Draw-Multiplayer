@@ -18,7 +18,7 @@ Current rules files:
 - `.claude/rules/ui-detail.md` — full header/segment layout details
 - `.claude/rules/bracket-rendering.md` — elim slot rendering, viewer card painting, `buildDrawView` projectFromPick mode
 - `.claude/rules/lock-conventions.md` — lock scoping function names, countdown details, scheduled locks list
-- `.claude/rules/leaderboard-detail.md` — SLAM_COLORS, grid values, tab internals, viewer entry point
+- `.claude/rules/leaderboard-detail.md` — SLAM_COLORS, grid values, tab internals, viewer entry point, pool eligibility minimum-participation gate
 - `.claude/rules/supabase-mcp.md` — Supabase MCP connector: project ID, table schemas, how to run migrations/SQL without manual dashboard work
 - `.claude/rules/betting.md` — Match Yield betting layer: scoring formula, odds lifecycle, sport keys, name matching, DB objects, first-slam troubleshooting
 - `.claude/rules/between-slams.md` — app_settings table, hasActiveDraw(), getting-ready screen, commissioner form

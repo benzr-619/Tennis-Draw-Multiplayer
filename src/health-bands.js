@@ -115,7 +115,7 @@ async function recomputeAllBands() {
   const bandRows = []
   for (const [n, vals] of byN) {
     vals.sort((a, b) => a - b)
-    bandRows.push({ n, lo: percentile(vals, LOW_PCTL), hi: percentile(vals, HIGH_PCTL), sample_size: vals.length })
+    bandRows.push({ n, lo: percentile(vals, LOW_PCTL), hi: percentile(vals, HIGH_PCTL), sample_size: vals.length, computed_at: new Date().toISOString() })
   }
   if (!bandRows.length) return
   const CHUNK = 200
@@ -136,7 +136,7 @@ async function recomputeBandForN(n) {
   if (!vals.length) return
   const { error } = await supabase
     .from('health_bands')
-    .upsert({ n, lo: percentile(vals, LOW_PCTL), hi: percentile(vals, HIGH_PCTL), sample_size: vals.length }, { onConflict: 'n' })
+    .upsert({ n, lo: percentile(vals, LOW_PCTL), hi: percentile(vals, HIGH_PCTL), sample_size: vals.length, computed_at: new Date().toISOString() }, { onConflict: 'n' })
   if (error) throw error
 }
 

@@ -242,6 +242,24 @@ export function calcStatsAsOf(d, upToRi = null) {
 
 export function calcStats(d) { return calcStatsAsOf(d, null) }
 
+// Minimum-participation eligibility gate for leaderboard/Slam Index pool membership.
+// A player counts toward a draw's pool only if they filled original_pick on at least
+// POOL_ELIGIBILITY_THRESHOLD of that draw's matches — otherwise a near-empty bracket
+// gets scored almost entirely off the ELO auto-assign fallback (isAutoAssign above)
+// and can rank purely on auto-assigned points rather than real picks. Does not change
+// scoring itself — only who counts toward the ranked pool. See
+// .claude/rules/leaderboard-detail.md "Pool Eligibility" (decided 2026-07-02).
+export const POOL_ELIGIBILITY_THRESHOLD = 0.5
+
+export function isPoolEligible(d) {
+  let picked = 0, total = 0
+  d.rounds.forEach(r => r.matches.forEach(m => {
+    total++
+    if (m.originalPick) picked++
+  }))
+  return total > 0 && picked / total >= POOL_ELIGIBILITY_THRESHOLD
+}
+
 // Health hue: red-to-green. Calibrated against the historical health distribution
 // at the same tournament stage (n confirmed matches) — a bracket is green at/above
 // the historical gradient ceiling at this stage, red at/below the floor, and smoothly

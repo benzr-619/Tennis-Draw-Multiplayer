@@ -38,7 +38,7 @@ function buildAllTimeAgg(profs, draws, statsMaps) {
     let totalDH = 0, dhCount = 0
     statsMaps.forEach(sm => {
       const s = sm[prof.id]
-      if (!s?.hasAnyPicks) return
+      if (!s?.hasAnyPicks || !s?.poolEligible) return
       drawsPlayed++
       totalScore += s.score
       if (s.matchYield !== null) { totalMY += s.matchYield; myCount++ }
@@ -67,7 +67,7 @@ function buildAllBrackets(profs, draws, statsMaps) {
     const sm = statsMaps[i]
     profs.forEach(prof => {
       const s = sm[prof.id]
-      if (!s?.hasAnyPicks) return
+      if (!s?.hasAnyPicks || !s?.poolEligible) return
       out.push({ prof, draw, score: s.score, matchYield: s.matchYield, slamIndex: s.slamIndex })
     })
   })
@@ -79,7 +79,7 @@ function buildPoolBestUpset(profs, draws, statsMaps) {
   draws.forEach((draw, i) => {
     statsMaps[i] && profs.forEach(prof => {
       const s = statsMaps[i][prof.id]
-      if (s?.bestUpset) all.push({ ...s.bestUpset, prof, draw })
+      if (s?.bestUpset && s?.poolEligible) all.push({ ...s.bestUpset, prof, draw })
     })
   })
   if (!all.length) return []
