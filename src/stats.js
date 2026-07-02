@@ -4,6 +4,7 @@ import { activeDraw, state, isMobile } from './state.js'
 import { calcStatsAsOf, calcChalkScore, isBackupPick, healthHue as _hHue } from './scoring.js'
 import { formatYield } from './odds.js'
 import { loadDrawStatsForAllUsers } from './leaderboard.js'
+import { nextScheduledLock, lockMissingPickCount, findLinkedLock, combinedMissingCount } from './lock.js'
 
 let statsRoundFilter = null
 let _countdownClickHandler = null
@@ -72,25 +73,23 @@ function _lockSvg() {
   return `<svg width="11" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>`
 }
 
-// True when the given lock schedule still covers at least one undecided match
-// with no matchPick — i.e. there's actually something left for the current
-// user to do before it fires. original_picks covers all of round 0.
-function _lockHasUnfilled(ls) {
-  const draw = state.draws.find(dr => dr.db_id === ls.draw_id)
-  if (!draw) return false
-  if (ls.lock_type === 'original_picks') {
-    return draw.rounds[0]?.matches.some(m => !m.matchPick && !m.winner) ?? false
-  }
-  if (ls.lock_type === 'backup_picks') {
-    const ri = ls.round_index
-    if (ri == null || !draw.rounds[ri]) return false
-    return draw.rounds[ri].matches.some((m, mi) => {
-      const inRange = (ls.match_index_start == null || mi >= ls.match_index_start) &&
-                      (ls.match_index_end == null || mi <= ls.match_index_end)
-      return inRange && !m.matchPick && !m.winner
-    })
-  }
-  return false
+// "Missing picks" walk-forward and MS/WS link detection live in lock.js — shared with
+// bracket.js's card glow/tag so this file never re-derives the range logic.
+
+// Given the draw-scoped "next lock" candidate, decides what the countdown should show:
+// the combined (own + linked) missing-pick count, and which lock a click should jump to
+// (whichever side — this draw or its linked counterpart — still has outstanding picks).
+function _urgency(candidate) {
+  if (!candidate) return { count: 0, clickTarget: null }
+  const ownMissing = lockMissingPickCount(candidate)
+  const linked = findLinkedLock(candidate)
+  const linkedMissing = linked ? lockMissingPickCount(linked) : 0
+  const clickTarget = ownMissing === 0 && linkedMissing > 0 ? linked : candidate
+  return { count: combinedMissingCount(candidate), clickTarget }
+}
+
+function _noPicksLabel(count) {
+  return `${count} NO PICK${count === 1 ? '' : 'S'}`
 }
 
 // ── COUNTDOWN ELEMENT BUILDER ──
@@ -111,17 +110,19 @@ export function buildCountdownEl(d, s, { compact = false, mobileIcon = false } =
     const totalMins = Math.max(0, Math.floor(msLeft / 60000))
     const hh = String(Math.floor(totalMins / 60)).padStart(2, '0')
     const mm = String(totalMins % 60).padStart(2, '0')
-    const stats = s || calcStatsAsOf(d, null)
-    const allFilled = stats.filled === stats.total
+    const { count, clickTarget } = _urgency(origSched)
+    const allFilled = count === 0
     const urgentCls = !allFilled ? ' countdown-urgent' : ''
     const hasEAL = d.rounds[0]?.matches.some(m => m.editedAfterLock && !m.winner)
     const hasClick = !!_countdownClickHandler && (!allFilled || hasEAL)
+    const noPicksLbl = count > 0 ? _noPicksLabel(count) : null
 
     if (compact) {
       const el = document.createElement('div')
       el.className = 'sc-countdown' + (hasClick ? ' countdown-clickable' : '') + urgentCls
-      el.innerHTML = `<span class="sc-countdown-lbl${urgentCls}">picks lock in</span><span class="sc-countdown-row">${_lockSvg()}<span class="sc-countdown-txt${urgentCls}">${hh}:${mm}</span></span>`
-      if (hasClick) el.addEventListener('click', () => _countdownClickHandler(origSched))
+      const labelStr = noPicksLbl || 'picks lock in'
+      el.innerHTML = `<span class="sc-countdown-lbl${urgentCls}">${labelStr}</span><span class="sc-countdown-row">${_lockSvg()}<span class="sc-countdown-txt${urgentCls}">${hh}:${mm}</span></span>`
+      if (hasClick) el.addEventListener('click', () => _countdownClickHandler(clickTarget || origSched))
       return el
     }
 
@@ -129,8 +130,10 @@ export function buildCountdownEl(d, s, { compact = false, mobileIcon = false } =
       const el = document.createElement('div')
       el.className = 'stat-pill countdown-pill' + (hasClick ? ' countdown-clickable' : '') + urgentCls
       el.style.cssText = 'flex-direction:column;align-items:flex-end;gap:1px'
-      if (hasClick) el.addEventListener('click', () => _countdownClickHandler(origSched))
-      const labelHTML = origSched.label ? `<span class="countdown-lbl${urgentCls}">${origSched.label}</span>` : ''
+      if (hasClick) el.addEventListener('click', () => _countdownClickHandler(clickTarget || origSched))
+      const labelHTML = noPicksLbl
+        ? `<span class="countdown-lbl${urgentCls}">${noPicksLbl}</span>`
+        : (origSched.label ? `<span class="countdown-lbl${urgentCls}">${origSched.label}</span>` : '')
       el.innerHTML = `${labelHTML}<span class="sval countdown-val${urgentCls}" style="display:flex;align-items:center;gap:4px">${_lockSvg()}${hh}:${mm}</span>`
       return el
     }
@@ -138,25 +141,16 @@ export function buildCountdownEl(d, s, { compact = false, mobileIcon = false } =
     const el = document.createElement('div')
     el.className = 'stat-pill countdown-pill' + (hasClick ? ' countdown-clickable' : '') + urgentCls
     el.style.cssText = 'flex-direction:row;align-items:center;gap:10px'
-    if (hasClick) el.addEventListener('click', () => _countdownClickHandler(origSched))
-    el.innerHTML = `<span class="slbl" style="margin-bottom:0">picks lock in</span><span class="sval countdown-val${urgentCls}">${hh}:${mm}</span>`
+    if (hasClick) el.addEventListener('click', () => _countdownClickHandler(clickTarget || origSched))
+    el.innerHTML = `<span class="slbl" style="margin-bottom:0">${noPicksLbl || 'picks lock in'}</span><span class="sval countdown-val${urgentCls}">${hh}:${mm}</span>`
     return el
   }
 
-  // Post-lock: next backup picks lock. Priority: has unfilled picks > soonest > current draw's gender.
-  const allUpcoming = (state.lockSchedules || [])
-    .filter(ls => !ls.locked_at && ls.scheduled_at && new Date(ls.scheduled_at) > new Date())
-    .sort((a, b) => {
-      const aUnfilled = _lockHasUnfilled(a)
-      const bUnfilled = _lockHasUnfilled(b)
-      if (aUnfilled !== bUnfilled) return aUnfilled ? -1 : 1
-      const diff = new Date(a.scheduled_at) - new Date(b.scheduled_at)
-      if (diff !== 0) return diff
-      if (a.draw_id === d.db_id && b.draw_id !== d.db_id) return -1
-      if (b.draw_id === d.db_id && a.draw_id !== d.db_id) return 1
-      return 0
-    })
-  const upcoming = allUpcoming[0]
+  // Post-lock: draw's own next scheduled backup lock, pure chronological order.
+  // (Cross-gender awareness comes from findLinkedLock/_urgency, not from reordering
+  // this pick — a reordering-by-unfilled workaround used to bury genuinely-next locks
+  // whose matches were still TBD vs TBD.)
+  const upcoming = nextScheduledLock(d.db_id)
   if (!upcoming) return null
 
   const msLeft = new Date(upcoming.scheduled_at) - Date.now()
@@ -165,16 +159,18 @@ export function buildCountdownEl(d, s, { compact = false, mobileIcon = false } =
   const mm = String(totalMins % 60).padStart(2, '0')
   const displayTime = `${hh}h:${mm}m`
 
-  const allFilled = !_lockHasUnfilled(upcoming)
+  const { count, clickTarget } = _urgency(upcoming)
+  const allFilled = count === 0
   const urgentCls = !allFilled ? ' countdown-urgent' : ''
   const hasClick = !allFilled && _countdownClickHandler
+  const noPicksLbl = count > 0 ? _noPicksLabel(count) : null
 
   if (compact) {
     const el = document.createElement('div')
     el.className = 'sc-countdown' + (hasClick ? ' countdown-clickable' : '') + urgentCls
-    const labelStr = upcoming.label || 'next lock'
+    const labelStr = noPicksLbl || upcoming.label || 'next lock'
     el.innerHTML = `<span class="sc-countdown-lbl${urgentCls}">${labelStr}</span><span class="sc-countdown-row">${_lockSvg()}<span class="sc-countdown-txt${urgentCls}">${displayTime}</span></span>`
-    if (hasClick) el.addEventListener('click', () => _countdownClickHandler(upcoming))
+    if (hasClick) el.addEventListener('click', () => _countdownClickHandler(clickTarget))
     return el
   }
 
@@ -182,24 +178,24 @@ export function buildCountdownEl(d, s, { compact = false, mobileIcon = false } =
     const el = document.createElement('div')
     el.className = 'stat-pill countdown-pill' + (hasClick ? ' countdown-clickable' : '') + urgentCls
     el.style.cssText = 'flex-direction:column;align-items:flex-end;gap:1px'
-    if (hasClick) el.addEventListener('click', () => _countdownClickHandler(upcoming))
-    const labelHTML = upcoming.label
-      ? `<span class="countdown-lbl${urgentCls}" style="font-style:italic">${upcoming.label}</span>`
-      : ''
+    if (hasClick) el.addEventListener('click', () => _countdownClickHandler(clickTarget))
+    const labelHTML = noPicksLbl
+      ? `<span class="countdown-lbl${urgentCls}">${noPicksLbl}</span>`
+      : (upcoming.label ? `<span class="countdown-lbl${urgentCls}" style="font-style:italic">${upcoming.label}</span>` : '')
     el.innerHTML = `${labelHTML}<span class="sval countdown-val${urgentCls}" style="display:flex;align-items:center;gap:4px">${_lockSvg()}${displayTime}</span>`
     return el
   }
 
-  const labelText = upcoming.label
-    ? `next lock: <span style="font-style:italic">${upcoming.label}</span>`
-    : 'next lock'
+  const labelText = noPicksLbl
+    ? noPicksLbl
+    : (upcoming.label ? `next lock: <span style="font-style:italic">${upcoming.label}</span>` : 'next lock')
 
   const el = document.createElement('div')
   el.className = 'stat-pill countdown-pill' + urgentCls
   el.style.cssText = 'flex-direction:row;align-items:center;gap:10px'
   if (hasClick) {
     el.classList.add('countdown-clickable')
-    el.addEventListener('click', () => _countdownClickHandler(upcoming))
+    el.addEventListener('click', () => _countdownClickHandler(clickTarget))
   }
   el.innerHTML = `<span class="countdown-lbl${urgentCls}">${labelText}</span><span class="sval countdown-val${urgentCls}">${displayTime}</span>`
   return el

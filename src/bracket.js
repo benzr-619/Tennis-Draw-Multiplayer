@@ -3,7 +3,7 @@
 import { state, activeDraw } from './state.js'
 import { isBackupPick, isAutoAssign, withdrawnNames, eloFavourite } from './scoring.js'
 import { handlePickClick, savePickToSupabase, findSeed } from './picks.js'
-import { isMatchLocked } from './lock.js'
+import { isMatchLocked, nextScheduledLock, isMatchInLockRange, matchNeedsPick } from './lock.js'
 import { renderStats } from './stats.js'
 import { renderBracketLayout } from './bracket-layout.js'
 import { formatAmerican } from './odds.js'
@@ -245,18 +245,17 @@ export function placeCard(d, m, ri, mi, x, y, wrap) {
     card.appendChild(lbl)
   })
 
-  // ── BACKUP PICK GLOW ──
-  const upcomingBackupLock = state.lockSchedules.find(ls =>
-    ls.lock_type === 'backup_picks' &&
-    !ls.locked_at &&
-    ls.scheduled_at &&
-    new Date(ls.scheduled_at) > Date.now() &&
-    ls.round_index === ri &&
-    (ls.match_index_start == null || mi >= ls.match_index_start) &&
-    (ls.match_index_end == null || mi <= ls.match_index_end)
-  )
-  if (upcomingBackupLock && !m.matchPick && !m.winner) {
+  // ── BACKUP PICK URGENCY: outer glow + "NO PICK" tag ──
+  // Card border glows and gets a tag when it sits in the draw's next scheduled backup
+  // lock's range and still has no pick — players inside render in their normal/true
+  // state, nothing about them changes. Shared range/missing-pick check lives in lock.js.
+  const nextLock = nextScheduledLock(d.db_id)
+  if (nextLock && nextLock.lock_type === 'backup_picks' && isMatchInLockRange(nextLock, ri, mi) && matchNeedsPick(m)) {
     card.classList.add('needs-backup-pick')
+    const tag = document.createElement('div')
+    tag.className = 'mc-no-pick-tag'
+    tag.textContent = 'No Pick'
+    card.appendChild(tag)
   }
 
   wrap.appendChild(card)

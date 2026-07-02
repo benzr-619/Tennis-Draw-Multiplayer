@@ -16,9 +16,29 @@ Functions that must always filter by `ls.draw_id === d.db_id`:
 
 ## Lock Countdown in `renderStats()`
 
-Scans `state.lockSchedules` for the nearest upcoming unlocked row **for the active draw** (`ls.draw_id === d.db_id`). Pre-lock state also checks for an `original_picks` row and appends its countdown before the early return.
+`buildCountdownEl()` (stats.js) picks the draw's next upcoming unlocked row via `nextScheduledLock(d.db_id)` (lock.js) — **pure chronological order, draw-scoped, no reordering**. A prior version sorted "has unfilled picks" ahead of soonest-scheduled as a cross-gender-awareness workaround; that broke pre-scheduling — a future round with undetermined players (TBD vs TBD) got permanently pulled to the front regardless of its actual time, burying the real next lock. Reverted 2026-07-02; cross-gender awareness is now handled by linked-lock detection (below), which doesn't require reordering.
 
-Sub-hour shows minutes; sub-day shows hours. Countdown label pulses accent color until all affected picks are filled. Match cards in the upcoming lock's range glow purple if no active pick.
+Sub-hour shows minutes; sub-day shows hours.
+
+## Backup-Pick Urgency (glow + tag + count) — reworked 2026-07-02
+
+Shared "missing pick, in range" logic lives in **lock.js**, used by both the bracket card painter and the countdown — never duplicated:
+- `matchNeedsPick(m)` — `!m.matchPick && !m.winner`
+- `isMatchInLockRange(ls, ri, mi)` — round/match-index membership test
+- `missingPicksForLock(ls)` / `lockMissingPickCount(ls)` — walk a lock's own draw/round/range
+- `nextScheduledLock(drawId)` — draw-scoped, chronological "next lock"
+- `findLinkedLock(ls)` — display-layer-only MS/WS pairing (see below)
+- `combinedMissingCount(ls)` — `ls`'s own missing count + its linked counterpart's, if any
+
+**Card treatment (`bracket.js` `placeCard`):** cards inside the draw's `nextScheduledLock`'s range with `matchNeedsPick(m)` true get `.needs-backup-pick` — an outer border/glow only (`border-color:var(--purple)` + `box-shadow`). Player rows inside render in their normal/true state, no background fill. A small muted `.mc-no-pick-tag` ("NO PICK", DM Mono 9px uppercase, `var(--text3)`) is appended to the card; it disappears the instant a pick is set (next render just won't add it).
+
+**Countdown label override:** when `_urgency(lock)` (stats.js, wraps `combinedMissingCount`/`findLinkedLock`) finds ≥1 missing pick for the current player, the countdown label (`.sc-countdown-lbl` desktop compact / mirrored `#mobile-countdown-wrap` label) is replaced with `"N NO PICKS"` (singular `"1 NO PICK"`), overriding whatever would normally show (commissioner schedule label, or the generic "picks lock in"/"next lock" default). Reverts automatically once all of that player's picks in range are filled. Applies to both the pre-lock `original_picks` countdown and the post-lock `backup_picks` countdown.
+
+## MS/WS Linked Locks (display-layer only)
+
+`findLinkedLock(ls)` treats an MS `lock_schedules` row and a WS row as one event when they share the same `scheduled_at` **and** `lock_type` — no schema change, no merging of the underlying rows, and every actual lock-enforcement check (`isMatchLocked`, `fire_scheduled_locks`, etc.) stays fully per-row and draw-scoped exactly as before. Linking only affects:
+- The "N NO PICKS" count — combines both draws' missing counts into one number (it's functionally one deadline).
+- Countdown click-navigation — `_urgency()` picks whichever side (own draw or linked draw) still has outstanding picks as the click target, so clicking jumps to wherever the work actually is. Unlinked locks always navigate to their own draw as before.
 
 ## Scheduled Locks List (Backup Picks)
 
