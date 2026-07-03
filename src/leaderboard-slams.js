@@ -176,7 +176,7 @@ function _buildCards(mwRow, group, allMaps, profs, color, baseline, isActive) {
         const rows = [...table.querySelectorAll('[data-uid]')]
         rows.sort((a, b) => {
           const va = parseFloat(a.dataset[col]) ?? -Infinity, vb = parseFloat(b.dataset[col]) ?? -Infinity
-          if (va !== vb) return (va < vb ? -1 : 1) * slamSort.dir * -1
+          if (va !== vb) return (va < vb ? -1 : 1) * slamSort.dir
           return parseFloat(b.dataset.drawHealth ?? -1) - parseFloat(a.dataset.drawHealth ?? -1)
         })
         rows.forEach(r => table.appendChild(r))
@@ -225,7 +225,7 @@ function _buildCard(draw, profs, statsMap, color, baseline, isActive) {
     .sort((a, b) => {
       const va = statsMap[a.id]?.[slamSort.col] ?? -Infinity
       const vb = statsMap[b.id]?.[slamSort.col] ?? -Infinity
-      if (va !== vb) return vb - va
+      if (va !== vb) return (va < vb ? -1 : 1) * slamSort.dir
       return (statsMap[b.id]?.drawHealth ?? -1) - (statsMap[a.id]?.drawHealth ?? -1)
     })
 
@@ -262,7 +262,9 @@ function _buildCard(draw, profs, statsMap, color, baseline, isActive) {
         const old = baseline[draw.db_id + ':' + prof.id], cur = rank + 1
         if (old && old !== cur) {
           const arr = document.createElement('span')
-          arr.className = old > cur ? 'lb-arrow-up' : 'lb-arrow-dn'; arr.textContent = old > cur ? ' ▲' : ' ▼'
+          const delta = Math.abs(old - cur)
+          arr.className = old > cur ? 'lb-arrow-up' : 'lb-arrow-dn'
+          arr.textContent = (old > cur ? ' ▲' : ' ▼') + delta
           rnkEl.appendChild(arr)
         }
       }
@@ -332,7 +334,7 @@ function _buildChipsRow(section, group, allMaps, profs) {
   const upsetEntries = []
   profs.forEach(p => group.draws.forEach(d => {
     const s = allMaps.get(d.db_id)?.[p.id]
-    if (s?.bestUpset) upsetEntries.push({ ...s.bestUpset, draw: d, prof: p })
+    if (s?.bestUpset && s?.poolEligible) upsetEntries.push({ ...s.bestUpset, draw: d, prof: p })
   }))
   const cA = _mkChip('BIGGEST UPSET')
   if (!upsetEntries.length) { cA.appendChild(_emptyChip()) } else {
@@ -359,7 +361,7 @@ function _buildChipsRow(section, group, allMaps, profs) {
     let totalFlatYield = 0, totalResolved = 0
     group.draws.forEach(d => {
       const s = allMaps.get(d.db_id)?.[p.id]
-      if (!s) return
+      if (!s || !s.poolEligible) return
       totalFlatYield += s.flatYield ?? 0
       totalResolved += s.flatYieldResolved ?? 0
     })

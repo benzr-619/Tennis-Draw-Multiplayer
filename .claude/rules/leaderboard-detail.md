@@ -45,6 +45,41 @@ returns `total > 0 && picked/total >= POOL_ELIGIBILITY_THRESHOLD`. Two call patt
 counts — no backfill migration, applies automatically to all historical draws on next
 render.
 
+**Gap found and fixed 2026-07-03:** the Slams tab storyline chips (`_buildChipsRow`
+in leaderboard-slams.js — "Biggest Upset" and "Best Match Pick Value") built their
+entries directly from `s.bestUpset`/`s.flatYield` per prof per draw with no
+`poolEligible` check at all, unlike every other consumer of
+`loadDrawStatsForAllUsers`'s output. A pool-ineligible player (e.g. one with only a
+handful of picks that happened to hit good locked odds) could still win "Best Match
+Pick Value" or "Biggest Upset" even though excluded from every ranked table on the
+same screen. Fixed by gating both chips' entry-collection loops on `s.poolEligible`,
+same as every other call site. **Any new Slams-tab chip/list that reads per-user
+per-draw stats must gate on `poolEligible` explicitly — it is never implied by
+`bestUpset`/`flatYield` being present.**
+
+## Sort Direction Bug — inverted comparator (fixed 2026-07-03)
+
+Two sortable tables had an inverted click-sort comparator:
+`buildDetailTable` in leaderboard.js (`lbSort`) and the card click-reorder handler
+in leaderboard-slams.js (`slamSort`) used `(va < vb ? -1 : 1) * dir * -1`. The
+trailing `* -1` inverted the actual sort vs. what the `↓`/`↑` arrow displayed —
+clicking a column showed lowest-first while the arrow implied descending. The
+correct formula (matching the already-correct `recSort` comparator in
+leaderboard-records.js) is `(va < vb ? -1 : 1) * dir`, with no trailing negation.
+`leaderboard-slams.js`'s per-render `sortedProfs` sort (used on every full
+re-render, not just the DOM-patch click path) was also hardcoded to always sort
+descending regardless of `slamSort.dir` — fixed to respect `dir` too, so a
+re-render doesn't silently revert an ascending sort back to descending.
+
+## Movement Arrows — added magnitude (2026-07-03)
+
+The Slams tab rank-change arrow (▲/▼ next to `#N`) only showed direction, not how
+far a player moved. Now appends `Math.abs(old - cur)` to the arrow text (e.g. `▲2`),
+computed in the same `baseline`/`old`/`cur` block in `_buildCard`. The underlying
+"since when" semantics were already correct and unchanged: `baseline` = rank as of
+`calcStatsAsOf(ud, R-1)` where `R` = deepest round with any confirmed winner — i.e.
+rank right before the first result of the current round landed.
+
 ## ASI Gotcha — leading `[` after an unterminated statement (fixed 2026-06-26)
 
 `src/leaderboard-records.js` uses semicolon-free style. Any statement immediately followed by a line that begins with `[` (an array literal you intend as a new statement) will be mis-parsed as index access on the previous expression. `buildPodium` crashed with `Cannot read properties of undefined (reading 'forEach')` because `wrap.className = 'rec-podium'` (no semicolon) chained into `[[top3...]].forEach` → `'rec-podium'[...].forEach`. Fix: prefix the array-literal statement with a leading `;` (idiom already used at the `;['all', ..._recYears]` line). Same applies to lines starting with `(`.
@@ -309,3 +344,20 @@ Notes:
 - "MATCH YLD" text at 9px DM Mono is slightly wider than 56px and overflows visually with `overflow:visible` — not clipped, looks fine in practice. No letter-spacing fix needed.
 - `.lb-chip-row{grid-template-columns:1fr}` stacks storyline chips to single column at ≤768px (side-by-side at desktop).
 - `.lb-past-top3{order:3}` pins the top-3 names to a new second row while "VIEW →" (margin-left:auto) stays right on row 1.
+
+**`.lb-cell-name` overflow with YOU badge — single-word display names (fixed 2026-07-03):**
+`.lb-row-card`'s numeric columns appeared shifted/blank specifically on the current
+user's own row on mobile. Root cause: `.lb-cell-name` is a flex row (rank + name +
+optional `.rec-you-badge`) sitting in the grid's `1fr` name column. A flex item's
+default `min-width:auto` floors its shrink at its *min-content* size — for a display
+name with a space (`"Joseph Spector"`) that's just the widest word, so it wraps fine;
+for an unbroken single-word name (`"VibesArchitect"`, `"ClutchMoves"`) there's no
+break opportunity, so min-content is the *entire word*. Add the YOU badge's width on
+top and the row's true minimum exceeds the narrow mobile `1fr` track, forcing the grid
+to overflow and visually push the fixed-width stat columns rightward — only ever
+visible on the one row carrying the badge (the logged-in user), which is why it looked
+like a YOU-tag-specific bug rather than a name-length one. Fixed with `min-width:0` on
+`.lb-cell-name` and `.lb-player-name` (lets the flex item shrink below min-content) plus
+`overflow-wrap:anywhere` on `.lb-player-name` (lets an unbroken word wrap mid-word when
+truly out of room) and `flex-shrink:0;white-space:nowrap` on `.rec-you-badge` +
+`.lb-rank` (so the badge/rank never get crushed instead of the name).

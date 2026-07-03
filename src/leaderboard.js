@@ -386,7 +386,7 @@ function buildDetailTable(cols, profs, statsMap, draw) {
       const va = statsMap[a.id]?.[sortKey] ?? -Infinity
       const vb = statsMap[b.id]?.[sortKey] ?? -Infinity
       if (va === vb) return 0
-      return (va < vb ? -1 : 1) * lbSort.dir * -1
+      return (va < vb ? -1 : 1) * lbSort.dir
     })
 
   // Header

@@ -186,12 +186,30 @@ manually confirm it again — the poller will keep writing `score`/`espn_state` 
 will never silently re-set `winner`.
 
 `fetch_espn_scores()` calls `auto_confirm_match` only when: `scores_autoconfirm_enabled`
-is true (read once per run from `app_settings`), the competition is
-`completed=true` AND `status.type.name = 'STATUS_FINAL'` (retirements/walkovers are
-explicitly excluded from v1 — a human should eyeball those), and a winner name
-resolved. Verified end-to-end (including the suppression/no-op guards) via a
-transaction that was rolled back afterward — never actually flipped the flag or
-touched live production picks during development.
+is true (read once per run from `app_settings`), the competition is `completed=true`
+AND `status.type.name` is one of `STATUS_FINAL` / `STATUS_RETIRED` / `STATUS_WALKOVER`
+(broadened 2026-07-03 — all three give an unambiguous ESPN-reported winner, so there's
+no reason to hold retirements/walkovers back from auto-confirm; the score string still
+carries the `" Ret."`/`"Walkover"` marker either way, human-visible on the bracket card
+regardless of who confirmed it), and a winner name resolved. Verified end-to-end
+(including the suppression/no-op guards) via a transaction that was rolled back
+afterward — never actually flipped the flag or touched live production picks during
+development. **Enabled in production 2026-07-03** after 3 real match results came
+through correctly via the manual "ESPN ✓" badge sanity-check.
+
+**Suspension/interruption suffix (added 2026-07-03, unverified against a real live
+occurrence):** when `completed=false` and `status.type.name` is anything other than
+`STATUS_SCHEDULED`/`STATUS_IN_PROGRESS`, the poller appends a suffix to the live score
+the same way `Ret.`/`Walkover` work for completed matches — `STATUS_DELAYED` →
+`" Delayed"`, `STATUS_SUSPENDED` → `" Susp."`, `STATUS_RAIN_DELAY` → `" Rain Delay"`,
+`STATUS_POSTPONED` → `" Postponed"`. These exact enum names are a best guess — none
+has been confirmed live yet (unlike `STATUS_RETIRED`/`STATUS_WALKOVER`, which were
+queried directly off real matches). Any other unrecognised non-final status.type.name
+is intentionally treated as a no-op — the live score just renders with no suffix,
+which is an acceptable fallback per Ben (2026-07-03) — and logs a `RAISE WARNING` with
+the full raw `status_type` (via `get_logs` → `postgres`) so the real name can be added
+once one is actually observed, mirroring how the abnormal-finish branch already
+handles unrecognised completed statuses.
 
 **Known gap, not built:** a server-side auto-confirm doesn't fire the client-side
 live health-band recompute (`_refreshBands` in picks.js only runs from the
