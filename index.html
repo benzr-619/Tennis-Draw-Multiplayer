@@ -1148,8 +1148,10 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
     </div>
     <!-- ── RESULTS PANE ── -->
     <div class="comm-tab-pane comm-tab-pane-bracket pane-active" id="comm-pane-results">
-      <!-- Health bands recompute status (live mode) -->
+      <!-- Health bands recompute status (live mode, transient toast) -->
       <div id="comm-bands-status" style="display:none;font-family:var(--mono);font-size:11px;color:var(--text3);padding:4px 12px"></div>
+      <!-- Health bands last-update status (persisted — survives reloads/sessions) -->
+      <div id="comm-bands-history-wrap"></div>
       <!-- ESPN Score Feed status + unmatched-name triage -->
       <div id="comm-espn-wrap"></div>
       <!-- Mobile round selector (hidden on desktop) -->

@@ -7,12 +7,14 @@ import { state, activeDraw, applyTheme } from './state.js'
 import { loadAllDraws, reloadActiveDraw, slamLabel, slamKey } from './data.js'
 import { extractPdfText, parseTnnsText } from './parser.js'
 import { $c, escHtml } from './commissioner-shared.js'
-import { renderResults, setPendingSearch } from './commissioner-results.js'
+import { renderResults, setPendingSearch, renderHealthBandsStatusSection } from './commissioner-results.js'
 import { renderLockManaging } from './commissioner-locks.js'
 import { renderOddsTab } from './commissioner-odds.js'
 import { renderEspnScoreFeedSection } from './commissioner-scores.js'
 import { startResultsRealtime, stopResultsRealtime } from './realtime.js'
 import { animateSegThumb } from './seg-thumb.js'
+import { refreshHealthBands } from './picks.js'
+import { updateBandAtN } from './health-bands.js'
 
 export { renderResults } from './commissioner-results.js'
 export { renderLockManaging } from './commissioner-locks.js'
@@ -27,10 +29,29 @@ let _healthBandsExpanded = false
 
 // ── REALTIME (stage 3: commissioner Results tab — see .claude/rules/realtime.md) ──
 // Pure visibility: reload the active draw (winner/score/espn_state/espn_winner) and
-// re-render Results. Never confirms anything itself.
+// re-render Results. Never confirms anything itself EXCEPT for bridging the health-band
+// recompute — server-side ESPN auto-confirm (scores_autoconfirm_enabled) writes
+// matches.winner directly via SQL, so there's no browser-side applyWinner call to
+// trigger picks.js's live band recompute. This detects a newly-appeared winner (one
+// this session hadn't already seen) after reload and runs the same refreshHealthBands
+// path a manual confirm gets, sourced as 'auto-confirm' so the Results-tab status card
+// can distinguish it. See .claude/rules/health-bands.md and .claude/rules/scores-feed.md.
+function _snapshotWinners(d) {
+  const s = new Set()
+  d?.rounds.forEach(r => r.matches.forEach(m => { if (m.winner && m.db_id) s.add(m.db_id) }))
+  return s
+}
+
 async function _onResultsRealtimeChange() {
+  const before = _snapshotWinners(activeDraw())
   await reloadActiveDraw()
   renderResults()
+
+  const d = activeDraw()
+  if (d && state.currentUser?.is_commissioner) {
+    const hasNewWinner = d.rounds.some(r => r.matches.some(m => m.winner && m.db_id && !before.has(m.db_id)))
+    if (hasNewWinner) refreshHealthBands(updateBandAtN, d, () => {}, 'auto-confirm')
+  }
 }
 
 function _isResultsTabActive() {
@@ -43,6 +64,7 @@ export function initCommissioner() {
   renderCommHeader()
   renderResults()
   renderEspnScoreFeedSection()
+  renderHealthBandsStatusSection()
   if (_isResultsTabActive()) startResultsRealtime(activeDraw()?.db_id, _onResultsRealtimeChange)
 
   if (_initialized) return
@@ -72,7 +94,7 @@ export function initCommissioner() {
       stopResultsRealtime() // re-scoped below only if the results tab is what's now showing
       if (tab === 'lock') renderLockManaging()
       if (tab === 'results') {
-        renderResults(); renderEspnScoreFeedSection()
+        renderResults(); renderEspnScoreFeedSection(); renderHealthBandsStatusSection()
         startResultsRealtime(activeDraw()?.db_id, _onResultsRealtimeChange)
       }
       if (tab === 'odds') renderOddsTab()
@@ -150,7 +172,7 @@ export function renderCommHeader() {
         else if (activeTab === 'odds') renderOddsTab()
         else if (activeTab === 'draw') { const ad = activeDraw(); if (ad) renderPickCompletion(ad) }
         else {
-          renderResults(); renderEspnScoreFeedSection()
+          renderResults(); renderEspnScoreFeedSection(); renderHealthBandsStatusSection()
           startResultsRealtime(activeDraw()?.db_id, _onResultsRealtimeChange) // re-scope to the newly selected M/W draw
         }
       })
@@ -508,6 +530,7 @@ async function handleInitBands() {
       msg.textContent = `Done — ${p.totalDraws} draws, ${p.sampleCount} samples in ${(p.durationMs / 1000).toFixed(1)}s`
       if (btn) btn.disabled = false
       _refreshHealthBandsCache()
+      renderHealthBandsStatusSection()
     } else {
       msg.textContent = `Computing… (draw ${p.draw}/${p.totalDraws})`
     }
@@ -557,6 +580,7 @@ async function handleSwitchToGettingReady() {
           bm.className = 'comm-msg success'
           bm.textContent = `Health bands recomputed — ${p.totalDraws} draws, ${p.sampleCount} samples in ${(p.durationMs / 1000).toFixed(1)}s`
           _refreshHealthBandsCache()
+          renderHealthBandsStatusSection()
         } else {
           bm.className = 'comm-msg'
           bm.textContent = `Recomputing health bands… (draw ${p.draw}/${p.totalDraws})`

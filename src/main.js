@@ -12,7 +12,8 @@ import { renderLeaderboard, clearStatsCache } from './leaderboard.js'
 import { animateSegThumb } from './seg-thumb.js'
 import { supabase } from './supabase.js'
 import { simulateEloFill } from './elo.js'
-import { savePickToSupabase } from './picks.js'
+import { savePickToSupabase, refreshHealthBands } from './picks.js'
+import { updateBandAtN } from './health-bands.js'
 import { buildDrawView } from './draw-view.js'
 
 // ── INIT ──
@@ -73,16 +74,31 @@ function _stopResultsPoll() {
 // scroll position captured and restored around the destructive renderBracket()
 // rebuild (CLAUDE.md §12) so an unprompted push update doesn't yank the view back
 // to the top of the bracket mid-scroll.
+// Same auto-confirm health-band bridge as commissioner.js's Results-tab realtime
+// handler — see the comment there. Kept here too since the commissioner may have the
+// bracket screen open (not Results) when ESPN auto-confirms a match.
+function _snapshotWinners(d) {
+  const s = new Set()
+  d?.rounds.forEach(r => r.matches.forEach(m => { if (m.winner && m.db_id) s.add(m.db_id) }))
+  return s
+}
+
 async function _realtimeRebuild() {
   const scroller = $('bracket-body')
   const scrollTop = scroller?.scrollTop ?? null
   const scrollLeft = scroller?.scrollLeft ?? null
+  const before = _snapshotWinners(activeDraw())
   await reloadActiveDraw()
   renderStats()
   renderBracketDisplay()
   if (scroller && scrollTop !== null) {
     scroller.scrollTop = scrollTop
     scroller.scrollLeft = scrollLeft
+  }
+  const d = activeDraw()
+  if (d && state.currentUser?.is_commissioner) {
+    const hasNewWinner = d.rounds.some(r => r.matches.some(m => m.winner && m.db_id && !before.has(m.db_id)))
+    if (hasNewWinner) refreshHealthBands(updateBandAtN, d, renderStats, 'auto-confirm')
   }
 }
 

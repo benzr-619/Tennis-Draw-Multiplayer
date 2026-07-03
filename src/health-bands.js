@@ -140,6 +140,27 @@ async function recomputeBandForN(n) {
   if (error) throw error
 }
 
+// ── STATUS TRACKING (persisted) ──
+// Separate from the transient 5s toast in the Results tab (commissioner-results.js
+// onBandsUpdating/onBandsUpdated) — this survives reloads and different sessions, so
+// the commissioner can judge from the Results tab, at any time, how long the live
+// per-match recompute (HEALTH_BANDS_LIVE_MODE) is actually taking and decide when it's
+// safe to rely on between-slams calibration instead. `source` distinguishes what
+// triggered the recompute: 'commissioner-confirm' / 'commissioner-undo' (manual),
+// 'auto-confirm' (ESPN auto-confirm bridged in from the Results-tab realtime
+// subscription — see commissioner.js), 'initialize', 'between-slams'.
+async function _recordBandStatus(source, patch) {
+  const row = { id: 1, last_attempt: new Date().toISOString(), last_source: source, ...patch }
+  const { error } = await supabase.from('health_bands_status').upsert(row, { onConflict: 'id' })
+  if (error) console.warn('[health-bands] status write failed', error)
+}
+
+export async function loadHealthBandsStatus() {
+  const { data, error } = await supabase.from('health_bands_status').select('*').eq('id', 1).maybeSingle()
+  if (error) return null
+  return data
+}
+
 // ── DRAW LOADING ──
 async function fetchAllDrawRows() {
   const { data, error } = await supabase
@@ -198,24 +219,30 @@ async function simulateDraw(baseDraw, drawId, profs, orderedIds, isSynthetic) {
 // Simulates every draw × every user, marks all samples synthetic, recomputes bands.
 export async function initializeAllBands(onProgress) {
   const t0 = Date.now()
-  const drawRows = await fetchAllDrawRows()
-  const profs = await loadAllProfiles()
-  let sampleCount = 0
+  try {
+    const drawRows = await fetchAllDrawRows()
+    const profs = await loadAllProfiles()
+    let sampleCount = 0
 
-  for (let i = 0; i < drawRows.length; i++) {
-    const dr = drawRows[i]
-    const baseDraw = await loadDraw(dr)
-    const orderedIds = await orderedConfirmedIds(dr.id)
-    const samples = await simulateDraw(baseDraw, dr.id, profs, orderedIds, true)
-    await upsertSamples(samples)
-    sampleCount += samples.length
-    if (onProgress) onProgress({ draw: i + 1, totalDraws: drawRows.length, done: false })
+    for (let i = 0; i < drawRows.length; i++) {
+      const dr = drawRows[i]
+      const baseDraw = await loadDraw(dr)
+      const orderedIds = await orderedConfirmedIds(dr.id)
+      const samples = await simulateDraw(baseDraw, dr.id, profs, orderedIds, true)
+      await upsertSamples(samples)
+      sampleCount += samples.length
+      if (onProgress) onProgress({ draw: i + 1, totalDraws: drawRows.length, done: false })
+    }
+
+    await recomputeAllBands()
+    const durationMs = Date.now() - t0
+    await _recordBandStatus('initialize', { last_ok: new Date().toISOString(), last_duration_ms: durationMs, last_n: null, sample_count: sampleCount, last_error: null })
+    if (onProgress) onProgress({ done: true, durationMs, sampleCount, totalDraws: drawRows.length })
+    return { durationMs, sampleCount, totalDraws: drawRows.length }
+  } catch (err) {
+    await _recordBandStatus('initialize', { last_duration_ms: Date.now() - t0, last_error: String(err?.message || err) })
+    throw err
   }
-
-  await recomputeAllBands()
-  const durationMs = Date.now() - t0
-  if (onProgress) onProgress({ done: true, durationMs, sampleCount, totalDraws: drawRows.length })
-  return { durationMs, sampleCount, totalDraws: drawRows.length }
 }
 
 // ── BETWEEN-SLAMS RECOMPUTE ──
@@ -225,84 +252,103 @@ export async function initializeAllBands(onProgress) {
 // force-includes draws that may have no samples yet.
 export async function addSlamToBands(completedDrawIds, onProgress) {
   const t0 = Date.now()
+  try {
+    const synthRows = await fetchAllRows(
+      supabase.from('health_band_samples').select('draw_id').eq('is_synthetic', true)
+    )
+    const resim = new Set(synthRows.map(r => r.draw_id))
+    ;(completedDrawIds || []).forEach(id => resim.add(id))
+    const ids = [...resim]
 
-  const synthRows = await fetchAllRows(
-    supabase.from('health_band_samples').select('draw_id').eq('is_synthetic', true)
-  )
-  const resim = new Set(synthRows.map(r => r.draw_id))
-  ;(completedDrawIds || []).forEach(id => resim.add(id))
-  const ids = [...resim]
+    const profs = await loadAllProfiles()
+    let sampleCount = 0
 
-  const profs = await loadAllProfiles()
-  let sampleCount = 0
+    for (let i = 0; i < ids.length; i++) {
+      const drawId = ids[i]
+      const dr = await fetchDrawRow(drawId)
+      if (!dr) { if (onProgress) onProgress({ draw: i + 1, totalDraws: ids.length, done: false }); continue }
 
-  for (let i = 0; i < ids.length; i++) {
-    const drawId = ids[i]
-    const dr = await fetchDrawRow(drawId)
-    if (!dr) { if (onProgress) onProgress({ draw: i + 1, totalDraws: ids.length, done: false }); continue }
+      // Delete stale samples for this draw, then re-simulate with real ordering.
+      await supabase.from('health_band_samples').delete().eq('draw_id', drawId)
+      const baseDraw = await loadDraw(dr)
+      const orderedIds = await orderedConfirmedIds(drawId)
+      const samples = await simulateDraw(baseDraw, drawId, profs, orderedIds, false)
+      await upsertSamples(samples)
+      sampleCount += samples.length
+      if (onProgress) onProgress({ draw: i + 1, totalDraws: ids.length, done: false })
+    }
 
-    // Delete stale samples for this draw, then re-simulate with real ordering.
-    await supabase.from('health_band_samples').delete().eq('draw_id', drawId)
-    const baseDraw = await loadDraw(dr)
-    const orderedIds = await orderedConfirmedIds(drawId)
-    const samples = await simulateDraw(baseDraw, drawId, profs, orderedIds, false)
-    await upsertSamples(samples)
-    sampleCount += samples.length
-    if (onProgress) onProgress({ draw: i + 1, totalDraws: ids.length, done: false })
+    await recomputeAllBands()
+    const durationMs = Date.now() - t0
+    await _recordBandStatus('between-slams', { last_ok: new Date().toISOString(), last_duration_ms: durationMs, last_n: null, sample_count: sampleCount, last_error: null })
+    if (onProgress) onProgress({ done: true, durationMs, sampleCount, totalDraws: ids.length })
+    return { durationMs, sampleCount, totalDraws: ids.length }
+  } catch (err) {
+    await _recordBandStatus('between-slams', { last_duration_ms: Date.now() - t0, last_error: String(err?.message || err) })
+    throw err
   }
-
-  await recomputeAllBands()
-  const durationMs = Date.now() - t0
-  if (onProgress) onProgress({ done: true, durationMs, sampleCount, totalDraws: ids.length })
-  return { durationMs, sampleCount, totalDraws: ids.length }
 }
 
 // ── LIVE PER-MATCH UPDATE ──
 // Called after each match confirmation (live mode). Recomputes only the active
 // draw's contribution to band n; historical samples at n are already stored.
-export async function updateBandAtN(n, activeDraw, userIds) {
+export async function updateBandAtN(n, activeDraw, userIds, source = 'commissioner-confirm') {
   const t0 = Date.now()
-  const orderedIds = await orderedConfirmedIds(activeDraw.db_id)
-  const set = new Set(orderedIds.slice(0, n))
-  const allPicks = await loadAllPicksForDraw(activeDraw.db_id)
-  const picksByUser = groupPicksByUser(allPicks)
+  try {
+    const orderedIds = await orderedConfirmedIds(activeDraw.db_id)
+    const set = new Set(orderedIds.slice(0, n))
+    const allPicks = await loadAllPicksForDraw(activeDraw.db_id)
+    const picksByUser = groupPicksByUser(allPicks)
 
-  const samples = []
-  for (const uid of userIds) {
-    const userPicks = picksByUser[uid] || []
-    if (!hasRealOriginalPicks(userPicks)) continue
-    const userDraw = assembleDrawForUser(activeDraw, userPicks)
-    const { maxHealthPts, reachableHealthPts } = calcHealthAtMatchSet(userDraw, set)
-    const health_pct = maxHealthPts > 0 ? reachableHealthPts / maxHealthPts * 100 : 0
-    samples.push({ n, draw_id: activeDraw.db_id, user_id: uid, health_pct, is_synthetic: false })
+    const samples = []
+    for (const uid of userIds) {
+      const userPicks = picksByUser[uid] || []
+      if (!hasRealOriginalPicks(userPicks)) continue
+      const userDraw = assembleDrawForUser(activeDraw, userPicks)
+      const { maxHealthPts, reachableHealthPts } = calcHealthAtMatchSet(userDraw, set)
+      const health_pct = maxHealthPts > 0 ? reachableHealthPts / maxHealthPts * 100 : 0
+      samples.push({ n, draw_id: activeDraw.db_id, user_id: uid, health_pct, is_synthetic: false })
+    }
+    await upsertSamples(samples)
+    await recomputeBandForN(n)
+    const durationMs = Date.now() - t0
+    await _recordBandStatus(source, { last_ok: new Date().toISOString(), last_duration_ms: durationMs, last_n: n, sample_count: samples.length, last_error: null })
+    return { durationMs }
+  } catch (err) {
+    await _recordBandStatus(source, { last_duration_ms: Date.now() - t0, last_n: n, last_error: String(err?.message || err) })
+    throw err
   }
-  await upsertSamples(samples)
-  await recomputeBandForN(n)
-  return { durationMs: Date.now() - t0 }
 }
 
 // ── REVERT (undoWinner) ──
 // Re-simulates the active draw at position n using synthetic ordering (the pre-undo
 // state), re-stamps samples as synthetic, recomputes band n only.
-export async function revertBandAtN(n, activeDraw, userIds) {
+export async function revertBandAtN(n, activeDraw, userIds, source = 'commissioner-undo') {
   const t0 = Date.now()
-  const orderedIds = syntheticOrderedConfirmedIds(activeDraw)
-  const set = new Set(orderedIds.slice(0, n))
-  const allPicks = await loadAllPicksForDraw(activeDraw.db_id)
-  const picksByUser = groupPicksByUser(allPicks)
+  try {
+    const orderedIds = syntheticOrderedConfirmedIds(activeDraw)
+    const set = new Set(orderedIds.slice(0, n))
+    const allPicks = await loadAllPicksForDraw(activeDraw.db_id)
+    const picksByUser = groupPicksByUser(allPicks)
 
-  const samples = []
-  for (const uid of userIds) {
-    const userPicks = picksByUser[uid] || []
-    if (!hasRealOriginalPicks(userPicks)) continue
-    const userDraw = assembleDrawForUser(activeDraw, userPicks)
-    const { maxHealthPts, reachableHealthPts } = calcHealthAtMatchSet(userDraw, set)
-    const health_pct = maxHealthPts > 0 ? reachableHealthPts / maxHealthPts * 100 : 0
-    samples.push({ n, draw_id: activeDraw.db_id, user_id: uid, health_pct, is_synthetic: true })
+    const samples = []
+    for (const uid of userIds) {
+      const userPicks = picksByUser[uid] || []
+      if (!hasRealOriginalPicks(userPicks)) continue
+      const userDraw = assembleDrawForUser(activeDraw, userPicks)
+      const { maxHealthPts, reachableHealthPts } = calcHealthAtMatchSet(userDraw, set)
+      const health_pct = maxHealthPts > 0 ? reachableHealthPts / maxHealthPts * 100 : 0
+      samples.push({ n, draw_id: activeDraw.db_id, user_id: uid, health_pct, is_synthetic: true })
+    }
+    await upsertSamples(samples)
+    await recomputeBandForN(n)
+    const durationMs = Date.now() - t0
+    await _recordBandStatus(source, { last_ok: new Date().toISOString(), last_duration_ms: durationMs, last_n: n, sample_count: samples.length, last_error: null })
+    return { durationMs }
+  } catch (err) {
+    await _recordBandStatus(source, { last_duration_ms: Date.now() - t0, last_n: n, last_error: String(err?.message || err) })
+    throw err
   }
-  await upsertSamples(samples)
-  await recomputeBandForN(n)
-  return { durationMs: Date.now() - t0 }
 }
 
 // ── READ ──

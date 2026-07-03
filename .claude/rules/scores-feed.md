@@ -211,9 +211,17 @@ the full raw `status_type` (via `get_logs` → `postgres`) so the real name can 
 once one is actually observed, mirroring how the abnormal-finish branch already
 handles unrecognised completed statuses.
 
-**Known gap, not built:** a server-side auto-confirm doesn't fire the client-side
-live health-band recompute (`_refreshBands` in picks.js only runs from the
-commissioner's own browser session via `applyWinner`/`undoWinner`). Bands will lag
-behind auto-confirmed results until the commissioner's next manual action or a
-between-slams `addSlamToBands()` pass. Intentionally deferred — see Prompt 6 in the
-original build spec.
+**Fixed 2026-07-03 (previously a known gap):** a server-side auto-confirm didn't fire
+the client-side live health-band recompute (`refreshHealthBands`, née `_refreshBands`,
+in picks.js only ran from the commissioner's own browser session via
+`applyWinner`/`undoWinner`). Two layers now cover this — see
+`.claude/rules/health-bands.md`:
+1. A client-side bridge (Results-tab/bracket-screen realtime handlers detect a
+   newly-appeared `winner` and call the same recompute path) — fast when a
+   commissioner tab happens to be open, but not reliable during a live tournament
+   when the commissioner workflow is front-loaded pre-tournament.
+2. **The actual fix**: `fetch_espn_scores()` calls a Supabase Edge Function
+   (`recompute-health-bands`) directly after every successful auto-confirm, with zero
+   browser dependency — see health-bands.md's "Serverless Auto-Confirm Path" for the
+   full architecture (why an Edge Function over plpgsql, the verbatim-copy approach
+   for Deno-incompatible imports, and the Vault-secret + `verify_jwt=true` auth).

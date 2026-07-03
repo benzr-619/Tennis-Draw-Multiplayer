@@ -9,15 +9,19 @@ import { HEALTH_BANDS_LIVE_MODE, updateBandAtN, revertBandAtN } from './health-b
 import { loadAllProfiles } from './leaderboard.js'
 import { onBandsUpdating, onBandsUpdated } from './commissioner-results.js'
 
-// Fire-and-forget health-band recompute after a commissioner result change.
-// `fn` is updateBandAtN (confirm) or revertBandAtN (undo). Never awaited — the
-// band module yields internally so the commissioner tab never freezes.
-function _refreshBands(fn, d, renderStats) {
+// Fire-and-forget health-band recompute after a result change. `fn` is updateBandAtN
+// (confirm) or revertBandAtN (undo). Never awaited — the band module yields internally
+// so the caller's tab never freezes. `source` is threaded through to the persisted
+// health_bands_status row (see health-bands.js) so the Results tab can show what
+// triggered each recompute. Exported so commissioner.js's Results-tab realtime handler
+// can also call it — bridging server-side ESPN auto-confirm into the same live
+// recompute a manual confirm gets (source: 'auto-confirm').
+export function refreshHealthBands(fn, d, renderStats, source) {
   if (!HEALTH_BANDS_LIVE_MODE) return
   onBandsUpdating()
   const confirmedN = d.rounds.reduce((a, r) => a + r.matches.filter(m => m.winner).length, 0)
   loadAllProfiles()
-    .then(profs => fn(confirmedN, d, profs.map(p => p.id)))
+    .then(profs => fn(confirmedN, d, profs.map(p => p.id), source))
     .then(res => {
       onBandsUpdated(res.durationMs)
       // Refresh the cached bands so the next stats render uses fresh calibration.
@@ -257,7 +261,7 @@ export async function applyWinner(d, ri, mi, winnerName, { renderStats, renderBr
     }
 
     // Recompute the health band at this confirmation count (fire-and-forget).
-    _refreshBands(updateBandAtN, d, renderStats)
+    refreshHealthBands(updateBandAtN, d, renderStats, 'commissioner-confirm')
   }
 }
 
@@ -279,7 +283,7 @@ export async function undoWinner(d, ri, mi, { renderStats, renderBracket }) {
       .update({ original_pick_result: null, match_pick_result: null }).eq('match_id', m.db_id)
 
     // Revert the health band at this confirmation count (fire-and-forget).
-    _refreshBands(revertBandAtN, d, renderStats)
+    refreshHealthBands(revertBandAtN, d, renderStats, 'commissioner-undo')
   }
 
   renderStats()

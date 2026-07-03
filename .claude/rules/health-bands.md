@@ -150,6 +150,130 @@ hue math is wrong.
   the Initialize button (`handleInitBands`, dynamic import, progress callbacks).
   `handleSwitchToGettingReady` fires `addSlamToBands()` after deactivation.
 
+## Client-Side Auto-Confirm Bridge (added 2026-07-03, superseded same day — see below)
+
+First pass at closing the auto-confirm gap piggybacked on the realtime subscriptions
+(`.claude/rules/realtime.md`): `main.js` `_realtimeRebuild()` (stage 1) and
+`commissioner.js` `_onResultsRealtimeChange()` (stage 3) each snapshot confirmed
+winners before `reloadActiveDraw()`, diff after, and call
+`refreshHealthBands(updateBandAtN, d, renderStats, 'auto-confirm')` when a new one
+appears (gated on `state.currentUser?.is_commissioner`, since band writes are
+commissioner-only per RLS). **Still wired and still fires** — kept as a fast client-side
+path when a commissioner tab happens to be open. But it has a real coverage gap: it
+only fires while a commissioner-authenticated browser tab is connected. Ben's actual
+commissioner workflow is heavily front-loaded (draw upload, odds/ELO/ESPN name
+mapping) with locks possibly automated later — during a live tournament a commissioner
+tab may rarely or never be open, which would leave bands stale for the whole event.
+Superseded by the serverless path below for the actual gap-closing; the client bridge
+remains as a redundant (idempotent, harmless) fast path.
+
+`picks.js`'s `_refreshBands` was renamed to **`refreshHealthBands`** and exported
+(previously module-private) so both realtime handlers could reuse it.
+
+## Serverless Auto-Confirm Path (added 2026-07-03 — closes the coverage gap above)
+
+**Problem with the client-side bridge:** it requires a commissioner browser tab open
+and connected. **Fix:** run the same computation in a Supabase Edge Function, invoked
+directly from `fetch_espn_scores()` right after a successful auto-confirm — zero
+browser dependency.
+
+### Why an Edge Function, not plpgsql
+
+`fetch_espn_scores()` already runs SECURITY DEFINER with full DB access — no RLS
+issue — so the *simplest* option would be porting the band math into plpgsql
+directly. Rejected: `buildDrawView`/`calcHealthAtMatchSet`/`isAutoAssign`/
+`eloFavourite` are exactly the derived-state logic CLAUDE.md §5 designates as having
+ONE authoritative implementation (`buildDrawView`) — hand-porting that recursive
+slot/elimination derivation to SQL would create a second implementation that can
+silently drift from the JS one. An Edge Function runs real JS/TS, so the actual logic
+can be reused (or, where transitive imports block direct reuse, copied verbatim with
+clear provenance comments — see below) instead of re-derived.
+
+### `supabase/functions/recompute-health-bands/` (deployed via Supabase MCP, not in
+this git repo — Supabase Edge Functions are deployed directly, no local source tree)
+
+Three files:
+- **`draw-view.js`** — byte-for-byte copy of `src/draw-view.js`. Safe to copy
+  unmodified because the original has **zero imports** — no drift-prone dependency
+  surface. If `src/draw-view.js` ever changes, copy the new version over this file too.
+- **`health-scoring.js`** — verbatim copies of `normaliseName` (odds.js), `eloMap`
+  (elo.js), `withdrawnNames`/`isAutoAssign`/`eloFavourite`/`ROUND_CONFIG`/
+  `calcHealthAtMatchSet` (scoring.js), `assembleDrawForUser` (leaderboard.js), plus a
+  `percentile` helper mirroring health-bands.js's private one. **Copied, not
+  imported**, because the real files transitively import `src/supabase.js`, which
+  reads Vite's `import.meta.env` and throws immediately outside a Vite build — Deno
+  has no `import.meta.env`. Each function has a comment citing its real source file —
+  **any change to these functions in scoring.js/elo.js/odds.js/leaderboard.js must be
+  mirrored here too**, or the serverless path silently drifts from the live app.
+  `LOW_PCTL`/`HIGH_PCTL` (10/90) are hardcoded at the `index.ts` call site — keep in
+  sync with health-bands.js's constants of the same name.
+- **`index.ts`** — `Deno.serve` handler. POST body `{draw_id, n, source}`. Rebuilds a
+  minimal base draw from `matches` (just the fields `assembleDrawForUser`/
+  `calcHealthAtMatchSet` need — not the full `data.js loadDraw` shape), paginates
+  `picks` for every user in the draw (1,000-row PostgREST cap, same as
+  `fetchAllRows`), computes one `health_pct` sample per user with a real original pick
+  (mirrors `hasRealOriginalPicks`), upserts `health_band_samples` + recomputes
+  `health_bands` for that `n`, and writes `health_bands_status`.
+
+### Auth: `verify_jwt=true` with a Vault-stored secret key (not a custom token scheme)
+
+First attempt used `verify_jwt=false` + a self-invented `x-internal-token` header
+scheme — flagged by the harness's safety classifier as weakening platform auth
+unnecessarily. Corrected to the platform-native approach: the function is deployed
+with **`verify_jwt=true`** (Supabase's edge runtime verifies the JWT before the
+function body ever runs — no custom auth code in `index.ts` at all), and
+`fetch_espn_scores()` authenticates as `Authorization: Bearer <secret key>`, where the
+key is read from **Supabase Vault** (`HEALTH_BANDS_SERVICE_ROLE_KEY` — Ben stored it
+himself via the Dashboard's SQL Editor, keeping the raw key out of any chat/session
+transcript) — same vault-secret pattern as `ODDS_API_KEY`/`RESEND_API_KEY`. Note this
+project uses Supabase's newer key system (`sb_secret_...` "Secret keys", not the
+legacy `service_role` label) — functionally the same thing (server-only, bypasses
+RLS), just renamed.
+
+### Wiring in `fetch_espn_scores()`
+
+Inside the existing `if autoconfirm_on and completed and status_name in (...) then`
+block, right after `auto_confirm_match` returns true: counts confirmed matches in the
+draw (`band_n`), reads the Vault secret, and calls
+`extensions.http('POST', '.../functions/v1/recompute-health-bands', ...)` — same
+`extensions.http` pattern already used for the Resend alert email
+(`check_and_alert_score_feed()`) and the ESPN fetch itself. Wrapped in its own
+`exception when others` block that only `RAISE WARNING`s — a failure here **never**
+fails the poller run or flips `score_feed_status`'s failure counter; this is a
+best-effort secondary action, not core to the score feed's job.
+
+**Verified end-to-end (2026-07-03):** a direct SQL smoke test (same `extensions.http`
+call `fetch_espn_scores()` makes) against the live Wimbledon 2026 draw returned
+`status=200`, computed 13 samples in 531ms, and both `health_bands` and
+`health_bands_status` reflected the write immediately — confirming the whole chain
+(Vault secret → Bearer auth → edge function → DB writes) works without any browser
+session involved.
+
+## Persisted Status Card — "how long did the last update take" (added 2026-07-03)
+
+New singleton table `health_bands_status` (`id=1`): `last_ok`, `last_attempt`,
+`last_duration_ms`, `last_n`, `last_source`, `sample_count`, `last_error`. RLS mirrors
+`health_bands`/`health_band_samples` — `auth_read` (SELECT true) + commissioner-only
+`ALL`. Written by a new `_recordBandStatus(source, patch)` helper in `health-bands.js`,
+called at the end of **every** recompute path (success or failure) —
+`updateBandAtN`/`revertBandAtN` (each now take an optional `source` param, defaulting
+to `'commissioner-confirm'`/`'commissioner-undo'`), `initializeAllBands` (`'initialize'`),
+`addSlamToBands` (`'between-slams'`), plus `'auto-confirm'` from the realtime bridge
+above. `loadHealthBandsStatus()` reads it back.
+
+Rendered by `renderHealthBandsStatusSection()` (commissioner-results.js) into
+`#comm-bands-history-wrap` (index.html, Results tab, above `#comm-espn-wrap`) — e.g.
+`"Health bands · last update 2m ago · took 0.8s · n=43 · via auto-confirm"`. This is
+**separate from** the existing transient `#comm-bands-status` 5s toast
+(`onBandsUpdating`/`onBandsUpdated`) — that one is a quick in-the-moment confirmation
+that something just happened; this one persists across reloads/sessions so the
+commissioner can check it at any time, which is the actual signal for deciding when
+`HEALTH_BANDS_LIVE_MODE` is no longer worth the per-match cost and can be flipped off
+in favour of relying on historical between-slams calibration alone. Re-rendered from
+`onBandsUpdated()` (so it refreshes immediately after any live recompute) and from the
+same three call sites `renderEspnScoreFeedSection()` already has in commissioner.js
+(`initCommissioner`, tab switch, M/W switch) so it's populated on load too.
+
 ## Gotchas / Notes
 
 - All long computation is fire-and-forget; UI feedback comes from `onProgress`/status

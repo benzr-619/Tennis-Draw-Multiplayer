@@ -16,8 +16,10 @@ import { supabase } from './supabase.js'
 let _pendingSearch = null
 export function setPendingSearch(q) { _pendingSearch = q }
 
-// ── HEALTH BANDS STATUS LINE ──
-// Driven by the fire-and-forget band recompute in picks.js applyWinner/undoWinner.
+// ── HEALTH BANDS STATUS LINE (transient) ──
+// Driven by the fire-and-forget band recompute in picks.js refreshHealthBands, called
+// from applyWinner/undoWinner (manual) and from the Results-tab / bracket-screen
+// realtime handlers (ESPN auto-confirm bridge — see commissioner.js/main.js).
 let _bandsStatusTimer = null
 export function onBandsUpdating() {
   const el = $c('comm-bands-status')
@@ -28,11 +30,60 @@ export function onBandsUpdating() {
 }
 export function onBandsUpdated(ms) {
   const el = $c('comm-bands-status')
-  if (!el) return
-  el.textContent = `Bands updated in ${(ms / 1000).toFixed(1)}s`
-  el.style.display = ''
-  if (_bandsStatusTimer) clearTimeout(_bandsStatusTimer)
-  _bandsStatusTimer = setTimeout(() => { el.textContent = ''; el.style.display = 'none' }, 5000)
+  if (el) {
+    el.textContent = `Bands updated in ${(ms / 1000).toFixed(1)}s`
+    el.style.display = ''
+    if (_bandsStatusTimer) clearTimeout(_bandsStatusTimer)
+    _bandsStatusTimer = setTimeout(() => { el.textContent = ''; el.style.display = 'none' }, 5000)
+  }
+  // Also refresh the persisted status card — it just got a fresh row written by
+  // health-bands.js, and this is the one place every recompute path (manual confirm/
+  // undo, auto-confirm bridge) funnels through.
+  renderHealthBandsStatusSection()
+}
+
+// ── HEALTH BANDS STATUS CARD (persisted) ──
+// Unlike the 5s toast above, this survives reloads/different sessions — reads
+// health_bands_status directly so the commissioner can check, at any time, how long
+// the live per-match recompute is taking and what's been triggering it. That's the
+// signal for deciding when to flip HEALTH_BANDS_LIVE_MODE off in favour of relying on
+// historical between-slams calibration (see .claude/rules/health-bands.md).
+function _bandsAgoLabel(iso) {
+  if (!iso) return null
+  const ms = Date.now() - new Date(iso).getTime()
+  const mins = Math.floor(ms / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  return `${hrs}h ${mins % 60}m ago`
+}
+
+let _bandsStatusGen = 0
+export async function renderHealthBandsStatusSection() {
+  const wrap = $c('comm-bands-history-wrap')
+  if (!wrap) return
+  const gen = ++_bandsStatusGen
+  const { loadHealthBandsStatus } = await import('./health-bands.js')
+  const status = await loadHealthBandsStatus()
+  if (gen !== _bandsStatusGen) return // a newer call already superseded this one
+
+  wrap.innerHTML = ''
+  if (!status || !status.last_attempt) {
+    wrap.innerHTML = '<span style="font-family:var(--mono);font-size:11px;color:var(--text3);padding:4px 12px;display:inline-block">Health bands: no live recompute recorded yet</span>'
+    return
+  }
+
+  const ok = !status.last_error
+  const pill = document.createElement('span')
+  pill.style.cssText = `font-family:var(--mono);font-size:11px;padding:3px 9px;border-radius:11px;margin:4px 12px;display:inline-block;color:${ok ? 'var(--green)' : 'var(--red)'};background:${ok ? 'rgba(76,153,104,0.1)' : 'rgba(192,57,43,0.1)'}`
+  if (ok) {
+    const dur = status.last_duration_ms != null ? (status.last_duration_ms / 1000).toFixed(1) + 's' : '—'
+    const nLabel = status.last_n != null ? `n=${status.last_n}` : 'full recompute'
+    pill.textContent = `Health bands · last update ${_bandsAgoLabel(status.last_ok)} · took ${dur} · ${nLabel} · via ${status.last_source || '—'}`
+  } else {
+    pill.textContent = `Health bands · last attempt FAILED ${_bandsAgoLabel(status.last_attempt)} (${status.last_source || '—'}) · ${status.last_error}`
+  }
+  wrap.appendChild(pill)
 }
 
 // ── MOBILE ROUND STATE ──
