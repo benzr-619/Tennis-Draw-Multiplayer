@@ -69,6 +69,15 @@ and synthesizing a `0-0` set when period is ahead — e.g. `"6-3, 0-0*"` instead
 incorrectly starring the just-finished set. Completed matches never get a star
 (gated on `ev_state='in'`).
 
+**Known gap:** ESPN doesn't include `possession` on every live competitor object —
+confirmed by direct inspection (2026-07-03) of a live match with no dot showing: its
+`competitors[]` entries had no `possession` key at all (not `false`, simply absent),
+while a concurrent live match on a different court had it on both sides. Appears to
+be a per-court/per-feed live-tracking tier on ESPN's end, not something we control.
+`coalesce((c->>'possession')::boolean, false)` already treats a missing key the same
+as `false`, so the correct behavior (no dot) falls out automatically — nothing to fix
+here, just don't be surprised when some live matches never show a serve dot.
+
 ## Name Matching & the Unmatched-Names Triage List
 
 `espn_name_mappings` (espn_name PK → draw_player_name) works exactly like
@@ -128,6 +137,19 @@ the feed recovers, so exactly one email per outage.
 switch) — not the odds tab's refresh callback, since scores live on Results, not
 Odds. `refresh_espn_scores_now()` RPC mirrors `refresh_odds_now()` (commissioner-only
 check, `PERFORM`/return `fetch_espn_scores()`).
+
+**"ESPN says X won" per-match badge (added 2026-07-03):** the always-on score/LIVE line
+(bracket.js) only ever rendered on the player bracket screen — `commissioner-results.js`
+has its own separate card renderer (`_placeResultCard`, via `renderBracketLayout`, not
+`bracket.js`'s `placeCard`) and never read `espn_winner`/`espn_state` at all, so there was
+no visibility into ESPN's detected result on the Results tab pre-confirmation. This was a
+real gap, not a display bug — `espn_winner` wasn't even selected in `data.js`'s `matches`
+query (only `score`/`espn_state` were). Fixed by adding `espn_winner` to the query +
+assembled match object (`data.js`), and a `.pr-espn-pick` "ESPN ✓" badge on whichever
+row's name matches `m.espn_winner`, shown only pre-confirmation (`!hasResult`) so it
+disappears the moment the commissioner clicks to confirm (or auto-confirm fires). This is
+the manual safety-net UI Ben is using to sanity-check ESPN's detected winners against
+several real results before turning on `scores_autoconfirm_enabled`.
 
 ## Frontend Display (always on, no flag)
 

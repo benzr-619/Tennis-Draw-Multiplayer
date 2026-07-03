@@ -71,6 +71,55 @@ function _doRenderBracket() {
   })
 }
 
+// Builds the ESPN score footer for one match, or null if there's no score yet.
+// Shared by placeCard (full render) and patchMatchScore (realtime in-place patch)
+// so both produce identical markup.
+function buildScoreFooterEl(m) {
+  if (!m.score) return null
+  const footer = document.createElement('div'); footer.className = 'mc-footer'
+  const scoreLine = document.createElement('div')
+  scoreLine.className = 'mc-score-line'
+  if (m.espn_state === 'in') {
+    const liveTag = document.createElement('span'); liveTag.className = 'mc-live-tag'; liveTag.textContent = 'LIVE'
+    scoreLine.appendChild(liveTag)
+  }
+  const scoreText = document.createElement('span'); scoreText.className = 'mc-score-val'
+  appendScoreWithServeDot(scoreText, m.score)
+  scoreLine.appendChild(scoreText)
+  footer.appendChild(scoreLine)
+  return footer
+}
+
+// ── REALTIME SCORE PATCH (stage 1, bracket screen only) ──
+// Patches just the affected card's score footer in place — no buildDrawView recompute,
+// no renderBracket() rebuild. Used by realtime.js for high-frequency ESPN score/espn_state
+// ticks so a live match doesn't tear down and rebuild the whole bracket on every point.
+// Updates the in-memory match object regardless of whether a live DOM card is found (e.g.
+// a mobile round filter hiding this round), so the data is correct whenever the next real
+// rebuild happens. Returns false only when the match isn't in the active draw at all —
+// the caller (realtime.js) treats that as a signal to fall back to a full rebuild.
+export function patchMatchScore(matchDbId, { score, espn_state }) {
+  const d = activeDraw()
+  if (!d) return false
+  for (let ri = 0; ri < d.rounds.length; ri++) {
+    const matches = d.rounds[ri].matches
+    for (let mi = 0; mi < matches.length; mi++) {
+      const m = matches[mi]
+      if (m.db_id !== matchDbId) continue
+      m.score = score ?? ''
+      m.espn_state = espn_state ?? null
+      const card = document.querySelector(`#bracket-body .mc[data-ri="${ri}"][data-mi="${mi}"]`)
+      if (card) {
+        card.querySelector('.mc-footer')?.remove()
+        const footerEl = buildScoreFooterEl(m)
+        if (footerEl) card.appendChild(footerEl)
+      }
+      return true
+    }
+  }
+  return false
+}
+
 // ── PLACE CARD ──
 export function placeCard(d, m, ri, mi, x, y, wrap) {
   let cardCls = 'mc'
@@ -217,20 +266,8 @@ export function placeCard(d, m, ri, mi, x, y, wrap) {
   card.appendChild(rowsWrap)
 
   // Footer: ESPN score line (read-only, always on — replaces the old notes input).
-  if (m.score) {
-    const footer = document.createElement('div'); footer.className = 'mc-footer'
-    const scoreLine = document.createElement('div')
-    scoreLine.className = 'mc-score-line'
-    if (m.espn_state === 'in') {
-      const liveTag = document.createElement('span'); liveTag.className = 'mc-live-tag'; liveTag.textContent = 'LIVE'
-      scoreLine.appendChild(liveTag)
-    }
-    const scoreText = document.createElement('span')
-    appendScoreWithServeDot(scoreText, m.score)
-    scoreLine.appendChild(scoreText)
-    footer.appendChild(scoreLine)
-    card.appendChild(footer)
-  }
+  const footerEl = buildScoreFooterEl(m)
+  if (footerEl) card.appendChild(footerEl)
 
   // ── FLOATING LABELS FOR DISPLACED ORIGINAL PICKS ──
   // The eliminated original pick is shown outside the card (red + crossed-out).

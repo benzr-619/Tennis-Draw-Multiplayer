@@ -1,7 +1,8 @@
 import { state, activeDraw, applyTheme, isMobile, hasActiveDraw } from './state.js'
 import { login, signup, logout, restoreSession, updateDisplayName, fetchProfile, requestPasswordReset, handleRecoverySession } from './auth.js'
 import { loadAllDraws, refreshAll, reloadActiveDraw, ensureAllDrawsLoaded, slamKey, slamLabel } from './data.js'
-import { renderBracket, renderBracketDirect, placeCard, setRenderBracketFn } from './bracket.js'
+import { renderBracket, renderBracketDirect, placeCard, setRenderBracketFn, patchMatchScore } from './bracket.js'
+import { startBracketRealtime, stopBracketRealtime, stopResultsRealtime } from './realtime.js'
 import { renderBracketList } from './bracket-list.js'
 import { closeModal, confirmEditPlayer, renderCommRoundSelector } from './commissioner-results.js'
 import { renderStats, resetStatsFilter, setCountdownClickHandler, fetchPoolSlamIndex } from './stats.js'
@@ -62,6 +63,33 @@ function _startResultsPoll() {
 
 function _stopResultsPoll() {
   if (_pollInterval) { clearInterval(_pollInterval); _pollInterval = null }
+}
+
+// ── REALTIME (stage 1: bracket screen only — see .claude/rules/realtime.md) ──
+// Rebuild tier reloads the active draw (same as reloadActiveDraw's other callers —
+// this is what actually pulls in the new winner/pick-cascade/lock state; a bare
+// re-render would just repaint whatever was already sitting in memory) then calls
+// the same renderStats/renderBracketDisplay path as the manual refresh button, with
+// scroll position captured and restored around the destructive renderBracket()
+// rebuild (CLAUDE.md §12) so an unprompted push update doesn't yank the view back
+// to the top of the bracket mid-scroll.
+async function _realtimeRebuild() {
+  const scroller = $('bracket-body')
+  const scrollTop = scroller?.scrollTop ?? null
+  const scrollLeft = scroller?.scrollLeft ?? null
+  await reloadActiveDraw()
+  renderStats()
+  renderBracketDisplay()
+  if (scroller && scrollTop !== null) {
+    scroller.scrollTop = scrollTop
+    scroller.scrollLeft = scrollLeft
+  }
+}
+
+function _startRealtimeForActiveDraw() {
+  const d = activeDraw()
+  if (d?.db_id) startBracketRealtime(d.db_id, { patchScore: patchMatchScore, rebuild: _realtimeRebuild })
+  else stopBracketRealtime()
 }
 
 // ── SEGMENTED CONTROL STATE ──
@@ -408,6 +436,7 @@ function switchTab(i) {
   renderStats()
   renderBracketDisplay()
   fetchPoolSlamIndex(d, state.currentUser?.id).then(() => renderStats())
+  _startRealtimeForActiveDraw() // re-scope the subscription to the newly selected M/W draw
 }
 
 // ── FIND UNPICKED CARD HELPER ──
@@ -642,6 +671,8 @@ $('print-btn').addEventListener('click', doPrint)
 // ── LOGOUT ──
 async function doLogout() {
   _stopResultsPoll()
+  stopBracketRealtime()
+  stopResultsRealtime()
   await logout()
   showScreen('screen-auth')
   setAuthMode('login')
@@ -663,6 +694,7 @@ function _setNavActive(page) {
 
 // ── NAV LINKS ──
 async function _openLeaderboard() {
+  stopBracketRealtime() // stage 1 is bracket-screen-only — see .claude/rules/realtime.md
   _setNavActive('leaderboard')
   showScreen('screen-leaderboard')
   await ensureAllDrawsLoaded()
@@ -682,6 +714,7 @@ let _preCommishScreen = 'bracket' // 'bracket' | 'leaderboard' — restored on e
 
 function enterCommissioner() {
   if (!state.currentUser?.is_commissioner) return
+  stopBracketRealtime() // stage 1 is bracket-screen-only — see .claude/rules/realtime.md
   closeAcctMenus()
   _preCommishScreen = $('screen-leaderboard').classList.contains('active') ? 'leaderboard' : 'bracket'
   initCommissioner()
@@ -690,6 +723,7 @@ function enterCommissioner() {
 }
 
 async function exitCommissioner() {
+  stopResultsRealtime() // stage 3 is commissioner-Results-tab-only — see .claude/rules/realtime.md
   closeAcctMenus()
   if (_preCommishScreen === 'leaderboard') await _openLeaderboard()
   else { _setNavActive('bracket'); await showBracketScreen() }
@@ -997,6 +1031,8 @@ function showRosterAlerts(d) {
 
 // ── SHOW BRACKET SCREEN ──
 async function showBracketScreen() {
+  stopBracketRealtime() // always reset; re-started below only when there's an active draw
+
   if (!hasActiveDraw()) {
     // Render last slam dimmed behind a frosted overlay
     const d = activeDraw() // loadAllDraws fallback points activeTab at last draw
@@ -1035,6 +1071,7 @@ async function showBracketScreen() {
   showRosterAlerts(activeDraw())
   _captureWinnerBaseline()
   _startResultsPoll()
+  _startRealtimeForActiveDraw()
 }
 
 // ── BOOT ──

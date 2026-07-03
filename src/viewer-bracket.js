@@ -103,7 +103,7 @@ function placeViewerCard(draw, m, ri, mi, x, y, wrap, mode) {
       const liveTag = document.createElement('span'); liveTag.className = 'mc-live-tag'; liveTag.textContent = 'LIVE'
       scoreLine.appendChild(liveTag)
     }
-    const scoreText = document.createElement('span')
+    const scoreText = document.createElement('span'); scoreText.className = 'mc-score-val'
     appendScoreWithServeDot(scoreText, m.score)
     scoreLine.appendChild(scoreText)
     footer.appendChild(scoreLine)

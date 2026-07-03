@@ -28,6 +28,7 @@ Current rules files:
 - `.claude/rules/roster-changes.md` — replaced_name column, always-stamp-on-swap, unified rosterAlerts detection (pre/post-lock), alert modal
 - `.claude/rules/health-bands.md` — stage-calibrated health hue: winner_confirmed_at + health_bands/health_band_samples tables, calcHealthAtMatchSet, healthHue(pct,n,bands), src/health-bands.js compute/store/live-update functions, commissioner Health Bands + Getting Ready wiring
 - `.claude/rules/scores-feed.md` — ESPN live score feed: fetch_espn_scores() SQL poller, real JSON shape, name matching + unmatched-names triage, abnormal finishes, heartbeat alerting, auto-confirm (scores_autoconfirm_enabled) + undo-suppression guard
+- `.claude/rules/realtime.md` — live updates: Supabase postgres_changes over Broadcast, patch-vs-rebuild tiers, stage 1 (bracket screen) + stage 3 (commissioner Results tab) built, kill-switch behavior, realtime.js/bracket.js/main.js/commissioner.js wiring
 
 ---
 
@@ -91,7 +92,12 @@ src/
     box). No pick state. Shared by bracket.js, viewer-bracket.js, commissioner-results.js.
   draw-view.js — buildDrawView(): SINGLE pure derivation of round-2+ slots, elim flags, m.elimLabels.
     THE only place slot/elim/label state is computed.
-  bracket.js — renderBracket() + placeCard(): live bracket card painting only
+  bracket.js — renderBracket() + placeCard(): live bracket card painting only. Also
+    patchMatchScore(): realtime score-only DOM patch (see realtime.js)
+  bracket-shared.js — appendScoreWithServeDot(): shared score-footer serve-dot rendering
+  realtime.js — startBracketRealtime()/stopBracketRealtime() (stage 1, bracket screen) +
+    startResultsRealtime()/stopResultsRealtime() (stage 3, commissioner Results tab)
+    — see .claude/rules/realtime.md
   picks.js — handlePickClick(), cascadeMatchPickForward(), clearMatchPickForward(),
     withdrawalClearForward(), updatePlayerNameForward()
   scoring.js — calcMatchScore(), calcStats(), calcHealthPts()
@@ -273,3 +279,4 @@ Reached via account-menu "Commissioner" entry (`enterCommissioner()`); exited vi
 - Commissioner "Notify Players" button (Edge Function is deployed; button in commissioner screen not yet wired — see Claude Code prompt in session notes)
 - Automated tests (`test-harness/` golden exists; see §0)
 - Mobile layout (desktop-only; mobile version is a future phase)
+- Real-time updates: **stage 1 (bracket screen) + stage 3 (commissioner Results tab) built** 2026-07-03 — `src/realtime.js`, patch-tier score ticks + debounced rebuild-tier for winner/lock/draw changes on the bracket screen, pure-visibility winner/score/espn_state notifications on the commissioner Results tab, kill-switch on disconnect. See `.claude/rules/realtime.md`. Leaderboard (stage 2) still manual-refresh only.

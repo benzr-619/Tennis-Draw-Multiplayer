@@ -116,7 +116,7 @@ function _placeResultCard(d, m, ri, mi, x, y, wrap) {
   card.style.cssText = `left:${x}px;top:${y}px`
   card.dataset.ri = ri; card.dataset.mi = mi
 
-  function makeResultRow(p, side, isWinner, isLoser, clickable) {
+  function makeResultRow(p, side, isWinner, isLoser, clickable, isEspnPick) {
     const row = document.createElement('div')
     let cls = 'pr'
     if (isWinner) cls += ' res-winner'
@@ -127,6 +127,16 @@ function _placeResultCard(d, m, ri, mi, x, y, wrap) {
     const seedEl = document.createElement('span'); seedEl.className = 'pr-seed'; seedEl.textContent = p.seed || ''
     const nameEl = document.createElement('span'); nameEl.className = 'pr-name'; nameEl.textContent = p.name || '—'
     row.appendChild(seedEl); row.appendChild(nameEl)
+
+    // ESPN-detected-winner safety-net marker (unconfirmed only) — lets the commissioner
+    // eyeball the auto-detected result before confirming, and before scores_autoconfirm_enabled
+    // is ever turned on. See .claude/rules/scores-feed.md.
+    if (isEspnPick) {
+      const espnTag = document.createElement('span')
+      espnTag.className = 'pr-espn-pick'
+      espnTag.textContent = 'ESPN ✓'
+      row.appendChild(espnTag)
+    }
 
     // Pencil edit button — R1 only
     if (ri === 0) {
@@ -149,11 +159,15 @@ function _placeResultCard(d, m, ri, mi, x, y, wrap) {
   const p1Winner = hasResult && m.winner === p1.name
   const p2Winner = hasResult && m.winner === p2.name
   const canClick = !hasResult && p1.name && p2.name
+  // Only meaningful pre-confirmation — once hasResult, the real winner/loser styling
+  // already shows the outcome and this would be redundant.
+  const espnPickP1 = !hasResult && m.espn_winner && m.espn_winner === p1.name
+  const espnPickP2 = !hasResult && m.espn_winner && m.espn_winner === p2.name
 
   const rowsWrap = document.createElement('div')
   rowsWrap.style.cssText = 'overflow:hidden;border-radius:5px 5px 0 0;flex-shrink:0'
-  rowsWrap.appendChild(makeResultRow(p1, 'p1', p1Winner, hasResult && !p1Winner, canClick))
-  rowsWrap.appendChild(makeResultRow(p2, 'p2', p2Winner, hasResult && !p2Winner, canClick))
+  rowsWrap.appendChild(makeResultRow(p1, 'p1', p1Winner, hasResult && !p1Winner, canClick, espnPickP1))
+  rowsWrap.appendChild(makeResultRow(p2, 'p2', p2Winner, hasResult && !p2Winner, canClick, espnPickP2))
   card.appendChild(rowsWrap)
 
   // Undo button

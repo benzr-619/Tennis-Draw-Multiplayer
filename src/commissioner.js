@@ -4,13 +4,14 @@
 
 import { supabase } from './supabase.js'
 import { state, activeDraw, applyTheme } from './state.js'
-import { loadAllDraws, slamLabel, slamKey } from './data.js'
+import { loadAllDraws, reloadActiveDraw, slamLabel, slamKey } from './data.js'
 import { extractPdfText, parseTnnsText } from './parser.js'
 import { $c, escHtml } from './commissioner-shared.js'
 import { renderResults, setPendingSearch } from './commissioner-results.js'
 import { renderLockManaging } from './commissioner-locks.js'
 import { renderOddsTab } from './commissioner-odds.js'
 import { renderEspnScoreFeedSection } from './commissioner-scores.js'
+import { startResultsRealtime, stopResultsRealtime } from './realtime.js'
 import { animateSegThumb } from './seg-thumb.js'
 
 export { renderResults } from './commissioner-results.js'
@@ -24,11 +25,25 @@ let parsedR1 = null  // [{p1_name, p1_seed, p2_name, p2_seed}]
 let _existingDrawsExpanded = false
 let _healthBandsExpanded = false
 
+// ── REALTIME (stage 3: commissioner Results tab — see .claude/rules/realtime.md) ──
+// Pure visibility: reload the active draw (winner/score/espn_state/espn_winner) and
+// re-render Results. Never confirms anything itself.
+async function _onResultsRealtimeChange() {
+  await reloadActiveDraw()
+  renderResults()
+}
+
+function _isResultsTabActive() {
+  return (document.querySelector('#comm-hdr-nav .hdr-nav-link.active')
+    || document.querySelector('#comm-mobile-hdr-nav .hdr-nav-link.active'))?.dataset.tab === 'results'
+}
+
 // ── INIT ──
 export function initCommissioner() {
   renderCommHeader()
   renderResults()
   renderEspnScoreFeedSection()
+  if (_isResultsTabActive()) startResultsRealtime(activeDraw()?.db_id, _onResultsRealtimeChange)
 
   if (_initialized) return
   _initialized = true
@@ -54,8 +69,12 @@ export function initCommissioner() {
       document.querySelectorAll('.comm-tab-pane').forEach(p => p.classList.remove('pane-active'))
       const pane = $c('comm-pane-' + tab)
       if (pane) pane.classList.add('pane-active')
+      stopResultsRealtime() // re-scoped below only if the results tab is what's now showing
       if (tab === 'lock') renderLockManaging()
-      if (tab === 'results') { renderResults(); renderEspnScoreFeedSection() }
+      if (tab === 'results') {
+        renderResults(); renderEspnScoreFeedSection()
+        startResultsRealtime(activeDraw()?.db_id, _onResultsRealtimeChange)
+      }
       if (tab === 'odds') renderOddsTab()
     })
   })
@@ -130,7 +149,10 @@ export function renderCommHeader() {
         if (activeTab === 'lock') renderLockManaging()
         else if (activeTab === 'odds') renderOddsTab()
         else if (activeTab === 'draw') { const ad = activeDraw(); if (ad) renderPickCompletion(ad) }
-        else { renderResults(); renderEspnScoreFeedSection() }
+        else {
+          renderResults(); renderEspnScoreFeedSection()
+          startResultsRealtime(activeDraw()?.db_id, _onResultsRealtimeChange) // re-scope to the newly selected M/W draw
+        }
       })
     }
     targetSeg.appendChild(btn)

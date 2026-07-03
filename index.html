@@ -177,9 +177,10 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .bracket-empty-sub{font-family:var(--sans);font-size:13px;color:var(--text3);max-width:300px;line-height:1.5}
 
 /* ── ESPN SCORE LINE (read-only, always on — replaces the old notes input) ── */
-.mc-score-line{width:100%;box-sizing:border-box;background:var(--surface2);border-top:1px solid var(--border);color:var(--text2);font-family:var(--mono);font-size:10px;padding:4px 7px;display:flex;align-items:center;gap:5px}
+.mc-score-line{width:100%;box-sizing:border-box;background:var(--surface2);border-top:1px solid var(--border);font-family:var(--mono);padding:4px 7px;display:flex;align-items:center;gap:5px}
 .mc-live-tag{color:#c0392b;font-family:var(--mono);font-size:9px;font-weight:600;letter-spacing:.05em}
-.mc-serve-dot{display:inline-block;width:4px;height:4px;border-radius:50%;background:#c0392b;vertical-align:super;margin-left:1px}
+.mc-score-val{color:var(--text);font-family:var(--sans);font-size:11px}
+.mc-serve-dot{display:inline-block;position:relative;top:-4px;width:4px;height:4px;border-radius:50%;background:#c0392b;margin-left:2px}
 
 /* ── ODDS ON BRACKET CARDS ── */
 .pr-odds{font-family:var(--mono);font-size:11px;color:var(--text2);flex-shrink:0;margin-left:3px}
@@ -794,6 +795,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .pr.res-winner{background:var(--green-bg)!important;color:var(--green)!important;font-weight:600}
 .pr.res-loser{color:var(--text3)!important;text-decoration:line-through}
 .pr.res-clickable{cursor:pointer}
+.pr-espn-pick{font-family:var(--mono);font-size:9px;font-weight:600;letter-spacing:0.04em;color:var(--green);background:var(--green-bg);border:1px solid var(--green);border-radius:3px;padding:1px 5px;margin-left:auto;flex-shrink:0}
 @media(hover:hover){
   .pr.res-clickable:hover{background:var(--accent-dim)!important}
 }

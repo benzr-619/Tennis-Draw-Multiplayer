@@ -55,7 +55,15 @@ function _agoLabel(iso) {
   return `${hrs}h ${mins % 60}m ago`
 }
 
+// enterCommissioner() both calls initCommissioner() (which renders this section)
+// and immediately fires a synthetic click on the Results tab (which renders it
+// again) — two overlapping async calls race, and since each only clears the wrap
+// synchronously at its own start, both can end up appending. This generation
+// token lets a newer call invalidate a still-in-flight older one.
+let _renderGen = 0
+
 export async function renderEspnScoreFeedSection() {
+  const gen = ++_renderGen
   const wrap = $c('comm-espn-wrap')
   if (!wrap) return
   wrap.innerHTML = ''
@@ -65,6 +73,7 @@ export async function renderEspnScoreFeedSection() {
 
   try {
     const [status, mappings] = await Promise.all([loadFeedStatus(), loadEspnMappings()])
+    if (gen !== _renderGen) return // superseded by a newer render
 
     const section = document.createElement('div')
     section.className = 'comm-section'
@@ -130,21 +139,24 @@ export async function renderEspnScoreFeedSection() {
     const r1Scored = r0Matches.filter(m => m.score).length
 
     const triageSection = document.createElement('div')
-    triageSection.style.cssText = 'margin-top:14px;padding-top:14px;border-top:1px solid var(--border)'
-
-    const triageHdr = document.createElement('div')
-    triageHdr.innerHTML = `<div style="font-size:12px;color:var(--text2);margin-bottom:8px;line-height:1.7">
-      Round 1 scores: <span style="font-family:var(--mono);color:var(--text)">${r1Scored} / ${r1Total}</span> matched.
-      ${unmatched.length > 0 ? 'The rest need a name assigned below.' : ''}
-    </div>`
-    triageSection.appendChild(triageHdr)
+    triageSection.style.cssText = 'margin-top:10px;padding-top:10px;border-top:1px solid var(--border)'
 
     if (unmatched.length === 0) {
-      const empty = document.createElement('div')
-      empty.style.cssText = 'font-family:var(--mono);font-size:11px;color:var(--text3)'
-      empty.textContent = 'All ESPN names matched.'
-      triageSection.appendChild(empty)
+      // Nothing to fix — one compact line instead of a summary line + a separate
+      // "all matched" line, so the card takes minimal space in the common case.
+      const oneLine = document.createElement('div')
+      oneLine.style.cssText = 'font-size:12px;color:var(--text2)'
+      oneLine.innerHTML = `Round 1 scores: <span style="font-family:var(--mono);color:var(--text)">${r1Scored} / ${r1Total}</span> matched
+        <span style="color:var(--text3)">— all ESPN names resolved.</span>`
+      triageSection.appendChild(oneLine)
     } else {
+      const triageHdr = document.createElement('div')
+      triageHdr.innerHTML = `<div style="font-size:12px;color:var(--text2);margin-bottom:8px;line-height:1.7">
+        Round 1 scores: <span style="font-family:var(--mono);color:var(--text)">${r1Scored} / ${r1Total}</span> matched.
+        The rest need a name assigned below.
+      </div>`
+      triageSection.appendChild(triageHdr)
+
       let showUnmatched = false
       const bodyWrap = document.createElement('div')
 
@@ -216,7 +228,7 @@ export async function renderEspnScoreFeedSection() {
     // ── Saved mappings ──
     if (mappings.length > 0) {
       const mapSection = document.createElement('div')
-      mapSection.style.cssText = 'margin-top:14px;padding-top:14px;border-top:1px solid var(--border)'
+      mapSection.style.cssText = 'margin-top:10px;padding-top:10px;border-top:1px solid var(--border)'
       let showMappings = false
       const renderRows = () => {
         mapSection.innerHTML = ''
