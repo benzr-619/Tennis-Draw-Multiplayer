@@ -27,6 +27,7 @@ Current rules files:
 - `.claude/rules/data-fetching.md` — PostgREST 1,000-row cap: fetchAllRows paginator, snapshot_original_picks + pick_completion RPCs, canonical cross-user query sites
 - `.claude/rules/roster-changes.md` — replaced_name column, always-stamp-on-swap, unified rosterAlerts detection (pre/post-lock), alert modal
 - `.claude/rules/health-bands.md` — stage-calibrated health hue: winner_confirmed_at + health_bands/health_band_samples tables, calcHealthAtMatchSet, healthHue(pct,n,bands), src/health-bands.js compute/store/live-update functions, commissioner Health Bands + Getting Ready wiring
+- `.claude/rules/scores-feed.md` — ESPN live score feed: fetch_espn_scores() SQL poller, real JSON shape, name matching + unmatched-names triage, abnormal finishes, heartbeat alerting, auto-confirm (scores_autoconfirm_enabled) + undo-suppression guard
 
 ---
 
@@ -123,7 +124,7 @@ Draw, Round, Match, Player shapes match the reference app (see `reference/index.
 
 ### Authoritative vs. derived state
 
-**Authoritative fields** (from DB, source of truth): round-0 `p1`/`p2`, `winner`/`score`, and per-user `matchPick`, `originalPick`, `originalPickResult`, `matchPickResult`, `highConfidence`, `editedAfterLock`, `notes`.
+**Authoritative fields** (from DB, source of truth): round-0 `p1`/`p2`, `winner`/`score`, and per-user `matchPick`, `originalPick`, `originalPickResult`, `matchPickResult`, `highConfidence`, `editedAfterLock`.
 
 **Everything else is DERIVED** by `buildDrawView(d)` (`src/draw-view.js`) — the ONE place slot/elim/label state is computed. Pure and idempotent. **Never reconstruct slots or replay eliminations anywhere else. Call `buildDrawView` after any authoritative change.**
 
@@ -264,7 +265,7 @@ Reached via account-menu "Commissioner" entry (`enterCommissioner()`); exited vi
 
 ## 13. Feature Status
 
-**Built:** foundation, commissioner screen, leaderboard, polish, viewer, lock architecture (incl. scheduled-locks list), post-lock backup-pick cascade, `buildDrawView` derived-state model, Match Yield betting layer (odds polling, name matching, commissioner Odds tab, bracket card odds display), Records tab trophy-room redesign, Slams tab live-board redesign (stage 3: live slam header + sortable M/W cards + movement arrows + health underlines + storyline chips + past-slam compact/expand + generic list modal), draw notification email (Supabase Edge Function `send-draw-notification` + Resend; `draws.notified_at` column; `get_resend_api_key()` vault helper; standalone HTML email template in `Multiplayer/wimbledon-2026-email.html`), commissioner Draw Management improvements: Pick Completion table (per-player round-0 fill count + status chip), Manage Draws collapsed section with Re-activate button (sets `draws.is_active`, clears `app_settings` Getting Ready state), Getting Ready single-button flow, Odds tab Unmatched API Names nested inside Odds Status card.
+**Built:** foundation, commissioner screen, leaderboard, polish, viewer, lock architecture (incl. scheduled-locks list), post-lock backup-pick cascade, `buildDrawView` derived-state model, Match Yield betting layer (odds polling, name matching, commissioner Odds tab, bracket card odds display), Records tab trophy-room redesign, Slams tab live-board redesign (stage 3: live slam header + sortable M/W cards + movement arrows + health underlines + storyline chips + past-slam compact/expand + generic list modal), draw notification email (Supabase Edge Function `send-draw-notification` + Resend; `draws.notified_at` column; `get_resend_api_key()` vault helper; standalone HTML email template in `Multiplayer/wimbledon-2026-email.html`), commissioner Draw Management improvements: Pick Completion table (per-player round-0 fill count + status chip), Manage Draws collapsed section with Re-activate button (sets `draws.is_active`, clears `app_settings` Getting Ready state), Getting Ready single-button flow, Odds tab Unmatched API Names nested inside Odds Status card, ESPN live score feed (`fetch_espn_scores()` SQL poller + pg_cron, always-on bracket card score display, commissioner Results-tab status/unmatched-names triage card, heartbeat email alerting, auto-confirm behind `scores_autoconfirm_enabled` — see `.claude/rules/scores-feed.md`).
 
 **Naming note:** "Score" is labelled **Draw Yield** everywhere in the UI (stats bar, leaderboard). Internal key remains `score` in JS stats objects. Chalk display removed from UI; code retained in `scoring.js` / `stats.js` (commented out) for future re-enable.
 

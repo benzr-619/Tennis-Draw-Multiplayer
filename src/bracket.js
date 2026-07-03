@@ -8,6 +8,7 @@ import { renderStats } from './stats.js'
 import { renderBracketLayout } from './bracket-layout.js'
 import { formatAmerican } from './odds.js'
 import { eloMap } from './elo.js'
+import { appendScoreWithServeDot } from './bracket-shared.js'
 import { makeFlagEl } from './flags.js'
 
 // Per-draw ELO cache — rebuilt once when the draw ID changes, stable within a render pass
@@ -215,20 +216,19 @@ export function placeCard(d, m, ri, mi, x, y, wrap) {
   rowsWrap.appendChild(makeRow(m.p2, 'p2'))
   card.appendChild(rowsWrap)
 
-  // Notes input — shown when draw is locked and match has a pick
-  if (d.locked && (m.matchPick || m.originalPick)) {
+  // Footer: ESPN score line (read-only, always on — replaces the old notes input).
+  if (m.score) {
     const footer = document.createElement('div'); footer.className = 'mc-footer'
-    const inp = document.createElement('input')
-    inp.type = 'text'
-    inp.className = 'mc-notes'
-    inp.placeholder = 'Notes…'
-    inp.value = m.notes || ''
-    inp.addEventListener('click', e => e.stopPropagation())
-    inp.addEventListener('change', async e => {
-      m.notes = e.target.value.trim()
-      await savePickToSupabase(m, d.db_id)
-    })
-    footer.appendChild(inp)
+    const scoreLine = document.createElement('div')
+    scoreLine.className = 'mc-score-line'
+    if (m.espn_state === 'in') {
+      const liveTag = document.createElement('span'); liveTag.className = 'mc-live-tag'; liveTag.textContent = 'LIVE'
+      scoreLine.appendChild(liveTag)
+    }
+    const scoreText = document.createElement('span')
+    appendScoreWithServeDot(scoreText, m.score)
+    scoreLine.appendChild(scoreText)
+    footer.appendChild(scoreLine)
     card.appendChild(footer)
   }
 

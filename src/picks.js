@@ -100,7 +100,6 @@ export async function savePickToSupabase(m, drawId) {
     match_pick_result: m.matchPickResult ?? null,
     high_confidence: m.highConfidence ?? false,
     edited_after_lock: m.editedAfterLock ?? false,
-    notes: m.notes ?? null,
   }, { onConflict: 'user_id,match_id' })
 
   if (error) throw error
@@ -240,8 +239,10 @@ export async function applyWinner(d, ri, mi, winnerName, { renderStats, renderBr
 
   // DB persistence (commissioner only) — runs in background after render.
   if (state.currentUser?.is_commissioner && m.db_id) {
+    // A manual confirm always wins: clears any auto-confirm suppression left by a
+    // prior undo, so the match is eligible for auto-confirm again if it's ever undone.
     await supabase.from('matches')
-      .update({ winner: winnerName, score: m.score || null, winner_confirmed_at: new Date().toISOString() })
+      .update({ winner: winnerName, score: m.score || null, winner_confirmed_at: new Date().toISOString(), auto_confirm_suppressed: false })
       .eq('id', m.db_id)
 
     const { data: matchPicks } = await supabase
@@ -269,8 +270,11 @@ export async function undoWinner(d, ri, mi, { renderStats, renderBracket }) {
 
   // DB persistence (commissioner only)
   if (state.currentUser?.is_commissioner && m.db_id) {
+    // Suppress auto-confirm on this match: an explicit undo means the commissioner
+    // wants to review before it's re-decided, so the ESPN poller must not silently
+    // re-confirm it on its next pass. Only a manual confirm (applyWinner) clears this.
     await supabase.from('matches')
-      .update({ winner: null, score: null, winner_confirmed_at: null }).eq('id', m.db_id)
+      .update({ winner: null, score: null, winner_confirmed_at: null, auto_confirm_suppressed: true }).eq('id', m.db_id)
     await supabase.from('picks')
       .update({ original_pick_result: null, match_pick_result: null }).eq('match_id', m.db_id)
 

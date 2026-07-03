@@ -10,6 +10,7 @@ import { $c, escHtml } from './commissioner-shared.js'
 import { renderResults, setPendingSearch } from './commissioner-results.js'
 import { renderLockManaging } from './commissioner-locks.js'
 import { renderOddsTab } from './commissioner-odds.js'
+import { renderEspnScoreFeedSection } from './commissioner-scores.js'
 import { animateSegThumb } from './seg-thumb.js'
 
 export { renderResults } from './commissioner-results.js'
@@ -27,6 +28,7 @@ let _healthBandsExpanded = false
 export function initCommissioner() {
   renderCommHeader()
   renderResults()
+  renderEspnScoreFeedSection()
 
   if (_initialized) return
   _initialized = true
@@ -53,7 +55,7 @@ export function initCommissioner() {
       const pane = $c('comm-pane-' + tab)
       if (pane) pane.classList.add('pane-active')
       if (tab === 'lock') renderLockManaging()
-      if (tab === 'results') renderResults()
+      if (tab === 'results') { renderResults(); renderEspnScoreFeedSection() }
       if (tab === 'odds') renderOddsTab()
     })
   })
@@ -128,7 +130,7 @@ export function renderCommHeader() {
         if (activeTab === 'lock') renderLockManaging()
         else if (activeTab === 'odds') renderOddsTab()
         else if (activeTab === 'draw') { const ad = activeDraw(); if (ad) renderPickCompletion(ad) }
-        else renderResults()
+        else { renderResults(); renderEspnScoreFeedSection() }
       })
     }
     targetSeg.appendChild(btn)

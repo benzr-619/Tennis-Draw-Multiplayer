@@ -117,7 +117,7 @@ export async function loadDraw(drawRow) {
   console.time(`loadDraw:matches:${_lbl}`)
   const { data: matchRows, error: me } = await supabase
     .from('matches')
-    .select('id, round_index, match_index, p1_name, p1_seed, p1_country, p2_name, p2_seed, p2_country, winner, score, roster_changed_at, replaced_name, odds_p1_live, odds_p2_live, odds_fetched_at, odds_p1_locked, odds_p2_locked, odds_locked_at, elo_p1, elo_p2')
+    .select('id, round_index, match_index, p1_name, p1_seed, p1_country, p2_name, p2_seed, p2_country, winner, score, espn_state, roster_changed_at, replaced_name, odds_p1_live, odds_p2_live, odds_fetched_at, odds_p1_locked, odds_p2_locked, odds_locked_at, elo_p1, elo_p2')
     .eq('draw_id', drawId)
     .order('round_index', { ascending: true })
   console.timeEnd(`loadDraw:matches:${_lbl}`)
@@ -130,7 +130,7 @@ export async function loadDraw(drawRow) {
     console.time(`loadDraw:picks:${_lbl}`)
     const { data: pickRows, error: pe } = await supabase
       .from('picks')
-      .select('match_id, match_pick, original_pick, original_pick_result, match_pick_result, high_confidence, edited_after_lock, notes, updated_at')
+      .select('match_id, match_pick, original_pick, original_pick_result, match_pick_result, high_confidence, edited_after_lock, updated_at')
       .eq('draw_id', drawId)
       .eq('user_id', userId)
     console.timeEnd(`loadDraw:picks:${_lbl}`)
@@ -158,9 +158,9 @@ export async function loadDraw(drawRow) {
       matchPickResult: pk.match_pick_result ?? null,
       highConfidence: pk.high_confidence ?? false,
       editedAfterLock: pk.edited_after_lock ?? false,
-      notes: pk.notes ?? '',
       winner: mr.winner ?? null,
       score: mr.score ?? '',
+      espn_state: mr.espn_state ?? null,
       roster_changed_at: mr.roster_changed_at ?? null,
       replaced_name: mr.replaced_name ?? null,
       odds_p1_live: mr.odds_p1_live ?? null,
@@ -322,8 +322,8 @@ function emptyMatch() {
     p2: { name: '', seed: '' },
     matchPick: null, originalPick: null,
     originalPickResult: null, matchPickResult: null,
-    highConfidence: false, editedAfterLock: false, notes: '',
-    winner: null, score: '', roster_changed_at: null, replaced_name: null,
+    highConfidence: false, editedAfterLock: false,
+    winner: null, score: '', espn_state: null, roster_changed_at: null, replaced_name: null,
     odds_p1_live: null, odds_p2_live: null, odds_fetched_at: null,
     odds_p1_locked: null, odds_p2_locked: null, odds_locked_at: null,
     elo_p1: null, elo_p2: null,

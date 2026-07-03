@@ -7,6 +7,7 @@ import { formatAmerican } from './odds.js'
 import { eloMap } from './elo.js'
 import { isAutoAssign, withdrawnNames, eloFavourite } from './scoring.js'
 import { makeFlagEl } from './flags.js'
+import { appendScoreWithServeDot } from './bracket-shared.js'
 
 let _viewerEloCache = { drawId: null, map: new Map(), withdrawn: new Set() }
 function _getViewerEloCache(d) {
@@ -91,6 +92,23 @@ function placeViewerCard(draw, m, ri, mi, x, y, wrap, mode) {
 
   const rowsWrap = document.createElement('div')
   rowsWrap.style.cssText = 'overflow:hidden;border-radius:5px 5px 0 0;flex-shrink:0'
+
+  // ESPN score line — read-only, same footer position used by bracket.js
+  function appendScoreFooter() {
+    if (!m.score) return
+    const footer = document.createElement('div'); footer.className = 'mc-footer'
+    const scoreLine = document.createElement('div')
+    scoreLine.className = 'mc-score-line'
+    if (m.espn_state === 'in') {
+      const liveTag = document.createElement('span'); liveTag.className = 'mc-live-tag'; liveTag.textContent = 'LIVE'
+      scoreLine.appendChild(liveTag)
+    }
+    const scoreText = document.createElement('span')
+    appendScoreWithServeDot(scoreText, m.score)
+    scoreLine.appendChild(scoreText)
+    footer.appendChild(scoreLine)
+    card.appendChild(footer)
+  }
 
   if (isMatch) {
     // ── MATCH PICKS MODE ──
@@ -200,10 +218,12 @@ function placeViewerCard(draw, m, ri, mi, x, y, wrap, mode) {
       makeActualLabel(m.actualP2, 'bot')
     }
 
+    appendScoreFooter()
     wrap.appendChild(card)
     return
   }
 
   card.appendChild(rowsWrap)
+  appendScoreFooter()
   wrap.appendChild(card)
 }
