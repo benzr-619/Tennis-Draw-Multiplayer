@@ -156,8 +156,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .viewer-hdr-draw{font-family:var(--mono);font-size:11px;color:var(--text3);white-space:nowrap}
 
 /* ── LOCK COUNTDOWN PILL ── */
-.countdown-val{font-family:var(--mono);font-size:13px;font-weight:500;color:var(--text)}
-.countdown-lbl{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.1em;white-space:nowrap;line-height:1;color:var(--text)}
+.countdown-val{font-family:var(--mono);font-size:13px;font-weight:500;color:var(--accent)}
+.countdown-lbl{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.1em;white-space:nowrap;line-height:1;color:var(--text3)}
 .countdown-clickable{transition:opacity 0.15s}
 .countdown-clickable:hover{opacity:0.6}
 .countdown-pill:not(.countdown-clickable):hover{background:none}
@@ -294,8 +294,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 /* ── LEADERBOARD DETAIL TABLE — sticky player name column on mobile ── */
 @media(max-width:768px){
   .lb-row-detail{grid-template-columns:130px 72px 68px 68px 72px 72px 72px 72px 72px}
-  .lb-detail-table{min-width:714px}
-  .lb-row-detail .lb-cell-name{position:sticky;left:0;background:var(--surface);z-index:2}
+  .lb-detail-table{min-width:822px}
+  .lb-row-detail .lb-cell-name{position:sticky;left:0;background:var(--surface);z-index:2;width:130px;min-width:130px}
   .lb-header-row.lb-row-detail .lb-cell-name{z-index:3;background:var(--surface)}
   /* Alternate rows need their own bg for sticky to not be transparent */
   .lb-row-alt .lb-cell-name{background:var(--surface2)}
@@ -628,7 +628,6 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .lb-row:last-child{border-bottom:none}
 .lb-header-row{background:var(--surface2);min-height:30px}
 .lb-row-alt{background:var(--surface2)}
-.lb-row-self{background:inherit}
 .lb-cell{font-family:var(--mono);font-size:12px;color:var(--text2);padding:2px 0;text-align:right}
 .lb-cell-name{font-family:var(--sans);font-size:13px;color:var(--text);display:flex;align-items:center;gap:8px;text-align:left;min-width:0}
 .lb-cell-score{font-weight:500;color:var(--text)}
@@ -639,7 +638,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .lb-sort-active{color:var(--accent)!important}
 .lb-sort-arrow{font-size:9px;color:var(--text3);flex-shrink:0}
 .lb-sort-active .lb-sort-arrow{color:var(--accent)}
-.lb-player-name{font-family:var(--serif);font-size:13px;color:var(--text);min-width:0;overflow-wrap:anywhere}
+.lb-player-name{font-family:var(--serif);font-size:13px;color:var(--text);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lb-player-link{cursor:pointer;text-decoration:underline;text-decoration-color:var(--border2);text-underline-offset:2px}
 .lb-player-link:hover{color:var(--accent);text-decoration-color:var(--accent)}
 .lb-rank{font-family:var(--mono);font-size:10px;color:var(--text3);flex-shrink:0}
@@ -702,10 +701,15 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 /* Card grid: name + health (sort-only, no value) + draw yield + match yield + index (5 cols) */
 .lb-row-card{grid-template-columns:1fr 48px 72px 72px 72px}
 .lb-cell-drawHealth{font-size:9px}
-/* Active-sort column = prominent; inactive = muted. Scoped to card and standings rows. */
-.lb-row-card .lb-cell-active-col,.lb-row-standings .lb-cell-active-col{color:var(--text)!important;font-weight:500!important}
+/* Active-sort column = prominent; inactive = muted. Header rows excluded so .lb-sort-active accent survives. */
+.lb-row-card .lb-cell-active-col,.lb-row-standings .lb-cell-active-col,.lb-row-detail .lb-cell-active-col,.lb-yd-row:not(.lb-header-row) .lb-cell-active-col{color:var(--text)!important;font-weight:500!important}
 .lb-row-card .lb-cell:not(.lb-cell-name):not(.lb-cell-active-col),
-.lb-row-standings .lb-cell:not(.lb-cell-name):not(.lb-cell-active-col){color:var(--text3)!important;font-weight:normal!important}
+.lb-row-standings .lb-cell:not(.lb-cell-name):not(.lb-cell-active-col),
+.lb-row-detail .lb-cell:not(.lb-cell-name):not(.lb-cell-active-col),
+.lb-yd-row:not(.lb-header-row) .lb-cell:not(.lb-cell-name):not(.lb-cell-active-col){color:var(--text3)!important;font-weight:normal!important}
+/* Health bar opacity: vivid when Health is the sort column, dim otherwise */
+.lb-yd-row .lb-cell-active-col .lb-yd-health-bar{opacity:0.85}
+.lb-yd-row .lb-cell:not(.lb-cell-active-col) .lb-yd-health-bar{opacity:0.25}
 /* Detail table grid: name + 8 stat cols (Draw Yld/Base/Upset/Match Yld/Draw%/Match%/Health/Index) */
 .lb-row-detail{grid-template-columns:1fr 72px 68px 68px 72px 72px 72px 72px 72px}
 /* Clickable draw card */
@@ -720,17 +724,18 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .lb-detail-back:hover{color:var(--text);background:var(--surface2)}
 .lb-detail-title{font-family:var(--serif);font-size:15px;font-weight:600;color:var(--text)}
 .lb-detail-table-wrap{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden}
-/* Your Draws tab */
-.lb-yd-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px}
-.lb-yd-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;border-top:3px solid var(--lb-slam-color,var(--border));display:flex;flex-direction:column}
-.lb-yd-card-top{padding:14px 14px 10px;display:flex;flex-direction:column;gap:2px;flex:1}
-.lb-yd-slam-name{font-family:var(--serif);font-size:15px;font-weight:600;color:var(--text)}
-.lb-yd-year{font-family:var(--mono);font-size:11px;color:var(--text3)}
-.lb-yd-btn-row{display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--border)}
-.lb-yd-btn{flex:1;padding:7px 0;border:1px solid var(--border);border-radius:5px;background:var(--surface2);font-family:var(--mono);font-size:12px;font-weight:500;color:var(--text);cursor:pointer;transition:all 0.15s}
-.lb-yd-btn:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
-.lb-yd-btn-disabled{color:var(--text3);background:none;cursor:default;opacity:0.4}
-.lb-yd-btn-disabled:hover{background:none;color:var(--text3);border-color:var(--border)}
+/* Your Draws tab — sortable table */
+.lb-yd-table-wrap{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.lb-yd-table{width:100%;min-width:912px}
+.lb-yd-row{grid-template-columns:minmax(220px,1fr) 72px 68px 68px 72px 72px 72px 72px 72px;border-left:3px solid transparent}
+.lb-yd-row:not(.lb-header-row){border-left-color:var(--lb-slam-color,var(--border))}
+.lb-yd-row:not(.lb-header-row):hover{background:var(--surface2)}
+.lb-yd-draw-label{white-space:nowrap;overflow:visible;text-overflow:clip}
+.lb-yd-row-active .lb-yd-draw-label{font-size:15px;font-weight:600}
+.lb-yd-row:not(.lb-header-row) .lb-cell-drawHealth{font-size:12px;display:flex;align-items:center;justify-content:flex-end;gap:4px}
+.lb-yd-health-bar{width:3px;border-radius:1px;flex-shrink:0;min-height:2px}
+.lb-yd-row-muted{opacity:0.5}
+.lb-yd-ineligible-msg{grid-column:2/-1;font-family:var(--mono);font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;display:flex;align-items:center;padding:2px 0}
 /* Clickable records rows */
 .lb-rec-row-clickable{cursor:pointer}
 .lb-rec-row-clickable:hover{background:var(--surface2)}
@@ -874,13 +879,21 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 ::-webkit-scrollbar-track{background:var(--surface2)}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
 #epm-seed:focus,#epm-name:focus{border-color:var(--accent)!important;outline:none}
-/* Mobile detail-table scroll fix — must come AFTER .lb-detail-table-wrap{overflow:hidden} above */
+/* Mobile scroll fix — must come AFTER the base overflow:hidden rules above */
 @media(max-width:768px){
   .lb-detail-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:6px 6px 8px 8px}
+  .lb-yd-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:6px 6px 8px 8px}
   .lb-row-detail .lb-cell-name{background:var(--surface)}
   .lb-header-row.lb-row-detail .lb-cell-name{background:var(--surface2)}
   .lb-row-alt .lb-cell-name{background:var(--surface2)}
-  .lb-row-self .lb-cell-name{background:inherit}
+  /* YD table — sticky draw name column (must be after base lb-yd-row border rules) */
+  .lb-yd-row{grid-template-columns:160px 72px 68px 68px 72px 72px 72px 72px 72px}
+  .lb-yd-row:not(.lb-header-row){border-left-color:transparent}
+  .lb-yd-row .lb-cell-name{position:sticky;left:0;z-index:2;background:var(--surface);width:160px;min-width:160px;box-sizing:border-box}
+  .lb-yd-row:not(.lb-header-row) .lb-cell-name{border-left:3px solid var(--lb-slam-color,var(--border))}
+  .lb-header-row.lb-yd-row .lb-cell-name{z-index:3;background:var(--surface2)}
+  .lb-row-alt.lb-yd-row .lb-cell-name{background:var(--surface2)}
+  .lb-yd-draw-label{overflow:hidden;text-overflow:ellipsis}
   /* Leaderboard Slams + Records mobile layout */
   .lb-content{padding:16px 12px}
   .lb-row-card{grid-template-columns:1fr 36px 56px 56px 56px;column-gap:8px}

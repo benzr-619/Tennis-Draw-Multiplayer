@@ -105,3 +105,41 @@ export function combinedMissingCount(ls) {
   const linked = findLinkedLock(ls)
   return lockMissingPickCount(ls) + (linked ? lockMissingPickCount(linked) : 0)
 }
+
+// ── OCCUPANT RESOLUTION (shared with commissioner Results tab) ──
+// A round-2+ slot's REAL occupant is only known once its own feeder match has a
+// confirmed winner — never buildDrawView's projected m.p1/m.p2, which can show a name
+// from a still-alive original pick before that round has actually been played. Round 0
+// is always the real draw. Single source of truth for "what really occupies this slot,"
+// shared by commissioner-results.js's _resultOccupant (adds seed for display) and the
+// backup-pick fraction below (existence-only gating check).
+export function feederWinnerName(d, ri, mi, side) {
+  if (ri === 0) return d.rounds[0]?.matches[mi]?.[side]?.name || null
+  const feeder = d.rounds[ri - 1]?.matches[mi * 2 + (side === 'p1' ? 0 : 1)]
+  return feeder?.winner || null
+}
+
+/** True once both real occupants of (ri, mi) are confirmed — not projected picks. */
+export function bothOccupantsResolved(d, ri, mi) {
+  return !!feederWinnerName(d, ri, mi, 'p1') && !!feederWinnerName(d, ri, mi, 'p2')
+}
+
+// ── BACKUP-PICK "X/Y" FRACTION (post-lock countdown) ──
+// Y = matches whose real occupants are both resolved and which aren't locked or decided
+// yet. X = of those, how many already have a matchPick set. Walks round-major/match-minor
+// so the first unmade candidate found doubles as a sensible "next unmade pick" nav target.
+export function backupPickFraction(d) {
+  let x = 0, y = 0
+  let nextUnmade = null
+  d.rounds.forEach((round, ri) => {
+    round.matches.forEach((m, mi) => {
+      if (m.winner) return
+      if (!bothOccupantsResolved(d, ri, mi)) return
+      if (isMatchLocked(ri, mi, 'backup_picks')) return
+      y++
+      if (m.matchPick) x++
+      else if (!nextUnmade) nextUnmade = { ri, mi }
+    })
+  })
+  return { x, y, nextUnmade }
+}

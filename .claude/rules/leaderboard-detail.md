@@ -229,9 +229,33 @@ Data from `buildAllTimeAgg` — aggregate keys: `avgScore`, `avgMatchYield`, `av
 
 Extended to compute `bestUpset` per user per draw: iterates assembled draw's matches, finds `matchPickResult === 'correct'` with locked odds, tracks best by `yld = round(STAKE_BY_ROUND[ri] * (decimal - 1))`. Stored as `result[prof.id].bestUpset`. Requires `STAKE_BY_ROUND` import from odds.js.
 
-## Your Draws Tab
+## Your Draws Tab — Redesign (DECIDED 2026-07-06)
 
-One card per slam+year with M/W buttons. Button disabled + greyed if the user has no picks in that draw. Clicking opens `openViewerOriginalPicks(state.currentUser, draw)`.
+**Module:** `src/leaderboard-yourdraws.js`. Exports `renderYourDrawsTab(container)` and `resetYdSort()`.
+`resetYdSort()` is called from `leaderboard.js` tab-switch handler when entering the Your Draws tab (same pattern as `resetSlamSort` for slams).
+
+**Layout:** single sortable table — one row per draw (MS and WS as separate rows, all slams combined). No M/W toggle.
+
+**Columns:** Draw (slam name + year + M/W) / Draw Yld / Base Pts / Upset Pts / Match Yld / Draw % / Match % / Health / Index. Same stat keys and `formatStat` calls as the detail table.
+
+**CSS grid:** `.lb-yd-row{grid-template-columns:1fr 72px 68px 68px 72px 72px 72px 72px 72px}` — identical column widths to `.lb-row-detail`. `.lb-yd-table{min-width:822px}`. `.lb-yd-table-wrap{overflow:hidden}` at base; `overflow-x:auto` in the late `@media(max-width:768px)` block (same cascade pattern as the detail table).
+
+**3px slam-color left border:** `border-left:3px solid transparent` on all `.lb-yd-row`; data rows set `--lb-slam-color` via `style.setProperty` and CSS `border-left-color:var(--lb-slam-color)`. Header row stays transparent.
+
+**Sort state:** `ydSort = { col, dir }` (module-level). `col: null` = chronological (default). Clicking any stat column header: sets `col` to that key, `dir` to -1 descending first. Second click flips `dir`. Comparator: `(va < vb ? -1 : 1) * dir` (same correct recSort pattern — no trailing negation).
+
+**Chronological order (col:null):** `chronoKey(d) = d.year * 100 + SLAM_CHRON.indexOf(d.slam) * 2 + (d.draw==='WS' ? 0 : 1)` where `SLAM_CHRON = ['AO','RG','WIM','USO']` (ascending within a year). Sorted descending by chronoKey → newest first, MS before WS within same slam.
+
+**Data loading:** single Supabase query `picks?draw_id=eq.*&user_id=eq.${userId}&select=draw_id,original_pick` for all draws at once. Counts `original_pick` per draw_id to determine eligibility. `loadDrawStatsForAllUsers` (cached via `statsCache` in `leaderboard.js`) used for eligible draws.
+
+**Filtering:**
+- Draws with zero `original_pick` rows → omitted entirely.
+- Draws with ≥1 original pick but below `POOL_ELIGIBILITY_THRESHOLD` (50% of total matches) → row shown muted (`lb-yd-row-muted`, `opacity:0.5`), stat cells replaced by a single `< 50% picked` label spanning all stat columns (`grid-column:2/-1`), but row click still opens the viewer.
+- Draws at or above threshold → full stats.
+
+**Active draw:** `draw.is_active === true` → row gets `.lb-yd-row-active` class → `.lb-yd-row-active .lb-yd-draw-label{font-size:15px;font-weight:600}`.
+
+**Row click:** `openViewerOriginalPicks(state.currentUser, draw)` on all rows regardless of eligibility.
 
 ## Viewer Entry Point
 

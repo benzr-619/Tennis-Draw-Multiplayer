@@ -6,6 +6,7 @@ import { COUNTRY_DISPLAY_NAMES, countryNameToIoc } from './flags.js'
 import { reloadActiveDraw } from './data.js'
 import { applyWinner, undoWinner, clearMatchPickForward } from './picks.js'
 import { buildDrawView } from './draw-view.js'
+import { feederWinnerName } from './lock.js'
 import { renderBracketLayout } from './bracket-layout.js'
 import { renderBracketList } from './bracket-list.js'
 import { $c } from './commissioner-shared.js'
@@ -149,11 +150,12 @@ export function renderResults() {
 // project picks forward.
 function _resultOccupant(d, m, ri, mi, side) {
   if (ri === 0) return m[side]
-  const feeder = d.rounds[ri - 1]?.matches[mi * 2 + (side === 'p1' ? 0 : 1)]
-  if (feeder && feeder.winner) {
-    const seed = feeder.p1?.name === feeder.winner ? feeder.p1.seed
-      : feeder.p2?.name === feeder.winner ? feeder.p2.seed : ''
-    return { name: feeder.winner, seed }
+  const name = feederWinnerName(d, ri, mi, side)
+  if (name) {
+    const feeder = d.rounds[ri - 1]?.matches[mi * 2 + (side === 'p1' ? 0 : 1)]
+    const seed = feeder.p1?.name === name ? feeder.p1.seed
+      : feeder.p2?.name === name ? feeder.p2.seed : ''
+    return { name, seed }
   }
   return { name: '', seed: '' }
 }

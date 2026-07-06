@@ -249,11 +249,20 @@ export function placeCard(d, m, ri, mi, x, y, wrap) {
     }
 
     const isResolved = cls.includes('locked')
-    const backupPickLocked = d.locked && !m.editedAfterLock && isMatchLocked(ri, mi, 'backup_picks')
-    const isR1PostLock = d.locked && ri === 0 && !m.editedAfterLock
-    if (p.name && !m.winner && (!isResolved || m.editedAfterLock) && !backupPickLocked && !isR1PostLock) {
+    // Per-match lock, not gated on d.locked (the global original-picks lock) — a match's
+    // own backup_picks lock (auto via ESPN match-start, or manual) governs it regardless
+    // of whether the whole-draw original-picks lock has fired yet. This used to be two
+    // rules: this per-match check (applied only post-d.locked) plus a separate blanket
+    // "all of round 1 freezes the instant original picks lock fires" rule. The blanket
+    // rule predated ESPN match-start auto-lock — before auto-lock existed, R1 had no
+    // per-match lock mechanism at all, so freezing the whole round at original-lock time
+    // was the only way to stop R1 backup-pick edits. Decoupled 2026-07-06: R1 now behaves
+    // like every other round, governed solely by its own match-level lock. See
+    // .claude/rules/lock-conventions.md "ESPN Match-Start Auto-Lock".
+    const backupPickLocked = !m.editedAfterLock && isMatchLocked(ri, mi, 'backup_picks')
+    if (p.name && !m.winner && (!isResolved || m.editedAfterLock) && !backupPickLocked) {
       row.addEventListener('click', () => handlePickClick(ri, mi, p, { renderStats, renderBracket }))
-    } else if (p.name && (backupPickLocked || isR1PostLock)) {
+    } else if (p.name && backupPickLocked) {
       row.classList.add('pick-locked')
     }
     return row

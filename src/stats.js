@@ -4,7 +4,7 @@ import { activeDraw, state, isMobile } from './state.js'
 import { calcStatsAsOf, calcChalkScore, isBackupPick, healthHue as _hHue } from './scoring.js'
 import { formatYield } from './odds.js'
 import { loadDrawStatsForAllUsers } from './leaderboard.js'
-import { nextScheduledLock, lockMissingPickCount, findLinkedLock, combinedMissingCount } from './lock.js'
+import { nextScheduledLock, lockMissingPickCount, findLinkedLock, combinedMissingCount, backupPickFraction } from './lock.js'
 
 let statsRoundFilter = null
 let _countdownClickHandler = null
@@ -146,30 +146,33 @@ export function buildCountdownEl(d, s, { compact = false, mobileIcon = false } =
     return el
   }
 
-  // Post-lock: draw's own next scheduled backup lock, pure chronological order.
-  // (Cross-gender awareness comes from findLinkedLock/_urgency, not from reordering
-  // this pick — a reordering-by-unfilled workaround used to bury genuinely-next locks
-  // whose matches were still TBD vs TBD.)
-  const upcoming = nextScheduledLock(d.db_id)
-  if (!upcoming) return null
+  // Post-lock: "Match picks set for X/Y upcoming matches" (2026-07-06) — replaces the old
+  // scheduled-lock countdown clock entirely. Auto-lock timing (ESPN match-start) isn't
+  // schedulable the way a single commissioner-set countdown assumed, so a live fraction
+  // reads sensibly at every value including "done" (no special-case empty-state copy).
+  // Y = matches whose real occupants are both resolved and not yet locked/decided.
+  // X = of those, how many already have a matchPick. See .claude/rules/lock-conventions.md
+  // "Countdown Replacement — Match Picks Set for X/Y".
+  const { x, y, nextUnmade } = backupPickFraction(d)
+  if (y === 0) return null // nothing currently pickable — hide the widget entirely
 
-  const msLeft = new Date(upcoming.scheduled_at) - Date.now()
-  const totalMins = Math.max(0, Math.floor(msLeft / 60000))
-  const hh = String(Math.floor(totalMins / 60)).padStart(2, '0')
-  const mm = String(totalMins % 60).padStart(2, '0')
-  const displayTime = `${hh}h:${mm}m`
-
-  const { count, clickTarget } = _urgency(upcoming)
-  const allFilled = count === 0
+  const allFilled = x === y
   const urgentCls = !allFilled ? ' countdown-urgent' : ''
-  const hasClick = !allFilled && _countdownClickHandler
-  const noPicksLbl = count > 0 ? _noPicksLabel(count) : null
+  // No lock icon here — unlike the pre-lock countdown above, this isn't counting down to
+  // a single lock event, so a lock glyph next to it no longer reads correctly.
+  const fractionText = `${x}/${y} upcoming matches`
+  // Synthetic single-match lock target — reuses handleCountdownClick/_findUnpickedCard's
+  // existing backup_picks branch unchanged (range = exactly the one unmade match found).
+  const clickTarget = nextUnmade
+    ? { draw_id: d.db_id, lock_type: 'backup_picks', round_index: nextUnmade.ri, match_index_start: nextUnmade.mi, match_index_end: nextUnmade.mi }
+    : null
+  const hasClick = !allFilled && !!_countdownClickHandler && !!clickTarget
 
   if (compact) {
     const el = document.createElement('div')
     el.className = 'sc-countdown' + (hasClick ? ' countdown-clickable' : '') + urgentCls
-    const labelStr = noPicksLbl || upcoming.label || 'next lock'
-    el.innerHTML = `<span class="sc-countdown-lbl${urgentCls}">${labelStr}</span><span class="sc-countdown-row">${_lockSvg()}<span class="sc-countdown-txt${urgentCls}">${displayTime}</span></span>`
+    el.setAttribute('title', `Match picks set for ${x} of ${y} upcoming matches`)
+    el.innerHTML = `<span class="sc-countdown-lbl${urgentCls}">match picks set for</span><span class="sc-countdown-row"><span class="sc-countdown-txt${urgentCls}">${fractionText}</span></span>`
     if (hasClick) el.addEventListener('click', () => _countdownClickHandler(clickTarget))
     return el
   }
@@ -178,26 +181,21 @@ export function buildCountdownEl(d, s, { compact = false, mobileIcon = false } =
     const el = document.createElement('div')
     el.className = 'stat-pill countdown-pill' + (hasClick ? ' countdown-clickable' : '') + urgentCls
     el.style.cssText = 'flex-direction:column;align-items:flex-end;gap:1px'
+    el.setAttribute('title', `Match picks set for ${x} of ${y} upcoming matches`)
     if (hasClick) el.addEventListener('click', () => _countdownClickHandler(clickTarget))
-    const labelHTML = noPicksLbl
-      ? `<span class="countdown-lbl${urgentCls}">${noPicksLbl}</span>`
-      : (upcoming.label ? `<span class="countdown-lbl${urgentCls}" style="font-style:italic">${upcoming.label}</span>` : '')
-    el.innerHTML = `${labelHTML}<span class="sval countdown-val${urgentCls}" style="display:flex;align-items:center;gap:4px">${_lockSvg()}${displayTime}</span>`
+    el.innerHTML = `<span class="countdown-lbl${urgentCls}">match picks set for</span><span class="sval countdown-val${urgentCls}">${fractionText}</span>`
     return el
   }
 
-  const labelText = noPicksLbl
-    ? noPicksLbl
-    : (upcoming.label ? `next lock: <span style="font-style:italic">${upcoming.label}</span>` : 'next lock')
-
+  // Non-compact, non-mobile branch is unused post-lock in practice (renderStats() only
+  // ever calls this with compact:true on desktop / mobileIcon:true on mobile once
+  // d.locked), kept as a sensible fallback rather than dead code that silently diverges.
   const el = document.createElement('div')
-  el.className = 'stat-pill countdown-pill' + urgentCls
+  el.className = 'stat-pill countdown-pill' + (hasClick ? ' countdown-clickable' : '') + urgentCls
   el.style.cssText = 'flex-direction:row;align-items:center;gap:10px'
-  if (hasClick) {
-    el.classList.add('countdown-clickable')
-    el.addEventListener('click', () => _countdownClickHandler(clickTarget))
-  }
-  el.innerHTML = `<span class="countdown-lbl${urgentCls}">${labelText}</span><span class="sval countdown-val${urgentCls}">${displayTime}</span>`
+  el.setAttribute('title', `Match picks set for ${x} of ${y} upcoming matches`)
+  if (hasClick) el.addEventListener('click', () => _countdownClickHandler(clickTarget))
+  el.innerHTML = `<span class="countdown-lbl${urgentCls}">match picks set for</span><span class="sval countdown-val${urgentCls}">${fractionText}</span>`
   return el
 }
 

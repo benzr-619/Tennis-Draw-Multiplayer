@@ -29,6 +29,7 @@ Current rules files:
 - `.claude/rules/health-bands.md` — stage-calibrated health hue: winner_confirmed_at + health_bands/health_band_samples tables, calcHealthAtMatchSet, healthHue(pct,n,bands), src/health-bands.js compute/store/live-update functions, commissioner Health Bands + Getting Ready wiring
 - `.claude/rules/scores-feed.md` — ESPN live score feed: fetch_espn_scores() SQL poller, real JSON shape, name matching + unmatched-names triage, abnormal finishes, heartbeat alerting, auto-confirm (scores_autoconfirm_enabled) + undo-suppression guard
 - `.claude/rules/realtime.md` — live updates: Supabase postgres_changes over Broadcast, patch-vs-rebuild tiers, stage 1 (bracket screen) + stage 3 (commissioner Results tab) built, kill-switch behavior, realtime.js/bracket.js/main.js/commissioner.js wiring
+- `.claude/rules/tutorial.md` — new-player onboarding tutorial design: scope (mechanics only, not scoring), entry point, sandbox data source, reuse-the-real-renderer approach, lock-teaching approach, mobile note
 
 ---
 
@@ -109,7 +110,10 @@ src/
   commissioner-locks.js — Lock Managing tab orchestrator: renderLockManaging()
   commissioner-locks-orig.js — Original Picks lock controls
   commissioner-locks-backup.js — Backup Pick locks + Scheduled Locks list
-  leaderboard.js — renderLeaderboard(), stats aggregation
+  leaderboard.js — renderLeaderboard(), stats aggregation, shared helpers (formatStat, loadDrawStatsForAllUsers)
+  leaderboard-slams.js — Slams tab: live slam cards, sortable M/W table, past slams, storyline chips
+  leaderboard-records.js — Records tab: all-time/per-year standings, podium, honor chips
+  leaderboard-yourdraws.js — Your Draws tab: sortable table of user's own draws with stats
   viewer-bracket.js — renderViewerBracket() + placeViewerCard(): read-only viewer painting
   print.js — buildPrintHTML() (ported verbatim)
   parser.js — extractPdfText(), parseTnnsText(), buildInitialRounds()
@@ -271,7 +275,7 @@ Reached via account-menu "Commissioner" entry (`enterCommissioner()`); exited vi
 
 ## 13. Feature Status
 
-**Built:** foundation, commissioner screen, leaderboard, polish, viewer, lock architecture (incl. scheduled-locks list), post-lock backup-pick cascade, `buildDrawView` derived-state model, Match Yield betting layer (odds polling, name matching, commissioner Odds tab, bracket card odds display), Records tab trophy-room redesign, Slams tab live-board redesign (stage 3: live slam header + sortable M/W cards + movement arrows + health underlines + storyline chips + past-slam compact/expand + generic list modal), draw notification email (Supabase Edge Function `send-draw-notification` + Resend; `draws.notified_at` column; `get_resend_api_key()` vault helper; standalone HTML email template in `Multiplayer/wimbledon-2026-email.html`), commissioner Draw Management improvements: Pick Completion table (per-player round-0 fill count + status chip), Manage Draws collapsed section with Re-activate button (sets `draws.is_active`, clears `app_settings` Getting Ready state), Getting Ready single-button flow, Odds tab Unmatched API Names nested inside Odds Status card, ESPN live score feed (`fetch_espn_scores()` SQL poller + pg_cron, always-on bracket card score display, commissioner Results-tab status/unmatched-names triage card, heartbeat email alerting, auto-confirm behind `scores_autoconfirm_enabled` — see `.claude/rules/scores-feed.md`).
+**Built:** foundation, commissioner screen, leaderboard, polish, viewer, lock architecture (incl. scheduled-locks list), post-lock backup-pick cascade, `buildDrawView` derived-state model, Match Yield betting layer (odds polling, name matching, commissioner Odds tab, bracket card odds display), Records tab trophy-room redesign, Slams tab live-board redesign (stage 3: live slam header + sortable M/W cards + movement arrows + health underlines + storyline chips + past-slam compact/expand + generic list modal), draw notification email (Supabase Edge Function `send-draw-notification` + Resend; `draws.notified_at` column; `get_resend_api_key()` vault helper; standalone HTML email template in `Multiplayer/wimbledon-2026-email.html`), commissioner Draw Management improvements: Pick Completion table (per-player round-0 fill count + status chip), Manage Draws collapsed section with Re-activate button (sets `draws.is_active`, clears `app_settings` Getting Ready state), Getting Ready single-button flow, Odds tab Unmatched API Names nested inside Odds Status card, ESPN live score feed (`fetch_espn_scores()` SQL poller + pg_cron, always-on bracket card score display, commissioner Results-tab status/unmatched-names triage card, heartbeat email alerting, auto-confirm behind `scores_autoconfirm_enabled` — see `.claude/rules/scores-feed.md`), ESPN match-start auto-lock (`fetch_espn_scores()` inserts a single-match `lock_schedules` row the instant a match's `espn_state` moves off `'pre'`, indistinguishable from a manual "Lock now"; applies to every round including Round 1) + its "Match picks set for X/Y upcoming matches" post-lock countdown replacement (`backupPickFraction()` in `lock.js`, shares feeder-occupant resolution with commissioner-results.js's `_resultOccupant()` — see `.claude/rules/lock-conventions.md`).
 
 **Naming note:** "Score" is labelled **Draw Yield** everywhere in the UI (stats bar, leaderboard). Internal key remains `score` in JS stats objects. Chalk display removed from UI; code retained in `scoring.js` / `stats.js` (commented out) for future re-enable.
 
@@ -279,4 +283,5 @@ Reached via account-menu "Commissioner" entry (`enterCommissioner()`); exited vi
 - Commissioner "Notify Players" button (Edge Function is deployed; button in commissioner screen not yet wired — see Claude Code prompt in session notes)
 - Automated tests (`test-harness/` golden exists; see §0)
 - Mobile layout (desktop-only; mobile version is a future phase)
+- New-player onboarding tutorial (design decided 2026-07-06, not implemented): coach-mark overlay walkthrough of pick-making, lock states, and backup picks, using a real completed slam's data in a throwaway sandbox draw. Full design in `.claude/rules/tutorial.md`.
 - Real-time updates: **stage 1 (bracket screen) + stage 3 (commissioner Results tab) built** 2026-07-03 — `src/realtime.js`, patch-tier score ticks + debounced rebuild-tier for winner/lock/draw changes on the bracket screen, pure-visibility winner/score/espn_state notifications on the commissioner Results tab, kill-switch on disconnect. See `.claude/rules/realtime.md`. Leaderboard (stage 2) still manual-refresh only.

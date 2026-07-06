@@ -167,7 +167,6 @@ export function renderLockBracket() {
 
   container.innerHTML = ''
   d.rounds.forEach((round, ri) => {
-    if (ri === 0) return
     const col = document.createElement('div')
     col.className = 'lock-round'
 
@@ -190,11 +189,19 @@ export function renderLockBracket() {
       const scheduledLock = !isLocked ? getMatchScheduledLock(ri, mi) : null
       const isSelected = selectedLockCards.has(key)
 
-      const prevRound = d.rounds[ri - 1]
-      const feeder1 = prevRound?.matches[mi * 2]
-      const feeder2 = prevRound?.matches[mi * 2 + 1]
-      const p1Name = feeder1?.winner ? (m.p1?.name || '—') : '—'
-      const p2Name = feeder2?.winner ? (m.p2?.name || '—') : '—'
+      // Round 1 (ri===0) is always the real draw — occupants are m.p1/m.p2 directly,
+      // never derived from a feeder (there is no round before it).
+      let p1Name, p2Name
+      if (ri === 0) {
+        p1Name = m.p1?.name || '—'
+        p2Name = m.p2?.name || '—'
+      } else {
+        const prevRound = d.rounds[ri - 1]
+        const feeder1 = prevRound?.matches[mi * 2]
+        const feeder2 = prevRound?.matches[mi * 2 + 1]
+        p1Name = feeder1?.winner ? (m.p1?.name || '—') : '—'
+        p2Name = feeder2?.winner ? (m.p2?.name || '—') : '—'
+      }
 
       const card = document.createElement('div')
       card.className = 'lock-card'

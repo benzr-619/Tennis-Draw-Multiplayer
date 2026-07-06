@@ -1,14 +1,15 @@
-// Leaderboard — Slams tab, detail view, your draws, viewer, data loading
+// Leaderboard — Slams tab, detail view, viewer, data loading
 
 import { supabase } from './supabase.js'
 import { state } from './state.js'
 import { calcStats, calcSlamIndex, isPoolEligible } from './scoring.js'
-import { slamKey, SLAM_CONFIG, SLAM_COLORS } from './data.js'
+import { SLAM_CONFIG, SLAM_COLORS } from './data.js'
 import { buildDrawView } from './draw-view.js'
 import { animateSegThumb } from './seg-thumb.js'
 import { STAKE_BY_ROUND } from './odds.js'
 import { renderRecordsTab } from './leaderboard-records.js'
 import { renderSlamsTab, resetSlamSort } from './leaderboard-slams.js'
+import { renderYourDrawsTab, resetYdSort } from './leaderboard-yourdraws.js'
 
 // ── MODULE STATE ──
 
@@ -293,6 +294,7 @@ export async function renderLeaderboard() {
         lbTab = key
         lbSort = { col: 'score', dir: -1 }
         if (key === 'slams') resetSlamSort()
+        if (key === 'yourdraws') resetYdSort()
         renderLeaderboard()
       })
       tabseg.appendChild(btn)
@@ -438,7 +440,7 @@ function buildDetailTable(cols, profs, statsMap, draw) {
 
     cols.forEach(col => {
       const cell = document.createElement('div')
-      cell.className = 'lb-cell lb-cell-' + col.key
+      cell.className = 'lb-cell lb-cell-' + col.key + (col.key === lbSort.col ? ' lb-cell-active-col' : '')
       cell.textContent = formatStat(col.key, s[col.key])
       row.appendChild(cell)
     })
@@ -451,101 +453,6 @@ function buildDetailTable(cols, profs, statsMap, draw) {
 
 
 // ── YOUR DRAWS TAB ──
-
-async function renderYourDrawsTab(container) {
-  if (!state.currentUser) {
-    container.innerHTML = '<div class="lb-empty">Not logged in.</div>'
-    return
-  }
-
-  if (state.draws.length === 0) {
-    container.innerHTML = '<div class="lb-empty">No draws uploaded yet.</div>'
-    return
-  }
-
-  // Determine which draws the current user has picks in
-  const userId = state.currentUser.id
-  const userDrawIds = new Set()
-  await Promise.all(state.draws.map(async d => {
-    const { data } = await supabase
-      .from('picks')
-      .select('match_id')
-      .eq('draw_id', d.db_id)
-      .eq('user_id', userId)
-      .limit(1)
-    if (data && data.length > 0) userDrawIds.add(d.db_id)
-  }))
-
-  // Group by slam+year, newest first
-  const groups = new Map()
-  state.draws.forEach(d => {
-    const k = slamKey(d)
-    if (!groups.has(k)) groups.set(k, { slam: d.slam, year: d.year, draws: [] })
-    groups.get(k).draws.push(d)
-  })
-
-  const SLAM_ORDER = ['USO', 'WIM', 'RG', 'AO']
-  const sorted = [...groups.values()].sort((a, b) => {
-    if (b.year !== a.year) return b.year - a.year
-    return SLAM_ORDER.indexOf(a.slam) - SLAM_ORDER.indexOf(b.slam)
-  })
-
-  const grid = document.createElement('div')
-  grid.className = 'lb-yd-grid'
-  container.appendChild(grid)
-
-  for (const group of sorted) {
-    const color = SLAM_COLORS[group.slam] || 'var(--border)'
-    const cfg = SLAM_CONFIG[group.slam] || {}
-
-    const card = document.createElement('div')
-    card.className = 'lb-yd-card'
-    card.style.setProperty('--lb-slam-color', color)
-
-    const cardTop = document.createElement('div')
-    cardTop.className = 'lb-yd-card-top'
-
-    const slamName = document.createElement('div')
-    slamName.className = 'lb-yd-slam-name'
-    slamName.textContent = cfg.name || group.slam
-
-    const yearEl = document.createElement('div')
-    yearEl.className = 'lb-yd-year'
-    yearEl.textContent = group.year
-
-    cardTop.appendChild(slamName)
-    cardTop.appendChild(yearEl)
-    card.appendChild(cardTop)
-
-    const btnRow = document.createElement('div')
-    btnRow.className = 'lb-yd-btn-row'
-
-    const drawMap = {}
-    group.draws.forEach(d => { drawMap[d.draw] = d })
-
-    ;['MS', 'WS'].forEach(drawType => {
-      const draw = drawMap[drawType]
-      const label = drawType === 'MS' ? 'M' : 'W'
-      const hasPicks = draw && userDrawIds.has(draw.db_id)
-
-      const btn = document.createElement('button')
-      btn.className = 'lb-yd-btn' + (hasPicks ? '' : ' lb-yd-btn-disabled')
-      btn.textContent = label
-      btn.disabled = !hasPicks
-
-      if (hasPicks) {
-        btn.addEventListener('click', () => {
-          openViewerOriginalPicks(state.currentUser, draw)
-        })
-      }
-
-      btnRow.appendChild(btn)
-    })
-
-    card.appendChild(btnRow)
-    grid.appendChild(card)
-  }
-}
 
 // ── VIEWER ──
 
