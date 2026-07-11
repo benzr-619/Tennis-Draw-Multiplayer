@@ -151,8 +151,16 @@ function openRescheduleModal(id) {
 
 async function updateScheduledLock(id, patch) {
   if (!state.currentUser?.is_commissioner) return
+  const d = activeDraw()
+  const ls = (state.lockSchedules || []).find(x => x.id === id)
   const { error } = await supabase.from('lock_schedules').update(patch).eq('id', id)
   if (error) { setLockBackupMsg('Error: ' + error.message, 'error'); return }
+
+  // "Lock now" via reschedule modal also bypasses fire_scheduled_locks() — freeze odds here.
+  if (patch.locked_at && d && ls) {
+    await supabase.rpc('snapshot_locked_odds', { p_draw_id: d.db_id, p_round_index: ls.round_index, p_match_index_start: ls.match_index_start, p_match_index_end: ls.match_index_end })
+  }
+
   await loadLockSchedules()
   renderLockManaging()
   setLockBackupMsg(patch.locked_at ? 'Lock applied.' : 'Lock rescheduled.', 'success')
@@ -359,6 +367,12 @@ async function handleBackupLockInsert(scheduledAt, label = null) {
         }
         const { error } = await supabase.from('lock_schedules').insert(row)
         if (error) throw error
+
+        // "Lock now" bypasses fire_scheduled_locks() entirely, so freeze odds here —
+        // same snapshot a scheduled fire would get. No-op if no live odds yet.
+        if (!scheduledAt) {
+          await supabase.rpc('snapshot_locked_odds', { p_draw_id: d.db_id, p_round_index: ri, p_match_index_start: s, p_match_index_end: e })
+        }
       }
     }
 

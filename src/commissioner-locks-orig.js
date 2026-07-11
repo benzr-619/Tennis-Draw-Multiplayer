@@ -85,6 +85,11 @@ async function _doLockOriginalPicks(d) {
   const { error: pe } = await supabase.rpc('snapshot_original_picks', { p_draw_id: d.db_id })
   if (pe) throw pe
 
+  // 3b. Freeze live odds -> locked odds for all R0 matches (same snapshot the
+  //     scheduled-fire path gets via fire_scheduled_locks() — manual "Lock now"
+  //     used to skip this entirely, silently starving Match Yield for R0 picks).
+  await supabase.rpc('snapshot_locked_odds', { p_draw_id: d.db_id, p_round_index: 0, p_match_index_start: 0, p_match_index_end: 999 })
+
   // 4. Update local state
   d.locked = true
   d.rounds.forEach(r => r.matches.forEach(m => { m.originalPick = m.matchPick }))

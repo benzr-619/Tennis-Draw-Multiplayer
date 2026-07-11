@@ -16,11 +16,53 @@ Match Yield scores against `matchPickResult` (same as Match Accuracy), not `orig
 ## Odds Lifecycle
 
 1. **Live odds:** `fetch_all_active_odds()` PL/pgSQL runs every 3 hours via pg_cron (`fetch-odds` job). Fetches h2h from The Odds API, computes consensus = avg decimal across bookmakers, upserts into `odds_raw`, then pushes matched consensus to `matches.odds_p1_live` / `odds_p2_live` where `name_mappings` exist.
-2. **Locked odds:** `fire_scheduled_locks()` snapshots `odds_p*_live → odds_p*_locked` in two cases:
-   - **`original_picks` lock fires:** snapshots odds for all `round_index = 0` matches in the draw. R0 never gets a backup_picks lock, so this is the only opportunity to freeze those odds.
-   - **`backup_picks` lock fires:** snapshots odds for the covered `(round_index, match_index_start, match_index_end)` range.
-   - Both cases: condition `odds_p1_live IS NOT NULL AND odds_p1_locked IS NULL` (no overwrites).
+2. **Locked odds:** `snapshot_locked_odds(p_draw_id, p_round_index, p_match_index_start, p_match_index_end)` — shared SQL function, condition `odds_p1_live IS NOT NULL AND odds_p1_locked IS NULL` (no overwrites). Called from **every** lock path (see "Odds-Locking Gap" below):
+   - **`original_picks` lock fires (scheduled or manual):** called with `(draw_id, 0, 0, 999)` — covers all `round_index = 0` matches. R0 never gets a backup_picks lock, so this is the only opportunity to freeze those odds.
+   - **`backup_picks` lock fires (scheduled, manual, or ESPN auto-lock):** called with the covered `(round_index, match_index_start, match_index_end)` range.
 3. **Display:** Cards show American odds (live until locked, locked after). Post-result shows earned/lost yield.
+
+## Odds-Locking Gap — Fixed 2026-07-11 (previously only the scheduled-fire path locked odds)
+
+`fire_scheduled_locks()` was, until this fix, the **only** place that ever snapshotted
+`odds_p*_live → odds_p*_locked` — and it only runs for genuinely *scheduled* locks (a
+`scheduled_at` row that pg_cron later fires). Every "lock immediately" path bypassed it
+entirely, since those paths insert/update `lock_schedules` rows with `locked_at` already
+set (never "pending"), so `fire_scheduled_locks()` never sees them:
+
+- `_doLockOriginalPicks()` (`src/commissioner-locks-orig.js`) — manual "Lock now" for
+  original picks — only ran `snapshot_original_picks`, never touched odds.
+- `handleBackupLockInsert(null, ...)` / `updateScheduledLock({locked_at: now()})`
+  (`src/commissioner-locks-backup.js`) — manual "Lock now" and "lock now" via the
+  reschedule modal for backup picks — inserted/updated `lock_schedules` rows with
+  `locked_at` set directly client-side.
+- The ESPN match-start auto-lock in `fetch_espn_scores()` (see
+  `.claude/rules/lock-conventions.md` "ESPN Match-Start Auto-Lock") — inserts a
+  `lock_schedules` row the same way, with `locked_at` already set.
+
+Since auto-lock handles most locking during a live tournament, most recent-round
+matches never got their odds locked — Match Yield (requires `odds_p1_locked` /
+`odds_p2_locked` non-null, see `scoring.js` `calcStatsAsOf`) silently skipped them.
+
+**Fix:** extracted the snapshot UPDATE out of `fire_scheduled_locks()` into
+`snapshot_locked_odds(p_draw_id, p_round_index, p_match_index_start, p_match_index_end)`
+(SECURITY DEFINER, same no-overwrite guard). Every lock path now calls it right after
+its own lock write: `fire_scheduled_locks()` (both branches), `fetch_espn_scores()`'s
+auto-lock branch (right after inserting the auto-lock row), and all three client "lock
+now" call sites via a new `supabase.rpc('snapshot_locked_odds', {...})` call (mirrors
+the existing `snapshot_original_picks` RPC pattern).
+
+**Backfill (2026-07-11, live Wimbledon 2026 draw):** for already-locked/decided matches
+missing `odds_p1_locked`, a one-time SQL backfill determined each match's approximate
+actual lock time (covering `lock_schedules.locked_at`, falling back to
+`roster_changed_at` → `winner_confirmed_at` → `created_at` when no covering row existed
+— relevant for R1 matches, which have no per-match lock row unless ESPN auto-lock fired
+after this feature shipped), then looked up the closest `odds_raw` row at-or-before that
+time for the match's players (reusing `fetch_all_active_odds()`'s `name_mappings` +
+`normalise_player_name` matching) rather than blindly copying current
+`odds_p1_live`/`odds_p2_live` (which could be stale by up to the 3-hour poll cadence
+relative to the actual lock moment). Fell back to current live odds only when no
+`odds_raw` row existed before the lock time. Result: all 253 decided matches across both
+Wimbledon 2026 draws (MS + WS) now have `odds_p1_locked`/`odds_p2_locked` populated.
 
 ## API Details
 
@@ -56,6 +98,7 @@ Unmatched names (normalised strings don't match) appear in Commissioner → Odds
 | `matches.odds_p1_live/p2_live` | Live consensus decimal, updated each fetch |
 | `matches.odds_p1_locked/p2_locked` | Frozen at lock time (original_picks lock for R0; backup_picks lock for R1+) |
 | `fetch_all_active_odds()` | SQL poller, SECURITY DEFINER, reads vault key |
+| `snapshot_locked_odds(draw_id, round_index, match_index_start, match_index_end)` | Shared odds-lock snapshot, SECURITY DEFINER — called by every lock path (see "Odds-Locking Gap" above), no-overwrite guard |
 | `refresh_odds_now()` | Commissioner RPC, calls fetch_all_active_odds(), enforces is_commissioner |
 | `normalise_player_name(text)` | SQL helper, mirrors JS normaliseName() |
 | pg_cron `fetch-odds` | `0 */3 * * *` — every 3 hours |

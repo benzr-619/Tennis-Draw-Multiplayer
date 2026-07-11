@@ -211,6 +211,33 @@ the full raw `status_type` (via `get_logs` → `postgres`) so the real name can 
 once one is actually observed, mirroring how the abnormal-finish branch already
 handles unrecognised completed statuses.
 
+**ESPN has no real "suspended" status — confirmed live 2026-07-07 (Wimbledon 2026,
+Lehecka/Zverev R4, interrupted overnight mid-3rd-set at 4-6 5-7 3-3):** none of the
+`STATUS_DELAYED`/`STATUS_SUSPENDED`/`STATUS_RAIN_DELAY`/`STATUS_POSTPONED` guesses
+above ever fire in practice. Instead ESPN reverts the whole `status.type` block back
+to `{name: 'STATUS_SCHEDULED', state: 'pre', completed: false}` — byte-identical to a
+match that has never started — and just moves `detail`/`shortDetail` to the
+resumption date/time (e.g. `"Tue, July 7th at 9:30 AM EDT"`). Verified by direct
+inspection: it was the *only* `STATUS_SCHEDULED` competition in the entire feed
+(~35 others, all genuinely unplayed) whose `competitors[].linescores` was non-empty
+(`[3, 3]` sets vs `[0, 0]` for every real not-yet-started match).
+
+Fix: a new `elsif not completed and status_name = 'STATUS_SCHEDULED' and n_sets > 0`
+branch (checked before the generic non-final-status branch above) appends `" Int."`
+to the already-built partial score string. `n_sets > 0` (computed from
+`jsonb_array_length(c1 -> 'linescores')`, already needed for the score-string build)
+is deliberately **not** a one-shot transition check against `old_espn_state` — it's a
+steady-state condition that re-evaluates true on every single poller tick
+(`* * * * *`) for as long as the match stays suspended, so the tag survives the whole
+overnight gap. It clears itself automatically the moment ESPN flips the match back to
+`STATUS_IN_PROGRESS` on resumption (that branch's condition requires
+`status_name = 'STATUS_SCHEDULED'`, which is no longer true) — no separate
+resume-handling code, no new column, no `old_espn_state` bookkeeping needed.
+`espn_state` itself still gets written as ESPN's raw `'pre'` during the interruption
+(matches real ESPN semantics) — this is harmless because the frontend never hides the
+score based on `espn_state`, only the `.mc-live-tag` "LIVE" badge, which correctly
+disappears while genuinely not live and correctly reappears on resumption.
+
 **Fixed 2026-07-03 (previously a known gap):** a server-side auto-confirm didn't fire
 the client-side live health-band recompute (`refreshHealthBands`, née `_refreshBands`,
 in picks.js only ran from the commissioner's own browser session via
