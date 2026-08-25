@@ -293,8 +293,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 #lb-mobile-hdr-row2 .hdr-nav{display:flex;flex:1}
 /* ── LEADERBOARD DETAIL TABLE — sticky player name column on mobile ── */
 @media(max-width:768px){
-  .lb-row-detail{grid-template-columns:130px 72px 68px 68px 72px 72px 72px 72px 72px}
-  .lb-detail-table{min-width:822px}
+  .lb-row-detail{grid-template-columns:130px 72px 72px 72px 72px 72px 72px}
+  .lb-detail-table{min-width:686px}
   .lb-row-detail .lb-cell-name{position:sticky;left:0;background:var(--surface);z-index:2;width:130px;min-width:130px}
   .lb-header-row.lb-row-detail .lb-cell-name{z-index:3;background:var(--surface)}
   /* Alternate rows need their own bg for sticky to not be transparent */
@@ -494,6 +494,38 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .bracket-svg-wrap{position:relative;display:inline-block}
 .bracket-svg-wrap svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visible}
 
+/* ── TUTORIAL COACH-MARKS ── */
+/* Fixed to the same spot for every step (2026-07-18: dropped the arrow-follows-target
+   / dodge-the-cards positioning — moving between steps read as jumpy and confusing;
+   a single predictable spot is simpler). No arrow, no dimming — see tutorial-overlay.js. */
+.tutorial-tooltip{position:fixed;z-index:2001;background:var(--surface);border:1px solid var(--border2);border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,0.22);padding:16px 18px;width:340px;max-width:calc(100vw - 28px);pointer-events:auto}
+.tutorial-tooltip.tutorial-pinned{top:50%;right:48px;left:auto;transform:translateY(-50%)}
+/* Header controls that read/write real state.draws — meaningless (or actively state-
+   clobbering, e.g. refresh reloading real draws over the sandbox) during the tutorial,
+   which is a single fake draw with no M/W counterpart and no server data to refresh. */
+body.tutorial-active #seg-control,body.tutorial-active #seg-control-mobile,
+body.tutorial-active #api-sync-btn,body.tutorial-active #search-wrap,
+body.tutorial-active #mobile-search-wrap{pointer-events:none;opacity:0.35}
+@keyframes tut-flash{0%{box-shadow:0 0 0 0 var(--accent)}70%{box-shadow:0 0 0 8px rgba(0,0,0,0)}100%{box-shadow:0 0 0 0 rgba(0,0,0,0)}}
+.tut-flash{animation:tut-flash 0.8s ease-out}
+.tutorial-close{position:absolute;top:8px;right:9px;background:none;border:none;color:var(--text3);font-size:16px;line-height:1;cursor:pointer;padding:4px}
+.tutorial-close:hover{color:var(--text)}
+.tutorial-tooltip-title{font-family:var(--serif);font-size:16px;font-weight:600;margin-bottom:6px;padding-right:16px}
+.tutorial-tooltip-body{font-size:12.5px;color:var(--text2);line-height:1.6}
+.tutorial-tooltip-body .tut-mockup{margin-top:10px}
+.tutorial-tooltip-body .tut-mockup-label{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.04em;color:var(--text3);text-align:center}
+.tutorial-controls{display:flex;align-items:center;justify-content:space-between;margin-top:14px;gap:10px}
+.tutorial-dots{display:flex;gap:4px}
+.tutorial-dot{width:6px;height:6px;border-radius:50%;background:var(--border2)}
+.tutorial-dot.active{background:var(--accent)}
+.tutorial-btn-row{display:flex;gap:8px}
+.tutorial-btn{font-family:var(--sans);font-size:12px;font-weight:500;padding:7px 14px;border-radius:6px;cursor:pointer;transition:opacity 0.15s}
+.tutorial-btn-primary{background:var(--accent);color:var(--accent-text);border:none}
+.tutorial-btn-primary:hover{opacity:0.85}
+.tutorial-btn-ghost{background:none;border:1px solid var(--border2);color:var(--text2)}
+.tutorial-btn-ghost:hover{color:var(--text)}
+.tutorial-btn:disabled{opacity:0.45;cursor:default;pointer-events:none}
+
 /* ── MATCH CARD ── */
 .mc{position:absolute;background:var(--surface);border:1px solid var(--border);border-radius:6px;width:205px;display:flex;flex-direction:column;transition:border-color 0.12s}
 .mc.st-correct{border-color:var(--green-border)}
@@ -615,6 +647,12 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .lb-slam-year{font-family:var(--mono);font-size:11px;color:var(--text3);letter-spacing:0.06em}
 .lb-mw-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media(max-width:640px){.lb-mw-row{grid-template-columns:1fr}}
+/* Combined M/W card (Slams tab, click-to-reveal) — see
+   .claude/rules/leaderboard-records-redesign.md "Slams Tab — Combined M/W Card" */
+.lb-combined-toggle{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);background:none;border:1px solid var(--border2);border-radius:4px;padding:4px 10px;cursor:pointer;margin:10px 0;transition:all 0.12s}
+.lb-combined-toggle:hover{color:var(--text2);border-color:var(--text3)}
+/* Combined table has no Health column (unlike per-draw cards) — 4 tracks not 5 */
+.lb-combined-table .lb-row-card{grid-template-columns:1fr 72px 72px 72px}
 /* Draw card */
 .lb-draw-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;border-top:3px solid var(--lb-slam-color,var(--border))}
 .lb-draw-card-header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;user-select:none}
@@ -667,13 +705,41 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .rec-pod-stat{font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .rec-pod-rank{font-family:var(--mono);font-size:10px;color:var(--text3);margin-top:3px}
 .rec-pod-rank-1{color:var(--accent)}
-/* Standings table */
-.rec-standings-wrap{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:20px}
-.lb-row-standings{grid-template-columns:22px 1fr 44px 72px 72px 72px}
-.lb-cell-srank{font-family:var(--mono);font-size:10px;color:var(--text3);text-align:right}
-.lb-cell-draws{font-family:var(--mono);font-size:11px;color:var(--text3);text-align:right}
+.lb-cell-slamIndex{display:flex;align-items:center;justify-content:flex-end;gap:3px}
 /* YOU badge */
 .rec-you-badge{font-family:var(--mono);font-size:9px;letter-spacing:0.08em;color:var(--accent);background:var(--accent-dim);border:1px solid var(--accent);border-radius:3px;padding:1px 5px;margin-left:7px;vertical-align:middle;flex-shrink:0;white-space:nowrap}
+/* Records-tab-local Slam Index shrinkage hint — NOT the shared #stats-drawer,
+   see leaderboard-records-redesign.md "Correction from the original brief".
+   Explains the podium below it (career shrinkage-adjusted average) — the Top 10
+   Slam Index table further down is raw single-draw performances, unadjusted. */
+.rec-si-hdr{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.rec-si-title{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text3)}
+.rec-hint-wrap{position:relative;display:inline-flex}
+.rec-hint-btn{font-family:var(--mono);font-size:12px;color:var(--text3);background:none;border:none;cursor:pointer;padding:0;line-height:1}
+.rec-hint-btn:hover{color:var(--text2)}
+/* left:0, not right:0 — the hint sits near the left edge of its header row,
+   so the box extends rightward to stay on-page instead of running off the left. */
+.rec-hint-box{display:none;position:absolute;top:100%;left:0;z-index:5;width:230px;max-width:calc(100vw - 48px);background:var(--surface2);border:1px solid var(--border2);border-radius:6px;padding:10px 12px;margin-top:6px;box-shadow:0 4px 16px rgba(0,0,0,0.15);text-align:left}
+.rec-hint-box.open{display:block}
+.rec-hint-def{font-family:var(--sans);font-size:11px;color:var(--text2);line-height:1.5}
+/* Top 10 Slam Index / Draw Yield / Match Yield tables (pool-wide single-draw performances) */
+.rec-pb-section{margin-top:24px}
+.rec-pb-section>.rec-pb-table-wrap{margin-bottom:12px}
+.rec-pb-section-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.rec-pb-section-title{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text3)}
+.rec-pb-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:640px){.rec-pb-grid{grid-template-columns:1fr}}
+.rec-pb-table-wrap{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.rec-pb-table-title{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);background:var(--surface2);padding:6px 14px}
+.rec-pb-row{display:grid;grid-template-columns:18px 1fr 160px;align-items:center;column-gap:10px;padding:6px 14px;border-bottom:1px solid var(--border)}
+.rec-pb-row:last-child{border-bottom:none}
+.rec-pb-rank{font-family:var(--mono);font-size:10px;color:var(--text3);text-align:right}
+/* Draw tag sits next to the value (not stacked under the name) — room for it
+   comes from the wider third column above. */
+.rec-pb-val-group{display:flex;align-items:baseline;gap:6px;justify-content:flex-end;min-width:0}
+.rec-pb-sub{font-family:var(--mono);font-size:11px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rec-pb-dot{font-family:var(--mono);font-size:11px;color:var(--text3);flex-shrink:0}
+.rec-pb-val{font-family:var(--mono);font-size:12px;font-weight:500;color:var(--text2);text-align:right;flex-shrink:0}
 /* Honors row */
 .rec-honors-row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:4px}
 @media(max-width:640px){.rec-honors-row{grid-template-columns:1fr}}
@@ -702,16 +768,15 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .lb-row-card{grid-template-columns:1fr 48px 72px 72px 72px}
 .lb-cell-drawHealth{font-size:9px}
 /* Active-sort column = prominent; inactive = muted. Header rows excluded so .lb-sort-active accent survives. */
-.lb-row-card .lb-cell-active-col,.lb-row-standings .lb-cell-active-col,.lb-row-detail .lb-cell-active-col,.lb-yd-row:not(.lb-header-row) .lb-cell-active-col{color:var(--text)!important;font-weight:500!important}
+.lb-row-card .lb-cell-active-col,.lb-row-detail .lb-cell-active-col,.lb-yd-row:not(.lb-header-row) .lb-cell-active-col{color:var(--text)!important;font-weight:500!important}
 .lb-row-card .lb-cell:not(.lb-cell-name):not(.lb-cell-active-col),
-.lb-row-standings .lb-cell:not(.lb-cell-name):not(.lb-cell-active-col),
 .lb-row-detail .lb-cell:not(.lb-cell-name):not(.lb-cell-active-col),
 .lb-yd-row:not(.lb-header-row) .lb-cell:not(.lb-cell-name):not(.lb-cell-active-col){color:var(--text3)!important;font-weight:normal!important}
 /* Health bar opacity: vivid when Health is the sort column, dim otherwise */
 .lb-yd-row .lb-cell-active-col .lb-yd-health-bar{opacity:0.85}
 .lb-yd-row .lb-cell:not(.lb-cell-active-col) .lb-yd-health-bar{opacity:0.25}
 /* Detail table grid: name + 8 stat cols (Draw Yld/Base/Upset/Match Yld/Draw%/Match%/Health/Index) */
-.lb-row-detail{grid-template-columns:1fr 72px 68px 68px 72px 72px 72px 72px 72px}
+.lb-row-detail{grid-template-columns:1fr 72px 72px 72px 72px 72px 72px}
 /* Clickable draw card */
 .lb-draw-card-clickable{cursor:pointer}
 .lb-draw-card-clickable:hover .lb-draw-card-header{background:var(--surface2)}
@@ -726,8 +791,22 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .lb-detail-table-wrap{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden}
 /* Your Draws tab — sortable table */
 .lb-yd-table-wrap{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden}
-.lb-yd-table{width:100%;min-width:912px}
-.lb-yd-row{grid-template-columns:minmax(220px,1fr) 72px 68px 68px 72px 72px 72px 72px 72px;border-left:3px solid transparent}
+/* Personal badges row, below the table — narrow chips (not full-width) so
+   there's room for more badges alongside this one later. See
+   .claude/rules/leaderboard-records-redesign.md */
+.lb-yd-badges-row{display:flex;flex-wrap:wrap;gap:12px;margin-top:16px}
+.lb-yd-roi-chip{width:200px;flex:0 0 auto}
+/* Serif (.rec-honor-main default) reads poorly for a stat value — mono matches
+   the rest of the app's number/stat convention (CLAUDE.md §12 Typography).
+   Value and pick-count are split so only the value itself takes the
+   win/loss color, not the whole "· N picks" tail. */
+.lb-yd-roi-main{font-family:var(--mono)}
+.lb-yd-roi-val{font-size:18px;font-weight:600}
+.lb-yd-roi-pos{color:var(--green)}
+.lb-yd-roi-neg{color:var(--red)}
+.lb-yd-roi-sub{font-size:11px;color:var(--text3)}
+.lb-yd-table{width:100%;min-width:776px}
+.lb-yd-row{grid-template-columns:minmax(220px,1fr) 72px 72px 72px 72px 72px 72px;border-left:3px solid transparent}
 .lb-yd-row:not(.lb-header-row){border-left-color:var(--lb-slam-color,var(--border))}
 .lb-yd-row:not(.lb-header-row):hover{background:var(--surface2)}
 .lb-yd-draw-label{white-space:nowrap;overflow:visible;text-overflow:clip}
@@ -887,7 +966,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
   .lb-header-row.lb-row-detail .lb-cell-name{background:var(--surface2)}
   .lb-row-alt .lb-cell-name{background:var(--surface2)}
   /* YD table — sticky draw name column (must be after base lb-yd-row border rules) */
-  .lb-yd-row{grid-template-columns:160px 72px 68px 68px 72px 72px 72px 72px 72px}
+  .lb-yd-row{grid-template-columns:160px 72px 72px 72px 72px 72px 72px}
   .lb-yd-row:not(.lb-header-row){border-left-color:transparent}
   .lb-yd-row .lb-cell-name{position:sticky;left:0;z-index:2;background:var(--surface);width:160px;min-width:160px;box-sizing:border-box}
   .lb-yd-row:not(.lb-header-row) .lb-cell-name{border-left:3px solid var(--lb-slam-color,var(--border))}
@@ -906,8 +985,12 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
   .lb-past-top3{flex-basis:100%;order:3}
   .rec-pod-block{width:auto;flex:1;min-width:0}
   .rec-pod-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
-  .lb-row-standings{grid-template-columns:18px 1fr 56px 56px 56px;column-gap:8px}
-  .lb-cell-draws{display:none}
+  .rec-pb-row{grid-template-columns:14px 1fr 70px;column-gap:8px}
+  /* Not enough width on mobile to keep the draw tag beside the value — stack
+     them instead, both still right-aligned. */
+  .rec-pb-val-group{flex-direction:column;align-items:flex-end;gap:0}
+  .rec-pb-dot{display:none}
+  .rec-pb-sub{max-width:70px}
   .lb-rec-td-row{grid-template-columns:18px 1fr 56px 56px 56px;column-gap:8px}
   #results-bracket-body .pr{min-height:48px;font-size:14px;padding:10px 14px}
 }
@@ -981,6 +1064,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
         <div class="acct-menu" id="acct-menu">
           <button class="acct-mi" id="print-btn">Print bracket</button>
           <button class="acct-mi commish-nav" id="commish-btn" hidden>Commissioner</button>
+          <button class="acct-mi" id="tutorial-btn">Tutorial</button>
           <button class="acct-mi" id="rename-btn">Change name</button>
           <button class="acct-mi acct-mi-danger" id="logout-btn">Sign out</button>
         </div>
@@ -1046,6 +1130,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
         </button>
         <div class="acct-menu" id="acct-menu-lb">
           <button class="acct-mi commish-nav" id="commish-btn-lb" hidden>Commissioner</button>
+          <button class="acct-mi" id="tutorial-btn-lb">Tutorial</button>
           <button class="acct-mi" id="rename-btn-lb">Change name</button>
           <button class="acct-mi acct-mi-danger" id="logout-btn-lb">Sign out</button>
         </div>
@@ -1165,6 +1250,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
       <div id="comm-bands-status" style="display:none;font-family:var(--mono);font-size:11px;color:var(--text3);padding:4px 12px"></div>
       <!-- Health bands last-update status (persisted — survives reloads/sessions) -->
       <div id="comm-bands-history-wrap"></div>
+      <!-- Shrinkage K status (persisted — survives reloads/sessions) -->
+      <div id="comm-shrinkage-k-wrap"></div>
       <!-- ESPN Score Feed status + unmatched-name triage -->
       <div id="comm-espn-wrap"></div>
       <!-- Mobile round selector (hidden on desktop) -->

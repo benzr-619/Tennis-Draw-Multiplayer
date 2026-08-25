@@ -684,6 +684,17 @@ function doPrint() {
 }
 $('print-btn').addEventListener('click', doPrint)
 
+// ── TUTORIAL ──
+async function doStartTutorial() {
+  closeAcctMenus()
+  _stopResultsPoll()
+  stopBracketRealtime()
+  const { startTutorial } = await import('./tutorial.js')
+  await startTutorial({ onExit: () => showBracketScreen() })
+}
+$('tutorial-btn')?.addEventListener('click', doStartTutorial)
+$('tutorial-btn-lb')?.addEventListener('click', doStartTutorial)
+
 // ── LOGOUT ──
 async function doLogout() {
   _stopResultsPoll()
@@ -1060,6 +1071,7 @@ async function showBracketScreen() {
     renderStats()
     renderBracketDisplay()
     showScreen('screen-bracket')
+    fetchPoolSlamIndex(d, state.currentUser?.id).then(() => renderStats())
     const area = $('bracket-area')
     if (area) {
       area.querySelector('.getting-ready-overlay')?.remove()

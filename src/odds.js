@@ -2,8 +2,6 @@
 
 import { supabase } from './supabase.js'
 
-export const STAKE_BY_ROUND = [10, 10, 20, 20, 30, 40, 50]
-
 // Strip diacritics, lowercase, collapse spaces. Mirrors normalise_player_name() in SQL.
 export function normaliseName(name) {
   if (!name) return ''

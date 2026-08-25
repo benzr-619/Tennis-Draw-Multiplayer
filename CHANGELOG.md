@@ -4,6 +4,209 @@ Historical record of build steps, refactors, and fixed bugs. **Not loaded into c
 
 ---
 
+## 2026-08-25 — Records tab simplified: podium + three unadjusted Top 10 tables
+
+Same-day follow-up to the shrinkage fix below. Ben questioned whether the full
+standings table was overcomplicating the page now that Slam Index is
+cross-slam comparable — the shrinkage machinery answers "who's best over a
+whole career," which needs statistics, but the rest of the page (Draw
+Yield/Match Yield Top 10s) just answers "what was the best single moment
+ever," no statistics needed. Resolution: keep the podium (career, shrinkage-
+adjusted, unchanged — none of the K/anchor work below was wasted), drop the
+full standings table in favour of a Top 10 Slam Index table using the same
+`buildTopTenTable` helper the other two Top 10 tables already use, and delete
+the now-redundant "Best Slam Index Ever" click-to-expand card outright (same
+data, now permanently visible instead of behind a click). Page reads: podium →
+three parallel, unadjusted Top 10 tables — a "pinball high score machine"
+below a "career standings" podium. Dead CSS removed alongside
+(`.rec-standings-wrap`, `.lb-row-standings` + its mobile overrides,
+`.lb-cell-srank`, `.lb-cell-draws`, `.rec-best-ever-card`). Full detail in
+`.claude/rules/leaderboard-records-redesign.md` "Podium-plus-top-10
+simplification". `leaderboard-records.js`: 370 → 302 lines.
+
+## 2026-08-25 — Shrinkage anchor bug fix, K made recomputable, docs correction
+
+Three fixes to the Records-tab shrinkage standings, following directly from the
+2026-08-24 Slam Index v2 work below. Full detail in
+`.claude/rules/slam-index.md` ("The anchor bug", "The K recomputation
+procedure", "Single-draw noise", "draw_gap_max").
+
+**1. Bug: shrinkage was anchored to a hardcoded 100.** Correct under v1
+(z-scoring pins the pool mean to exactly 100), silently wrong under v2 (100
+means "matched chalk," which the real pool averages ~88 points below).
+Consequence on live data: a newcomer's single 70-point draw shrank to 95.0 and
+outranked two veterans — the shrinkage estimator was rewarding not playing,
+the exact bias it was built to prevent. Fixed by threading a real `anchor`
+parameter through `shrinkSlamIndex` (scoring.js) and computing it fresh each
+render via `computePoolMeanIndex(brackets)` (leaderboard-records-data.js, no
+new query — reuses `buildAllBrackets`'s existing flat list, v2 entries only).
+Deliberately NOT frozen — a per-draw Slam Index is permanent, but this anchor
+is expected to drift as more draws land.
+
+**2. K is now a stored, recomputable value instead of a hardcoded constant.**
+New `shrinkage_k` singleton table (`k_active`, `k_suggested`,
+`sigma_within`, `sigma_between`, `n_players`, `n_draws`, `draw_gap_max`,
+`computed_at`, `last_error`; RLS mirrors `health_bands` — authenticated
+SELECT, commissioner-only writes). New pure function `computeShrinkageK`
+(leaderboard-records-data.js): restricts to v2-only entries from players with
+≥2 draws, draw-centres to isolate player consistency from draw-level effects,
+then estimates `sigma_within`/`sigma_between`/K via a standard
+method-of-moments random-effects approach. K is never auto-applied —
+recompute only ever writes `k_suggested`; promoting it to `k_active` needs an
+explicit commissioner "Apply" click. Wired to run automatically (fire-and-
+forget, own try/catch) from the existing `handleSwitchToGettingReady` between-
+slams flow alongside the health-bands recompute, plus a manual "Recompute K"
+button and a persisted status card in the commissioner Results tab
+(`renderShrinkageKSection`, commissioner-results.js) — mirrors
+`renderHealthBandsStatusSection` exactly, same pattern, same tab.
+
+**Verified against real data** (Wimbledon 2026 MS+WS, 9 players who played
+both): `computeShrinkageK` produced `sigma_within≈13.1`, `sigma_between≈5.8`,
+`K≈5.15`, matching an independent hand-derivation. With only 2 draws on
+record, the `n_draws<3` guard correctly trips (`k_suggested` stays null,
+Apply disabled) — confirmed as the correct outcome, not loosened. K=5 stays
+the active value; it is explicitly *not* validated by this estimate, and every
+known bias in the pipeline argues for shrinking harder (higher K), not softer.
+
+**3. `draw_gap_max` normalisation instrument.** Same status card surfaces the
+largest mean-index gap between any two draws (flagged above 10) as a read-only
+health check on whether the chalk-baseline normalisation is actually making
+draws comparable. Currently ~12.7–12.9 between Wimbledon MS and WS — flagged,
+not acted on; likely explained by `sigmaDY`'s known chain-correlation
+understatement biting harder in a chalkier draw. Display only, changes
+nothing.
+
+**4. Copy drafted, not wired.** New Records-tab explainer text ("Index
+(Adjusted)" / pulled toward "the pool's typical score" rather than "the pool
+baseline (100)") — the old copy was wrong twice under v2 (100 isn't the
+baseline, and the baseline isn't 100). Same copy-review discipline as every
+other feature here — not live yet.
+
+**5. Docs correction (more important than the rest of this entry).**
+`.claude/rules/leaderboard-records-redesign.md` claimed the original K=5
+sanity check ran "across all 12 pool-eligible players in the pool's 4
+completed draws (French Open 2026 + Wimbledon 2026, MS+WS)." Verified directly
+against the database: French Open 2026 MS and WS have picks from exactly one
+player and zero locked-odds rows in either draw — neither draw could have
+produced a Slam Index at all, then or now. The real evidence base was two
+draws and nine players. Corrected in place rather than silently deleted, so
+the record shows what actually happened.
+
+Regression harness clean before/after (this is Records-tab aggregation only —
+zero Draw Yield/Match Yield/chalk-baseline code path touched).
+
+## 2026-08-24 — Slam Index v2: absolute, cross-slam chalk baseline
+
+Made Slam Index comparable across different slams instead of only within the pool
+that entered one specific draw. Full design/rationale in
+`.claude/rules/slam-index.md`.
+
+**Problem:** `calcSlamIndex` z-scored a player's Draw Yield/Match Yield against
+whoever else entered that draw, which pins the pool mean to exactly 100 every time —
+a 115 at one slam and a 115 at another measure "distance above a different, unstated
+population," not the same thing.
+
+**Fix — same formula shape, new reference point.** Still
+`100 + 15 × avg(edgeDY, edgeMY)`. Each edge is now measured against a fixed,
+player-independent **chalk baseline** computed once per draw
+(`calcChalkBaselines(d)`, scoring.js): an ELO-favourite bracket for Draw Yield (own
+theoretical standard deviation via each chalk matchup's Elo win probability,
+`p×(1-p)` as a coin-flippiness weight) and a flat-10-stake odds-favourite bettor for
+Match Yield (standard deviation via the closed-form variance of a fair-odds bet,
+`10×sqrt(Σ(favOdds-1))`). No tuning constant anywhere — three fitted-constant
+alternatives were tried and rejected (see the rules file) before landing on this
+derive-it-from-first-principles approach. Verified `calcChalkBaselines` against
+independently-computed SQL reference values for both Wimbledon 2026 draws — exact
+match on all four numbers (chalkDY, chalkMY, sigmaDY, sigmaMY).
+
+**Versioning:** new `draws.slam_index_version` column (int, default 2), separate
+from `scoring_version` — backfilled to 2 on every existing draw, same
+retroactive-by-default posture as the 2026-07-17→18 scoring redesign reversal. v1's
+pool-relative code path is kept fully intact as a one-row rollback lever.
+`calcSlamIndex(entries, {version, chalk})` branches; every v2 call site checks
+`chalk.valid` first and falls back to v1 when a draw lacks enough ELO/odds data to
+trust the baseline (currently French Open 2026 MS/WS, pre-dating the betting layer's
+odds — both stay on the v1 fallback, unaffected by this change).
+
+**Downstream:** `leaderboard.js` (`loadDrawStatsForAllUsers`), `leaderboard-slams.js`
+(`_loadBaseline`, the movement-arrow baseline — needed a `filterRi` param added to
+`calcChalkBaselines` so the chalk reference stays "as of round R-1" in sync with the
+entries it ranks), `leaderboard-slams-combined.js` (new `combineChalkBaselines`
+helper — sums chalk totals, adds variances since the two draws are independent) all
+updated to pass the draw's chalk baseline through. `stats.js`'s `fetchPoolSlamIndex`
+was the headline win: v2 needs no other players' data at all, so it now computes the
+stats-bar hero stat **synchronously and locally** off the already-loaded draw instead
+of firing a cross-user picks fetch — falls through to the old fetch only on the v1
+fallback path.
+
+**Verification against real data (Wimbledon 2026, both draws):** recomputed the
+shrinkage-standings K=3/5/8 comparison end-to-end against real profiles/picks/odds/
+ELO pulled via the Supabase MCP connector and run through the actual `scoring.js`/
+`leaderboard.js` functions in Node (test-harness's existing supabase stub). Vibes
+Architect's WS-only v2 index came out 121 — an exact match to the pre-implementation
+hand-estimate. Carson Bodnarek's MS v2 index came out 99, essentially tied with
+Tacoma Elk/Sam Rosenberg at 98 — the three-way near-tie the redesign predicted
+(Bodnarek no longer runs away with #1 purely on Match Yield), though not an exact
+match to the ~96.5/rises-to-#1 pre-implementation estimate, which was itself a rough
+hand-reconstruction. Effective Draw Yield / Match Yield influence on the blended
+index measured close to 50/50 across both draws, matching the documented decision
+with no fitting required to get there. French Open 2026 (no odds data) correctly
+fell back to v1 and was unaffected. `test-harness/` golden diff clean — this is a
+Slam Index-only change, zero Draw Yield/Match Yield code path touched.
+
+Copy describing Slam Index as "vs the pool" / "100 = pool average" (the stats-bar
+drawer in `stats.js`, the Records-tab shrinkage hint in `leaderboard-records.js`) is
+now inaccurate for v2 draws and was flagged but deliberately **not rewritten** —
+new copy needs Ben's sign-off first, same discipline as the tutorial and Records
+redesign's copy-review requirement.
+
+## 2026-07-18 — Onboarding tutorial shipped, then redesigned same week
+
+Built the new-player coach-mark tutorial (design from 2026-07-06 — see
+`.claude/rules/tutorial.md`): a throwaway sandbox draw sliced from a real completed
+slam, walked through by `src/tutorial.js`/`tutorial-sandbox.js`/`tutorial-overlay.js`,
+manual entry only via an account-menu "Tutorial" item. Auto-show on first login
+deferred pending a column-name decision.
+
+First shipped version (12 steps) tried to demonstrate every mechanic live against the
+sandbox — reveal Round 1 with a held-back sibling match to freeze an intermediate
+"elim, no winner yet" state, spotlight/dim the target card, etc. A round of screenshot
+-driven testing found real bugs this way (a stale function-rename left the lock never
+actually firing; the "No Pick" card-finder was stricter than the real trigger
+condition and missed visibly-glowing cards; a gate for the practice step missed picks
+made during earlier "watch" steps; a seeded demo score never got cleared). Cut to 10
+steps after a UX pass (merged two steps that split an abstract concept from its
+concrete example; cut a step that was pure FYI with nothing to act on).
+
+A second pass, driven by Ben actually using it, found the demo was targeting the wrong
+round entirely: in a 3-round bracket, the SF's own feeder IS the R1 match that just
+decided a bust, so there's no round where "still shows the busted pick, crossed out,
+no winner yet" can appear at the SF level — that state only exists one round further
+out, at the Final. Also found: Match Yield never scored (no odds existed in the
+sandbox), the arrow on the free-play step pointed at the geometric center of the whole
+stats bar (meaningless — the copy references two things on opposite ends of it), Back
+didn't actually reverse a fired lock, and the tutorial had scope-crept toward a
+stats/scoring tour despite the original brief explicitly excluding that. Retargeting
+the demo to the Final (by writing the busted pick onto the SF match's own fields,
+mirroring what a thorough player clicking all the way through would do) fixed the
+mechanics; a real per-step state-snapshot/restore mechanism fixed Back; the
+stats/scoring references were cut back out.
+
+A third pass then rejected the whole "force the live sandbox to demonstrate a specific
+mechanic on cue" approach as fundamentally fighting the sandbox instead of working
+with it, and split the tutorial into two clean phases instead: mechanics (make
+original picks, watch the lock fire, then **static example cards** — placeholder
+names, real CSS classes, zero live-draw dependency — showing what card states look
+like) followed by gameplay (the real small draw actually plays out round by round,
+completely un-forced). This deleted most of the demo-pairing/Final-injection
+complexity outright. Also fixed in this pass: fake odds were showing on Round 2/Final
+matches that don't exist yet in a real draw — now seeded for Round 1 only. Landed at
+9 steps. Full detail of the final shipped architecture is in
+`.claude/rules/tutorial.md`'s "Implementation" section — this entry is the narrative
+of how it got there, not the current state.
+
+---
+
 ## 2026-06-25 — Getting-ready overlay + invite page fixes
 
 **Getting-ready overlay (revised from original approach):** Between-slams state now renders the last finished bracket dimmed behind a fixed-position frosted overlay rather than replacing the bracket with a blank page. `#bracket-body` was wrapped in a new `#bracket-area` div (`flex:1; position:relative`). The `.getting-ready-overlay` uses `position:fixed; inset:0; z-index:100` with `backdrop-filter:blur(2px)` and a `::before` tint at 70% bg opacity — covers full viewport including header and stats row. Clicking/tapping anywhere on the overlay dismisses it so users can browse the last draw. Logo uses `border-radius:50%` to show just the green tennis ball circle from the app icon (clips the cream square corners). Chrome (M/W seg, search, print, mobile bar) is no longer hidden — all stays interactive; leaderboard nav fully accessible behind/above the overlay.

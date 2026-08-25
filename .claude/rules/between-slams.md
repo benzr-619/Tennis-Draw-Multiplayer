@@ -16,6 +16,21 @@ Singleton Supabase table — always exactly one row with `id = 1`.
 
 **Upsert pattern:** always `{ id: 1, ... }` — Supabase uses the PK for conflict resolution, so this always updates the existing row after the initial seed.
 
+## Bug fixed 2026-08-25: Slam Index never populated in the between-slams branch
+
+`showBracketScreen()`'s `!hasActiveDraw()` branch renders the last (inactive) draw's
+full real bracket behind the dismissable overlay — including Draw Yield and Match
+Yield, both computed synchronously inside `renderStats()`. But it never called
+`fetchPoolSlamIndex()`, unlike the active-draw branch just below it. Slam Index is
+computed by a separate async call (`.claude/rules/slam-index.md`), so it silently
+stayed at "—" forever in this branch — dismissing the overlay just removes the DOM
+node, it doesn't trigger the fetch. The only thing that ever populated it was the
+M/W toggle, since `switchTab()` calls `fetchPoolSlamIndex()` independently of which
+branch of `showBracketScreen()` got the player there — which made the bug look
+gender-toggle-specific when it was really "any load that lands in the between-slams
+branch." Fixed by adding the same `fetchPoolSlamIndex(d, ...).then(() =>
+renderStats())` call to the between-slams branch, mirroring the active-draw branch.
+
 ## hasActiveDraw() vs state.draws.length === 0
 
 `hasActiveDraw()` (`src/state.js`) returns `state.draws.some(d => d.is_active)`.

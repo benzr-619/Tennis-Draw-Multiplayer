@@ -5,6 +5,7 @@ import { supabase } from './supabase.js'
 import { SLAM_CONFIG, SLAM_COLORS } from './data.js'
 import { POOL_ELIGIBILITY_THRESHOLD, healthHue } from './scoring.js'
 import { loadDrawStatsForAllUsers, openViewerOriginalPicks, formatStat } from './leaderboard.js'
+import { buildPersonalRoiBadge } from './leaderboard-roi-chip.js'
 
 // ── MODULE STATE ──
 
@@ -19,8 +20,6 @@ export function resetYdSort() { ydSort = { col: null, dir: -1 } }
 
 const COLS = [
   { key: 'score',      label: 'Draw Yld'  },
-  { key: 'baseScore',  label: 'Base Pts'  },
-  { key: 'upsetScore', label: 'Upset Pts' },
   { key: 'matchYield', label: 'Match Yld' },
   { key: 'drawAcc',    label: 'Draw %'    },
   { key: 'matchAcc',   label: 'Match %'   },
@@ -139,6 +138,17 @@ function _renderTable(container) {
 
   container.appendChild(tableWrap)
   tableWrap.scrollLeft = savedScroll
+
+  // Personal (not pool-wide) badges row, below the table — narrow chips (not
+  // full-width) so there's room to add more badges alongside this one later.
+  // Recomputed from the already-loaded eligible-draw stats, cheap enough to
+  // redo on every re-sort.
+  const eligibleDraws     = _meta.filter(m => m.eligible).map(m => m.draw)
+  const eligibleStatsMaps = eligibleDraws.map(d => _stats[d.db_id])
+  const badgesRow = document.createElement('div')
+  badgesRow.className = 'lb-yd-badges-row'
+  badgesRow.appendChild(buildPersonalRoiBadge(state.currentUser, eligibleDraws, eligibleStatsMaps))
+  container.appendChild(badgesRow)
 }
 
 export async function renderYourDrawsTab(container) {

@@ -2,11 +2,10 @@
 
 import { supabase } from './supabase.js'
 import { state } from './state.js'
-import { calcStats, calcSlamIndex, isPoolEligible } from './scoring.js'
+import { calcStats, calcSlamIndex, calcChalkBaselines, isPoolEligible, getScoringConfig } from './scoring.js'
 import { SLAM_CONFIG, SLAM_COLORS } from './data.js'
 import { buildDrawView } from './draw-view.js'
 import { animateSegThumb } from './seg-thumb.js'
-import { STAKE_BY_ROUND } from './odds.js'
 import { renderRecordsTab } from './leaderboard-records.js'
 import { renderSlamsTab, resetSlamSort } from './leaderboard-slams.js'
 import { renderYourDrawsTab, resetYdSort } from './leaderboard-yourdraws.js'
@@ -202,6 +201,7 @@ export async function loadDrawStatsForAllUsers(baseDraw) {
     const s = calcStats(userDraw)
     const origRes = s.cDrawOrig + s.wDrawOrig
     const allRes = s.cOrig + s.wOrig + s.cBackup + s.wBackup
+    const stakeByRound = getScoringConfig(userDraw.scoring_version ?? 1).stakeByRound
 
     // Best single-match upset call: correct matchPick at the highest locked odds
     let bestUpset = null
@@ -220,7 +220,7 @@ export async function loadDrawStatsForAllUsers(baseDraw) {
 
         // Best upset call
         if (m.matchPickResult !== 'correct' || !pickedOdds || pickedOdds <= 1) return
-        const yld = Math.round((STAKE_BY_ROUND[ri] ?? 10) * (pickedOdds - 1))
+        const yld = Math.round((stakeByRound[ri] ?? 10) * (pickedOdds - 1))
         const opponent   = m.matchPick === m.p1?.name ? (m.p2?.name || '') : (m.p1?.name || '')
         const pickedName = m.matchPick
         if (!bestUpset || yld > bestUpset.yld) bestUpset = { yld, ri, pickedName, opponent, decimalOdds: pickedOdds }
@@ -239,21 +239,35 @@ export async function loadDrawStatsForAllUsers(baseDraw) {
       hasAnyPicks: s.filled > 0,
       poolEligible: isPoolEligible(userDraw),
       slamIndex: null, // filled below after pool is complete
+      slamIndexVersion: null, // filled below alongside slamIndex — which formula actually produced it
       bestUpset,
       flatYield,
       flatYieldResolved,
     }
   })
 
-  // Compute pool-adjusted Slam Index across all players with picks in this draw
+  // Compute Slam Index across all players with picks in this draw. v2 (see
+  // .claude/rules/slam-index.md) scores each player independently against a fixed
+  // chalk baseline for the draw — no pool population needed — computed once here
+  // off a picks-free view (decided matches resolve to the real winner regardless
+  // of whose picks built the view; undecided matches are skipped by
+  // calcChalkBaselines itself). Falls back to the v1 pool-relative index when the
+  // draw lacks enough ELO/odds data to trust a chalk baseline.
   const eligibleProfs = profs.filter(p => result[p.id]?.hasAnyPicks && result[p.id]?.poolEligible)
   if (eligibleProfs.length > 0) {
+    const siVersion = baseDraw.slam_index_version ?? 1
+    const chalk = siVersion === 2 ? calcChalkBaselines(buildDrawView(structuredClone(baseDraw))) : null
+    // The ACTUAL formula used, not just the draw's own flag — a v2 draw without
+    // enough ELO/odds data falls back to v1 internally (calcSlamIndex), and
+    // downstream consumers that need to know which scale a slamIndex sits on
+    // (computeShrinkageK) must read this, not baseDraw.slam_index_version.
+    const usedVersion = siVersion === 2 && chalk?.valid ? 2 : 1
     const entries = eligibleProfs.map(p => ({
       score: result[p.id].score ?? 0,
       matchYield: result[p.id].matchYield ?? 0,
     }))
-    const indexes = calcSlamIndex(entries)
-    eligibleProfs.forEach((prof, i) => { result[prof.id].slamIndex = indexes[i] })
+    const indexes = calcSlamIndex(entries, { version: siVersion, chalk })
+    eligibleProfs.forEach((prof, i) => { result[prof.id].slamIndex = indexes[i]; result[prof.id].slamIndexVersion = usedVersion })
   }
 
   statsCache.set(baseDraw.db_id, result)
@@ -359,8 +373,6 @@ async function renderDrawDetail(root, profs, draw) {
 
   const cols = [
     { key: 'score',      label: 'Draw Yld',   sortable: true },
-    { key: 'baseScore',  label: 'Base Pts',   sortable: true },
-    { key: 'upsetScore', label: 'Upset Pts',  sortable: true },
     { key: 'matchYield', label: 'Match Yld',  sortable: true },
     { key: 'drawAcc',    label: 'Draw %',     sortable: true },
     { key: 'matchAcc',   label: 'Match %',    sortable: true },
@@ -564,8 +576,6 @@ export function fmtScore(n) { return n % 1 === 0 ? String(n) : n.toFixed(1) }
 export function formatStat(key, val) {
   if (val === null || val === undefined) return '—'
   if (key === 'score' || key === 'avgScore') return fmtScore(+val)
-  if (key === 'baseScore') return String(val)
-  if (key === 'upsetScore') return val % 1 === 0 ? val : val.toFixed(1)
   if (key === 'drawsPlayed') return val
   if (key === 'drawAcc' || key === 'matchAcc') return Math.round(val * 100) + '%'
   if (key === 'drawHealth') return Math.round(val * 100) + '%'

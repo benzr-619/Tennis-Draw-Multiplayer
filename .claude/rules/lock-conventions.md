@@ -34,6 +34,36 @@ Shared "missing pick, in range" logic lives in **lock.js**, used by both the bra
 
 **Countdown label override:** when `_urgency(lock)` (stats.js, wraps `combinedMissingCount`/`findLinkedLock`) finds ≥1 missing pick for the current player, the countdown label (`.sc-countdown-lbl` desktop compact / mirrored `#mobile-countdown-wrap` label) is replaced with `"N NO PICKS"` (singular `"1 NO PICK"`), overriding whatever would normally show (commissioner schedule label, or the generic "picks lock in"/"next lock" default). Reverts automatically once all of that player's picks in range are filled. Applies to both the pre-lock `original_picks` countdown and the post-lock `backup_picks` countdown.
 
+**`original_picks` range fixed to span the whole draw, not just round 0 (2026-07-18).**
+`isMatchInLockRange`/`missingPicksForLock` used to hardcode an `original_picks` lock's
+range to round 0 only. That was wrong: players are meant to fill out a full
+127-match bracket before the tournament starts — a real pick on every round, all the
+way to champion — not just round 0. `buildDrawView`'s projection makes each round's
+slots clickable in turn as its feeders get picked (round 0 is just the first round
+that's *ever* clickable, since every later round starts blank until fed), so the
+whole draw is genuinely reachable pre-lock, and the "N NO PICKS" count needs to track
+that or it silently undercounts anyone who picks past round 0. Confirmed the count
+now grows correctly as deeper rounds become pickable (via a live test: after filling
+one match at a fed-in round, the count stayed flat rather than dropping — because
+completing that match simultaneously made the *next* round's slot pickable via
+projection, which is the intended dynamic, not a bug).
+
+Found via the tutorial's compressed pre-lock window (long enough to explore several
+rounds deep) making the undercount visible — in a real draw this rarely surfaces
+because the original-picks lock is normally scheduled at tournament start, before any
+round beyond 0 has real occupants to click. `_findUnpickedCard` (main.js, the
+countdown's click-navigation target) already scanned every round for `original_picks`
+locks before this fix — the count was the only piece that disagreed with it.
+
+**`backup_picks` gated on confirmed occupants, not just projected ones.** The
+opposite correction, same fix: `missingPicksForLock`'s `backup_picks` branch now also
+requires `bothOccupantsResolved(draw, ri, mi)` (real feeder winners, not a
+still-projected original pick) before counting a match as missing — mirrors
+`backupPickFraction`'s existing gate. A match-pick lock should only ever count matches
+whose real players are both confirmed; a still-undetermined future matchup isn't
+pickable yet regardless of what a surviving original pick happens to be projecting
+into that slot.
+
 ## MS/WS Linked Locks (display-layer only)
 
 `findLinkedLock(ls)` treats an MS `lock_schedules` row and a WS row as one event when they share the same `scheduled_at` **and** `lock_type` — no schema change, no merging of the underlying rows, and every actual lock-enforcement check (`isMatchLocked`, `fire_scheduled_locks`, etc.) stays fully per-row and draw-scoped exactly as before. Linking only affects:

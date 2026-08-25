@@ -2,13 +2,14 @@
 
 import { state } from './state.js'
 import { SLAM_CONFIG, SLAM_COLORS, slamKey } from './data.js'
-import { calcStatsAsOf, calcSlamIndex, healthHue, isPoolEligible } from './scoring.js'
+import { calcStatsAsOf, calcSlamIndex, calcChalkBaselines, healthHue, isPoolEligible } from './scoring.js'
 import { supabase } from './supabase.js'
 import { formatAmerican } from './odds.js'
 import {
   loadAllPicksForDraw, assembleDrawForUser, loadDrawStatsForAllUsers,
   openViewerOriginalPicks, formatStat, setLbDetail, renderLeaderboard, fetchAllRows,
 } from './leaderboard.js'
+import { buildCombinedSection } from './leaderboard-slams-combined.js'
 
 const STATUS_NAMES = ['Round 1', 'Round 2', 'Round 3', 'Round 4', 'Quarterfinals', 'Semifinals', 'Final']
 const ROUND_LBL    = ['R1', 'R2', 'R3', 'R4', 'QF', 'SF', 'F']
@@ -23,9 +24,13 @@ const COLS = [
 let slamSort      = { col: 'slamIndex', dir: -1 }
 let _expandedKeys = new Set()
 let _picksCache   = new Map()
+// Combined M/W card — click-to-reveal per slam group key, see
+// .claude/rules/leaderboard-records-redesign.md "Slams Tab — Combined M/W Card"
+let _combinedExpanded = new Set()
 
 export function resetSlamSort() {
   slamSort = { col: 'slamIndex', dir: -1 }; _expandedKeys = new Set(); _picksCache = new Map()
+  _combinedExpanded = new Set()
 }
 
 // ── GENERIC LIST MODAL ──
@@ -82,7 +87,11 @@ export async function renderSlamsTab(container, profs) {
   const active = sorted.find(g => g.draws.some(d => d.is_active))
   const past   = sorted.filter(g => g !== active)
 
-  if (active) await _renderFull(container, active, allMaps, profs, true)
+  if (active) {
+    const wrap = document.createElement('div')
+    container.appendChild(wrap)
+    await _renderFull(wrap, active, allMaps, profs, true)
+  }
 
   if (past.length > 0) {
     const lbl = document.createElement('div')
@@ -98,6 +107,7 @@ export async function renderSlamsTab(container, profs) {
 // ── FULL SLAM SECTION ──
 
 async function _renderFull(el, group, allMaps, profs, isActive) {
+  el.innerHTML = '' // safe: caller always passes a dedicated wrapper (re-entered on Combined toggle)
   const color   = SLAM_COLORS[group.slam] || 'var(--border)'
   const cfg     = SLAM_CONFIG[group.slam] || {}
   const section = document.createElement('div')
@@ -118,6 +128,15 @@ async function _renderFull(el, group, allMaps, profs, isActive) {
   }
   _buildCards(mwRow, group, allMaps, profs, color, baseline, isActive)
   section.appendChild(mwRow)
+
+  if (group.draws.length === 2) {
+    const isOpen = _combinedExpanded.has(group.key)
+    buildCombinedSection(section, group, allMaps, profs, color, isOpen, () => {
+      isOpen ? _combinedExpanded.delete(group.key) : _combinedExpanded.add(group.key)
+      _renderFull(el, group, allMaps, profs, isActive)
+    })
+  }
+
   _buildChipsRow(section, group, allMaps, profs)
   el.appendChild(section)
 }
@@ -151,7 +170,9 @@ async function _loadBaseline(group, profs, R) {
       const s = calcStatsAsOf(ud, R - 1)
       return { id: p.id, score: s.baseScore + s.skillBonus, my: s.matchYieldResolved > 0 ? s.matchYield : 0, has: s.filled > 0 && isPoolEligible(ud) }
     }).filter(e => e.has)
-    const idxs = calcSlamIndex(ents.map(e => ({ score: e.score, matchYield: e.my })))
+    const siVersion = d.slam_index_version ?? 1
+    const chalk = siVersion === 2 ? calcChalkBaselines(assembleDrawForUser(d, []), R - 1) : null
+    const idxs = calcSlamIndex(ents.map(e => ({ score: e.score, matchYield: e.my })), { version: siVersion, chalk })
     ;[...ents].map((e, i) => ({ ...e, si: idxs[i] }))
       .sort((a, b) => (b.si ?? -Infinity) - (a.si ?? -Infinity))
       .forEach((e, i) => { result[d.db_id + ':' + e.id] = i + 1 })
@@ -355,7 +376,7 @@ function _buildChipsRow(section, group, allMaps, profs) {
   }
   row.appendChild(cA)
 
-  // CHIP B — BEST MATCH PICK VALUE
+  // CHIP B — BEST MATCH PICK ROI
   const roiEntries = []
   profs.forEach(p => {
     let totalFlatYield = 0, totalResolved = 0
@@ -368,17 +389,14 @@ function _buildChipsRow(section, group, allMaps, profs) {
     if (totalResolved > 0) roiEntries.push({ prof: p, roi: totalFlatYield / totalResolved, n: totalResolved })
   })
   roiEntries.sort((a, b) => b.roi - a.roi)
-  const cB = _mkChip('BEST MATCH PICK VALUE')
-  const subLbl = document.createElement('span'); subLbl.className = 'lb-rec-card-title'
-  subLbl.style.cssText = 'font-size:9px;opacity:0.7'; subLbl.textContent = 'FLAT-STAKE ROI'
-  cB.querySelector('.lb-rec-card-header').appendChild(subLbl)
+  const cB = _mkChip('BEST MATCH PICK ROI')
   if (!roiEntries.length) { cB.appendChild(_emptyChip()) } else {
     const best = roiEntries[0], bPct = Math.round(best.roi * 100)
     const body = document.createElement('div'); body.className = 'rec-honor-body rec-honor-clickable'
     const main = document.createElement('div'); main.className = 'rec-honor-main'
     main.textContent = `${best.prof.display_name} · ${bPct >= 0 ? '+' : '−'}${Math.abs(bPct)}%`
     body.appendChild(main)
-    body.addEventListener('click', () => openListModal('Best Match Pick Value', roiEntries.map(e => {
+    body.addEventListener('click', () => openListModal('Best Match Pick ROI', roiEntries.map(e => {
       const p = Math.round(e.roi * 100)
       return { name: e.prof.display_name, sub: `${e.n} pick${e.n !== 1 ? 's' : ''}`, val: (p >= 0 ? '+' : '−') + Math.abs(p) + '%', valClass: p >= 0 ? 'lb-modal-val-pos' : '' }
     })))

@@ -46,7 +46,9 @@ counts — no backfill migration, applies automatically to all historical draws 
 render.
 
 **Gap found and fixed 2026-07-03:** the Slams tab storyline chips (`_buildChipsRow`
-in leaderboard-slams.js — "Biggest Upset" and "Best Match Pick Value") built their
+in leaderboard-slams.js — "Biggest Upset" and "Best Match Pick Value", renamed
+"Best Match Pick ROI" 2026-07-18 when its "FLAT-STAKE ROI" sub-label was dropped —
+stake is flat for every match now, so calling it out was redundant) built their
 entries directly from `s.bestUpset`/`s.flatYield` per prof per draw with no
 `poolEligible` check at all, unlike every other consumer of
 `loadDrawStatsForAllUsers`'s output. A pool-ineligible player (e.g. one with only a
@@ -121,7 +123,7 @@ Three tabs tracked in `lbTab` (default `slams`):
 ## CSS Grid Templates
 
 - **Slams card row** (`.lb-row-card`): `1fr 72px 72px 72px` — Player | Draw Yld | Match Yld | Index
-- **Detail table row** (`.lb-row-detail`): `1fr 72px 68px 68px 72px 72px 72px 72px 72px` — Player | Draw Yld | Base Pts | Upset Pts | Match Yld | Draw % | Match % | Health | Index
+- **Detail table row** (`.lb-row-detail`): `1fr 72px 72px 72px 72px 72px 72px` — Player | Draw Yld | Match Yld | Draw % | Match % | Health | Index. Base Pts/Upset Pts columns dropped 2026-07-18 — with v2 scoring (`.claude/rules/scoring-redesign.md`) the upset bonus is always 0 and Base Pts always equals Draw Yld exactly, so the two columns were dead weight now that v2 is the formula for every draw. `baseScore`/`upsetScore` are still computed internally (`leaderboard.js`'s `loadDrawStatsForAllUsers`) and still feed `score` — only the display columns were removed, not the underlying computation.
 - All `.lb-row` have `column-gap:12px` for visual separation between stats.
 - All `.lb-cell` default `text-align:right`; `.lb-cell-name` overrides to left.
 - `.lb-header-row .lb-cell` has `white-space:nowrap` — labels must never wrap.
@@ -135,8 +137,6 @@ Use these exact labels everywhere in leaderboard tables — never the full names
 | Draw Yield (score) | **Draw Yld** |
 | Match Yield (betting) | **Match Yld** |
 | Slam Index (composite) | **Index** |
-| Base Points | Base Pts |
-| Upset Points | Upset Pts |
 | Draw Accuracy | Draw % |
 | Match Accuracy | Match % |
 | Draw Health | Health |
@@ -165,7 +165,7 @@ Column order: Player | Draw Yld | Match Yld | **Index**. Index is default sort (
 
 **Draw Health underline** (`.lb-health-bar`): `position:absolute; left:0; bottom:0; height:3px`. Width = health% of row width. Hue from `healthHue(pct)` (imported from scoring.js). Transition 0.3s ease. Hidden pre-lock (null/undefined drawHealth). No % label on bar.
 
-**Detail view** (`lbDetailDraw` set): click "All stats →" calls `setLbDetail(draw)` + `renderLeaderboard()`. Returns to Slams tab via "← Slams" back button. All 9 stat columns (Draw Yld / Base Pts / Upset Pts / Match Yld / Draw % / Match % / Health / Index), sortable. Sort state in `lbSort` (in leaderboard.js).
+**Detail view** (`lbDetailDraw` set): click "All stats →" calls `setLbDetail(draw)` + `renderLeaderboard()`. Returns to Slams tab via "← Slams" back button. All 7 stat columns (Draw Yld / Match Yld / Draw % / Match % / Health / Index), sortable. Sort state in `lbSort` (in leaderboard.js).
 
 ### Storyline Chips (`.lb-chip-row`, 2-col grid below cards)
 
@@ -183,7 +183,7 @@ Exported from `leaderboard-slams.js`. Used by both Slams chips and Records "Bigg
 
 Below active slam: "PAST SLAMS" label + compact card per slam. Compact card (`.lb-past-card`): 3px left border in slam color (not top border), slam name (Playfair 16px), year, top-3 by combined slamIndex (avg MS+WS), "VIEW →" / "HIDE ↑". Click toggles `_expandedKeys`; when expanded, `_renderFull(..., false)` appended below card (no arrows, "FINAL" pill).
 
-**Detail view** (`lbDetailDraw` set): All 9 stat columns (Draw Yld / Base Pts / Upset Pts / Match Yld / Draw % / Match % / Health / Index), sortable. Sort state in `lbSort`. Back button returns to Slams tab.
+**Detail view** (`lbDetailDraw` set): All 7 stat columns (Draw Yld / Match Yld / Draw % / Match % / Health / Index), sortable. Sort state in `lbSort`. Back button returns to Slams tab.
 
 **Deferred:** "Biggest Mover" chip (rank change leader across full slam) — not built. Would require per-round rank history beyond what `_loadBaseline` provides for a single round.
 
@@ -203,11 +203,20 @@ Renders only when `eligible.length >= 3` (players with data for active sort stat
 
 **FLIP animation**: `renderPeriodContent` captures `.rec-pod-name[data-id]` rects BEFORE `content.innerHTML = ''`, then after DOM rebuild uses `requestAnimationFrame` + `void el.offsetWidth` reflow to animate names from old to new positions. `will-change:transform` on `.rec-pod-name`.
 
-### Standings Table
+### Standings table — REMOVED 2026-08-25, replaced by a Top 10 Slam Index table
 
-`.rec-standings-wrap` wraps `.lb-table.rec-standings-table`. Grid `.lb-row-standings`: `22px 1fr 44px 72px 72px 72px`. Columns: rank (`.lb-cell-srank`) | Player + YOU badge | Draws (`.lb-cell-draws`) | Draw Yld | Match Yld | Index. Sortable on Draw Yld/Match Yld/Index only. Sort clicks call `_rerenderContent()`. **YOU badge**: `.rec-you-badge` (DM Mono 9px, accent color, accent-dim bg, 1px border, margin-left 7px).
-
-Data from `buildAllTimeAgg` — aggregate keys: `avgScore`, `avgMatchYield`, `avgSlamIndex`, `drawsPlayed`. Sort col → agg key map: `score` → `avgScore`, `matchYield` → `avgMatchYield`, `slamIndex` → `avgSlamIndex` (constant `AGG_KEY`).
+The full-player shrinkage-adjusted standings table (`buildStandingsTable`,
+`.rec-standings-wrap`/`.lb-row-standings`) and the separate "Best Slam Index
+Ever" click-to-expand card (`buildBestEverCard`) are both gone — see
+`.claude/rules/leaderboard-records-redesign.md` "Podium-plus-top-10
+simplification" for why. The podium above (unchanged, still shrinkage-adjusted
+via `buildShrinkageStandings`/`computeShrinkageK`, see
+`.claude/rules/slam-index.md`) is now immediately followed by
+`buildTopTenTable('SLAM INDEX', topSlamIndex, 'slamIndex')` — the same shared
+helper the Draw Yield/Match Yield tables below it use (`.rec-pb-table-wrap`/
+`.rec-pb-row`), just called standalone (full width) instead of inside
+`.rec-pb-grid`. It shows raw single-draw performances (peak, not career
+average) — deliberately a different ranking from the podium above it.
 
 ### Honors Row
 
@@ -236,9 +245,9 @@ Extended to compute `bestUpset` per user per draw: iterates assembled draw's mat
 
 **Layout:** single sortable table — one row per draw (MS and WS as separate rows, all slams combined). No M/W toggle.
 
-**Columns:** Draw (slam name + year + M/W) / Draw Yld / Base Pts / Upset Pts / Match Yld / Draw % / Match % / Health / Index. Same stat keys and `formatStat` calls as the detail table.
+**Columns:** Draw (slam name + year + M/W) / Draw Yld / Match Yld / Draw % / Match % / Health / Index. Same stat keys and `formatStat` calls as the detail table. Base Pts/Upset Pts dropped 2026-07-18, same reason as the detail table above.
 
-**CSS grid:** `.lb-yd-row{grid-template-columns:1fr 72px 68px 68px 72px 72px 72px 72px 72px}` — identical column widths to `.lb-row-detail`. `.lb-yd-table{min-width:822px}`. `.lb-yd-table-wrap{overflow:hidden}` at base; `overflow-x:auto` in the late `@media(max-width:768px)` block (same cascade pattern as the detail table).
+**CSS grid:** `.lb-yd-row{grid-template-columns:minmax(220px,1fr) 72px 72px 72px 72px 72px 72px}` — same per-column widths as `.lb-row-detail`. `.lb-yd-table{min-width:776px}`. `.lb-yd-table-wrap{overflow:hidden}` at base; `overflow-x:auto` in the late `@media(max-width:768px)` block (same cascade pattern as the detail table).
 
 **3px slam-color left border:** `border-left:3px solid transparent` on all `.lb-yd-row`; data rows set `--lb-slam-color` via `style.setProperty` and CSS `border-left-color:var(--lb-slam-color)`. Header row stays transparent.
 
@@ -313,7 +322,7 @@ Champion box uses `f.matchPick || f.winner || '—'`. `assembleDrawForUserMatchP
 
 **Slam summary card:** Player / Draw Yld / Match Yld / Health
 
-**Detail view:** Player / Draw Yld / Base Pts / Upset Pts / Match Yld / Draw % / Match % / Health
+**Detail view:** Player / Draw Yld / Match Yld / Draw % / Match % / Health
 
 **Records Match Yield card:** Player (+ draws-played sub) / Avg / Total
 
@@ -358,13 +367,11 @@ Sticky cells must match the ROW background (not the table-wrap background) or th
 .lb-past-top3{flex-basis:100%;order:3}
 .rec-pod-block{width:auto;flex:1;min-width:0}
 .rec-pod-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
-.lb-row-standings{grid-template-columns:18px 1fr 56px 56px 56px;column-gap:8px}
-.lb-cell-draws{display:none}
 .lb-rec-td-row{grid-template-columns:18px 1fr 56px 56px 56px;column-gap:8px}
 ```
 
 Notes:
-- `.lb-cell-draws` hides the Draws count column on both header and data rows (both use the same class).
+- `.lb-row-standings`/`.lb-cell-draws` (the old standings-table mobile overrides) are gone along with the standings table itself — see "Standings table — REMOVED 2026-08-25" above.
 - "MATCH YLD" text at 9px DM Mono is slightly wider than 56px and overflows visually with `overflow:visible` — not clipped, looks fine in practice. No letter-spacing fix needed.
 - `.lb-chip-row{grid-template-columns:1fr}` stacks storyline chips to single column at ≤768px (side-by-side at desktop).
 - `.lb-past-top3{order:3}` pins the top-3 names to a new second row while "VIEW →" (margin-left:auto) stays right on row 1.

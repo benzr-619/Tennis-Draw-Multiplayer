@@ -43,10 +43,20 @@ export function matchNeedsPick(m) {
   return !m.matchPick && !m.winner
 }
 
-/** True when (ri, mi) falls inside the round/match-index coverage of a lock schedule row. */
+/**
+ * True when (ri, mi) falls inside the round/match-index coverage of a lock schedule
+ * row. original_picks locks cover the WHOLE draw — players are meant to fill out a
+ * full 127-match bracket (a real pick on every round, all the way to champion) before
+ * the tournament starts, not just round 0. buildDrawView's projection makes each
+ * round's slots clickable in turn as its feeders get picked, so the whole draw is
+ * reachable pre-lock; _findUnpickedCard (main.js) already scans every round for
+ * original_picks locks, and this must agree with it (fixed 2026-07-18, found via the
+ * tutorial's compressed pre-lock window making the round-0-only undercount visible —
+ * see .claude/rules/tutorial.md).
+ */
 export function isMatchInLockRange(ls, ri, mi) {
   if (!ls) return false
-  if (ls.lock_type === 'original_picks') return ri === 0
+  if (ls.lock_type === 'original_picks') return true
   if (ls.lock_type === 'backup_picks') {
     if (ls.round_index !== ri) return false
     const start = ls.match_index_start ?? 0
@@ -56,15 +66,37 @@ export function isMatchInLockRange(ls, ri, mi) {
   return false
 }
 
-/** Match indices within ls's own draw/round/range that still need a pick. */
+/**
+ * Matches within ls's own draw/range that still need a pick.
+ * - original_picks (whole-draw range, see isMatchInLockRange): counts a match once it
+ *   has at least one clickable occupant (buildDrawView's projected p1/p2 — pre-lock
+ *   that's the only kind of occupant there is, real or otherwise) — a still-fully-
+ *   blank future round isn't "missing a pick," there's nothing to click yet.
+ * - backup_picks: gated on bothOccupantsResolved (real winners, not projected picks)
+ *   — a match whose real players aren't both confirmed yet isn't pickable regardless
+ *   of what a still-alive original pick might be projecting into the slot. Mirrors
+ *   backupPickFraction's existing gate below; this was the missing half of Ben's
+ *   correction (2026-07-18) — original_picks locks count every reachable match,
+ *   match-pick locks only count matches with confirmed players.
+ * Returns {ri, mi} pairs for original_picks (spans rounds) or plain mi numbers for
+ * backup_picks (a single fixed round) — only .length is read by callers, so the shape
+ * difference is never observed from outside this function.
+ */
 export function missingPicksForLock(ls) {
   const draw = state.draws.find(dr => dr.db_id === ls.draw_id)
   if (!draw) return []
-  const ri = ls.lock_type === 'original_picks' ? 0 : ls.round_index
+  if (ls.lock_type === 'original_picks') {
+    const missing = []
+    draw.rounds.forEach((r, ri) => r.matches.forEach((m, mi) => {
+      if ((m.p1?.name || m.p2?.name) && matchNeedsPick(m)) missing.push({ ri, mi })
+    }))
+    return missing
+  }
+  const ri = ls.round_index
   if (ri == null || !draw.rounds[ri]) return []
   return draw.rounds[ri].matches
     .map((m, mi) => mi)
-    .filter(mi => isMatchInLockRange(ls, ri, mi) && matchNeedsPick(draw.rounds[ri].matches[mi]))
+    .filter(mi => isMatchInLockRange(ls, ri, mi) && bothOccupantsResolved(draw, ri, mi) && matchNeedsPick(draw.rounds[ri].matches[mi]))
 }
 
 export function lockMissingPickCount(ls) {

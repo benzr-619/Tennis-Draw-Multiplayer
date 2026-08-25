@@ -1,7 +1,7 @@
 // Stats bar renderer
 
 import { activeDraw, state, isMobile } from './state.js'
-import { calcStatsAsOf, calcChalkScore, isBackupPick, healthHue as _hHue } from './scoring.js'
+import { calcStatsAsOf, calcChalkScore, isBackupPick, healthHue as _hHue, calcSlamIndex, calcChalkBaselines, isPoolEligible } from './scoring.js'
 import { formatYield } from './odds.js'
 import { loadDrawStatsForAllUsers } from './leaderboard.js'
 import { nextScheduledLock, lockMissingPickCount, findLinkedLock, combinedMissingCount, backupPickFraction } from './lock.js'
@@ -10,6 +10,7 @@ let statsRoundFilter = null
 let _countdownClickHandler = null
 let _poolSlamIndex = null   // current user's Slam Index for the active draw
 let _poolFlatROI = null     // current user's flat-stake ROI for the active draw (e.g. 0.45 = +45%)
+let _poolSlamIndexIsV2 = false // true when _poolSlamIndex was computed against the v2 chalk baseline (drives drawer copy)
 let _drawerOpen = false
 let _drawerMathOpen = null      // id of the open math row (e.g. 'draw-yield')
 let _lastDrawId = null          // detect draw change → reset drawer state
@@ -51,12 +52,52 @@ export function resetStatsFilter() { statsRoundFilter = null }
 export function getStatsFilter() { return statsRoundFilter }
 export function setCountdownClickHandler(fn) { _countdownClickHandler = fn }
 
-// Fetches pool stats for the active draw, computes Slam Index, caches current user's value.
-// Fire-and-forget safe — resolves after Supabase fetch completes.
+// Flat-stake ROI (each resolved matchPick with locked odds = a $1 bet) for a single
+// user's own already-assembled draw — no other players' data needed. Mirrors the
+// per-user block inside leaderboard.js's loadDrawStatsForAllUsers.
+function _computeFlatROI(draw) {
+  let flatYield = 0, flatYieldResolved = 0
+  draw.rounds.forEach(r => r.matches.forEach(m => {
+    const pickedOdds = m.matchPick === m.p1?.name ? m.odds_p1_locked
+                     : m.matchPick === m.p2?.name ? m.odds_p2_locked : null
+    if (pickedOdds && pickedOdds > 1) {
+      if (m.matchPickResult === 'correct') { flatYield += pickedOdds - 1; flatYieldResolved++ }
+      else if (m.matchPickResult === 'wrong') { flatYield -= 1; flatYieldResolved++ }
+    }
+  }))
+  return flatYieldResolved > 0 ? flatYield / flatYieldResolved : null
+}
+
+// Computes Slam Index (+ flat ROI) for the active draw, caches current user's value.
+// Fire-and-forget safe — resolves after any async work completes.
+//
+// v2 (slam_index_version === 2, see .claude/rules/slam-index.md): the index is
+// player-independent — scored against the draw's own chalk baseline, not the pool
+// — so this needs NO other players' data at all. Computed synchronously off `draw`
+// itself (already the current user's fully-derived view by the time this is
+// called). Falls back to the v1 pool-relative fetch when the draw lacks enough
+// ELO/odds data to trust a chalk baseline.
 export async function fetchPoolSlamIndex(draw, userId) {
   _poolSlamIndex = null
   _poolFlatROI = null
+  _poolSlamIndexIsV2 = false
   if (!draw || !userId) return
+
+  if ((draw.slam_index_version ?? 1) === 2) {
+    if (!isPoolEligible(draw)) return
+    const chalk = calcChalkBaselines(draw)
+    if (chalk.valid) {
+      const s = calcStatsAsOf(draw, null)
+      const score = s.baseScore + s.skillBonus
+      const matchYield = s.matchYieldResolved > 0 ? s.matchYield : 0
+      _poolSlamIndex = calcSlamIndex([{ score, matchYield }], { version: 2, chalk })[0]
+      _poolFlatROI = _computeFlatROI(draw)
+      _poolSlamIndexIsV2 = true
+      return
+    }
+    // No trustworthy chalk baseline — fall through to the v1 pool-relative fetch below.
+  }
+
   try {
     const statsMap = await loadDrawStatsForAllUsers(draw)
     _poolSlamIndex = statsMap[userId]?.slamIndex ?? null
@@ -274,34 +315,35 @@ function _buildDrawerContent(s, hasResult) {
   const healthVal = healthPct !== null ? `${healthPct}%` : '—'
   const healthValStyle = ''
 
-  const breakdownStr = hasResult && (s.baseScore + s.skillBonus) > 0
-    ? ` · ${s.baseScore} base + ${s.skillBonus} upset pts`
-    : ''
-
   const rows = [
     {
       id: 'slam-index',
       label: 'Slam Index',
       value: slamIdxStr,
       valueStyle: '',
-      def: 'Your standing vs the pool, combining both yields. 100 = pool average.',
-      math: 'Compares your Draw and Match Yields to the pool\'s average and spread. Dead average = 100; the further you sit from the pack — above or below — the further your index moves from 100.',
+      def: _poolSlamIndexIsV2
+        ? 'Draw Yield and Match Yield combined and judged against a \'chalk\' bracket, scaled by overall unpredictability.'
+        : 'Your standing vs the pool, combining both yields. 100 = pool average.',
+      math: _poolSlamIndexIsV2
+        ? `100 + 15 × avg( (Draw Yield − Elo Favorites Draw Yield) ÷ σ<sub>draw</sub> , (Match Yield − Odds Favorites Match Yield) ÷ σ<sub>match</sub> ).<br>
+           σ<sub>draw</sub> = √Σ pts² · p(1−p) &nbsp;&nbsp;&nbsp; σ<sub>match</sub> = 10 · √Σ (o − 1), p = Elo win probability, o = favorite's decimal odds`
+        : 'Compares your Draw and Match Yields to the pool\'s average and spread. Dead average = 100; the further you sit from the pack — above or below — the further your index moves from 100.',
     },
     {
       id: 'draw-yield',
       label: 'Draw Yield',
       value: totalScore,
       valueStyle: '',
-      def: `Only original, pre-tournament picks score here. Rounds pay 1·2·3·6·10·18·32 points, plus a bonus for calling upsets.${breakdownStr}`,
-      math: 'Upset bonus = winner\'s seed − loser\'s seed, never below 0. Unseeded counts as seed 33; unseeded vs unseeded pays a flat 0.5.',
+      def: 'Only original, pre-tournament picks score here. Every round pays double the last: 1·2·4·8·16·32·64 points.',
+      math: 'A correct original pick pays that round\'s flat point value, no partial credit. Backup picks after lock don\'t add Draw Yield; they\'re tracked separately by Match Yield and Match Accuracy.',
     },
     {
       id: 'match-yield',
       label: 'Match Yield',
       value: myldStr,
       valueStyle: '',
-      def: 'Winnings from betting your match-by-match picks at the bookies\' odds. Stakes by round: 10·10·20·20·30·40·50.',
-      math: 'Win = stake × (odds − 1), at odds frozen when the match\'s picks lock. Loss = −stake. Once both players in a match are confirmed, you can make a new pick whether or not your original is still alive. No pick? You\'re scored on the favourite automatically. Bookies\' odds carry a built-in house margin, so breaking even means you beat the bookie.',
+      def: 'Betting your match-by-match picks against the bookies\' odds — a flat 10-point stake per match.',
+      math: 'Win = 10 × (odds − 1) at the odds frozen when picks lock; loss = −10. A pick counts if made before the match starts. No pick auto-scores on the favorite. Odds carry a house margin, so breaking even means you beat the bookie.',
     },
     {
       id: 'draw-acc',
@@ -316,7 +358,7 @@ function _buildDrawerContent(s, hasResult) {
       label: 'Match Accuracy',
       value: matchAccVal,
       valueStyle: '',
-      def: `Match-time picks you got right. · ${matchAccFrac}${_poolFlatROI !== null ? ` · ${_poolFlatROI >= 0 ? '+' : ''}${Math.round(_poolFlatROI * 100)}% flat-stake ROI` : ''}`,
+      def: `Match-time picks you got right. · ${matchAccFrac}${_poolFlatROI !== null ? ` · ${_poolFlatROI >= 0 ? '+' : ''}${Math.round(_poolFlatROI * 100)}% ROI` : ''}`,
       math: null,
     },
     {

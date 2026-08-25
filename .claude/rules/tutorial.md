@@ -1,7 +1,8 @@
 # Onboarding Tutorial — Design Decisions
 
-Read this before building the new-player tutorial. Design decided 2026-07-06; not
-implemented yet (see CLAUDE.md §13 "Not yet built").
+Read this before touching the new-player tutorial. Design decided 2026-07-06,
+**implemented 2026-07-18** — manual entry point only (see "Implementation" at the
+bottom for what shipped and what's still deferred).
 
 ## Purpose & Scope
 
@@ -126,3 +127,133 @@ theme tokens). Whichever slam is pulled as sandbox data determines the actual hu
 shown. Tutorial copy should describe states functionally ("your pick, still alive" /
 "eliminated" / "needs a backup pick") rather than naming a specific color like "blue,"
 since that will be wrong depending on which slam's theme is active.
+
+## Implementation (shipped 2026-07-18; redesigned into two clean phases same week
+## after several rounds of testing — see CHANGELOG.md for the full blow-by-blow)
+
+**Two phases, not mashed together.** Earlier versions tried to teach a mechanic and
+demonstrate it live in the same breath — e.g. forcing the sandbox to reproduce the
+elim → displaced-label transition on cue by injecting a fake pick into a fabricated
+SF match. That kept breaking in subtle ways (wrong round targeted, arrows pointing at
+stale state, Back not truly reversing) because it was fighting the sandbox's real
+mechanics instead of working with them. The shipped version cleanly separates:
+
+1. **Mechanics** (steps 1-5) — make original picks (real, interactive), watch the
+   real lock fire (real, interactive), then two cards that show **static examples**
+   of what card states look like (elim/displaced, "No Pick") using placeholder names,
+   not tied to the live sandbox draw at all.
+2. **Gameplay** (steps 6-7) — watch the small real draw actually play out round by
+   round: Round 1 resolves for real (genuine history, whatever the player picked)
+   and doubles as the practice step (gated on a real match pick), then the rest of
+   the draw completes. Nothing here is forced or injected — it just plays out.
+
+**7 steps** (down from 9 after a 2026-07-18 copy pass merged the reveal with its
+practice step, and the closing wrap-up with the former standalone "Done" card):
+Welcome → Fill out your draw before the tournament (practice, gated on one real
+pick) → Original picks lock (animated countdown, real lock fires only on Next) → When
+your pick loses (static mockup) → Match picks (static mockup, purely mechanical — no
+scoring name-drop here anymore) → Round 1 is over (real reveal, then gates Next on a
+real post-lock match pick — merged step) → The rest of the draw plays out (real
+reveal; closing line ties Original Picks→Draw Yield and Match Picks→Match Yield
+together as the sign-off, "Done" button since it's the last step — merged step).
+The single "Match Yield" mention lives in this closing line now, not mid-lesson.
+
+**Sandbox: 8 players / 4 R1 matches / 3 rounds (R1 → SF → F)**, sliced from the most
+recently created real draw whose Final has a confirmed winner. `ROUND_LABELS = ['R1',
+'SF', 'F']` in tutorial-sandbox.js. Round 1 results are real history
+(`r1Winners: Map<match_index, name>`); SF/Final are fabricated pairings with no real
+answer, resolved by seed (`autoCompleteDraw()`, better-seed-wins, falls back to `p1`
+if neither side has a parseable seed).
+
+**Fake odds — Round 1 only.** `blankMatch()` seeds plausible decimal odds (1.4–3.6) as
+both live and locked, but only for matches built with real occupants (Round 1) — blank
+SF/Final slots stay oddsless, matching how a real draw never shows odds for a matchup
+that doesn't exist yet. Needed because Match Yield (`calcStatsAsOf` in scoring.js)
+only scores a resolved match when `odds_p1_locked`/`odds_p2_locked` are non-null;
+without this it sat at "—" the whole tutorial regardless of what happened.
+
+**Files:**
+- `src/tutorial-sandbox.js` — `buildTutorialDraw()` (slice + seed odds),
+  `revealR1Result()` (one real R1 result), `autoCompleteDraw()` (seed-resolve
+  everything still undecided, round by round — used for the final "plays out" step).
+  Both call the real `buildDrawView()` — no second derivation engine.
+- `src/tutorial-overlay.js` — coach-mark UI only: **one fixed tooltip position for
+  every step** (`top:50%; right:48px`, vertically centered via `translateY(-50%)`),
+  no arrow, no dimming/spotlight, no per-step target tracking at all. This is the
+  end state of two earlier, more elaborate approaches that both got walked back:
+  1. **Dimming/spotlight** (a dark cutout around a target, or a thin ring for
+     practice steps) — dropped because any fixed highlight rect can't bound content
+     that overflows its own element's box (e.g. a displaced-pick label floating
+     above a card via a negative offset — see `.claude/rules/bracket-rendering.md`).
+  2. **Arrow-follows-target positioning** (no dimming, but the tooltip moved next to
+     and pointed at whatever each step was discussing, with fallback logic to dodge
+     overlapping match cards when there was no target) — this fixed real overlap
+     bugs, but Ben's own testing found the *result* — the tooltip jumping to a
+     different screen region every step (near the top for targeted steps, near the
+     bottom for untargeted ones) — was itself confusing, independent of whether any
+     individual position was technically correct. Replaced with the current fixed
+     spot: always the same place, so the player learns once where to look next,
+     and there's no target-tracking/overlap-avoidance code left to get wrong at all.
+- `src/tutorial.js` — orchestrator, the step script, and all sandbox-only side
+  effects (countdown animation, synthetic `lock_schedules` rows,
+  `document.body.classList.add('tutorial-active')`).
+
+**Reuse-the-real-renderer mechanics:**
+- The sandbox draw is temporarily installed at `state.draws = [draw]` /
+  `state.activeTab = 0` (saved and restored around the tutorial) so
+  `handlePickClick`/`applyWinner` — which read `activeDraw()` internally — operate on
+  it unchanged. `bracket.js`'s exported `renderBracket()` already dispatches through
+  whatever `main.js` registered via `setRenderBracketFn` at boot, so `tutorial.js`
+  never needs to import anything from `main.js`.
+- Every sandbox match has `db_id: null`, so `savePickToSupabase`/`applyWinner`'s DB
+  block both no-op via their existing `if (!m.db_id) return` / `if (...&& m.db_id)`
+  guards — real Supabase writes never happen, with zero monkey-patching needed.
+- The "No Pick" purple glow, the post-lock "match picks set for X/Y" countdown, and
+  the countdown-click-to-navigate tip are **not reimplemented** — they're the real
+  `bracket.js`/`stats.js`/`lock.js` logic, driven entirely by pushing synthetic
+  `lock_schedules`-shaped rows into `state.lockSchedules` (never fired — `locked_at`
+  stays null forever; only used for the real code's range/next-lock lookups).
+
+**Header lockout.** The M/W toggle, refresh button, and search bar all read/write the
+REAL `state.draws` — meaningless for a single fake draw, and refresh in particular
+would silently overwrite the sandbox with real data if clicked mid-tutorial. Dimmed to
+0.35 opacity and made inert via a `body.tutorial-active` CSS rule for the whole
+session, restored on exit (both normal completion and the × close button).
+
+**Back genuinely reverses state.** Every step mutates shared draw state (revealing
+results, firing the lock). `stepSnapshots[i]` captures `{rounds, locked,
+lockSchedules, postLockSnapshot}` (via `structuredClone`, plus a fresh `Map` copy for
+`postLockSnapshot`) the first time step `i` is entered; re-entering that step (forward
+or via Back) restores the snapshot before re-running the step's code, so effects
+reproduce identically no matter how many times a step is revisited. Backing out of a
+practice step (2 or 6) also reverts anything picked while on it — the snapshot
+predates those actions too. This is intentional: an honest "back really means back"
+rather than a special-cased exception carved out just for practice steps, which would
+itself read as a different kind of inconsistency.
+
+**Entry point — manual only.** A "Tutorial" item in the account menu on both the
+bracket screen (`#tutorial-btn`) and leaderboard (`#tutorial-btn-lb`), both wired to
+`doStartTutorial()` in `main.js` (dynamic `import('./tutorial.js')`, stops
+realtime/polling first, restores via `showBracketScreen()` on exit). **Auto-show on
+first login for new accounts is explicitly deferred** — needs a persisted "seen" flag
+(likely a `profiles` column) and login-flow wiring in `main.js`, both call-outs Ben
+asked to be stopped-and-checked-in-on before deciding. Not yet built.
+
+**Verified (2026-07-18)** via repeated Playwright runs against real throwaway
+Supabase signups (created and deleted after every run, zero orphaned rows — same
+discipline as the realtime.js testing in `.claude/rules/realtime.md`): odds badges
+render on Round 1 only, Match Yield displays a real signed number once a resolved
+match pick exists, the elim/No-Pick mockups render correctly with zero live-draw
+dependency, Round 1 resolves for real with no forcing, the practice gate correctly
+credits a match pick made during an earlier step, and Back genuinely restores
+pre-lock state (pills, not the post-lock bar) when backing past the lock step. Zero
+exceptions from tutorial code across every run — the only errors observed are the
+pre-existing, unrelated `realtime.js` bug below.
+
+**Known issue (pre-existing, unrelated to this feature):** `stopBracketRealtime()` in
+`src/realtime.js` throws `RangeError: Maximum call stack size exceeded` on a
+completely vanilla nav-away/nav-back flow with zero tutorial code involved (confirmed
+by reproducing on a fresh signup with no tutorial interaction at all) — looks like the
+`.subscribe(status => ...)` kill-switch callback documented in `.claude/rules/
+realtime.md` is re-entrant (`removeChannel()` synchronously re-triggers the same
+status callback). Flagged as a separate follow-up task, not touched here.

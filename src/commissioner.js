@@ -7,7 +7,7 @@ import { state, activeDraw, applyTheme } from './state.js'
 import { loadAllDraws, reloadActiveDraw, slamLabel, slamKey } from './data.js'
 import { extractPdfText, parseTnnsText } from './parser.js'
 import { $c, escHtml } from './commissioner-shared.js'
-import { renderResults, setPendingSearch, renderHealthBandsStatusSection } from './commissioner-results.js'
+import { renderResults, setPendingSearch, renderHealthBandsStatusSection, renderShrinkageKSection, recomputeShrinkageK } from './commissioner-results.js'
 import { renderLockManaging } from './commissioner-locks.js'
 import { renderOddsTab } from './commissioner-odds.js'
 import { renderEspnScoreFeedSection } from './commissioner-scores.js'
@@ -20,6 +20,12 @@ export { renderResults } from './commissioner-results.js'
 export { renderLockManaging } from './commissioner-locks.js'
 
 const ROUND_SIZES = [64, 32, 16, 8, 4, 2, 1]
+
+// Scoring version stamped on every newly-created draw. Existing draws keep
+// whatever version they were created under (default 1, incl. Wimbledon 2026) —
+// re-uploading an already-existing slam+draw+year does NOT change its version.
+// See .claude/rules/scoring-redesign.md "Implementation Scope".
+const NEW_DRAW_SCORING_VERSION = 2
 
 // ── MODULE STATE (draw management only) ──
 let _initialized = false
@@ -65,6 +71,7 @@ export function initCommissioner() {
   renderResults()
   renderEspnScoreFeedSection()
   renderHealthBandsStatusSection()
+  renderShrinkageKSection()
   if (_isResultsTabActive()) startResultsRealtime(activeDraw()?.db_id, _onResultsRealtimeChange)
 
   if (_initialized) return
@@ -94,7 +101,7 @@ export function initCommissioner() {
       stopResultsRealtime() // re-scoped below only if the results tab is what's now showing
       if (tab === 'lock') renderLockManaging()
       if (tab === 'results') {
-        renderResults(); renderEspnScoreFeedSection(); renderHealthBandsStatusSection()
+        renderResults(); renderEspnScoreFeedSection(); renderHealthBandsStatusSection(); renderShrinkageKSection()
         startResultsRealtime(activeDraw()?.db_id, _onResultsRealtimeChange)
       }
       if (tab === 'odds') renderOddsTab()
@@ -172,7 +179,7 @@ export function renderCommHeader() {
         else if (activeTab === 'odds') renderOddsTab()
         else if (activeTab === 'draw') { const ad = activeDraw(); if (ad) renderPickCompletion(ad) }
         else {
-          renderResults(); renderEspnScoreFeedSection(); renderHealthBandsStatusSection()
+          renderResults(); renderEspnScoreFeedSection(); renderHealthBandsStatusSection(); renderShrinkageKSection()
           startResultsRealtime(activeDraw()?.db_id, _onResultsRealtimeChange) // re-scope to the newly selected M/W draw
         }
       })
@@ -343,7 +350,7 @@ async function handleConfirmDraw() {
     } else {
       const { data: newDraw, error: de } = await supabase
         .from('draws')
-        .insert({ slam, draw_type: drawType, year })
+        .insert({ slam, draw_type: drawType, year, scoring_version: NEW_DRAW_SCORING_VERSION })
         .select('id').single()
       if (de) throw de
       drawId = newDraw.id
@@ -374,7 +381,7 @@ async function handleConfirmDraw() {
     if (me) throw me
 
     // Auto-deactivate all draws, then activate this slam's draws (MS + WS)
-    await supabase.from('draws').update({ is_active: false }).neq('id', 'none')
+    await supabase.from('draws').update({ is_active: false }).not('id', 'is', null)
     await supabase.from('draws')
       .update({ is_active: true })
       .eq('slam', slam).eq('year', year)
@@ -558,7 +565,7 @@ async function handleSwitchToGettingReady() {
     const { error: de } = await supabase
       .from('draws')
       .update({ is_active: false })
-      .neq('id', 'none')
+      .not('id', 'is', null)
     if (de) throw de
 
     await loadAllDraws()
@@ -587,6 +594,12 @@ async function handleSwitchToGettingReady() {
         }
       }).catch(() => {})
     })
+
+    // Also recompute the shrinkage K estimate against the now-complete slam.
+    // Fire-and-forget, own try/catch — this is a diagnostic-only estimate
+    // (never auto-applied, see .claude/rules/slam-index.md) and must never
+    // block or fail Getting Ready.
+    recomputeShrinkageK().then(() => renderShrinkageKSection()).catch(() => {})
   } catch (err) {
     if (msg) { msg.className = 'comm-msg error'; msg.textContent = 'Error: ' + err.message }
   } finally {
@@ -652,7 +665,7 @@ async function handleReactivateDraw(drawDbId) {
   if (!state.currentUser?.is_commissioner) return
   if (!window.confirm('Re-activate this draw? All other draws will be deactivated and the Getting Ready screen will be cleared.')) return
   try {
-    await supabase.from('draws').update({ is_active: false }).neq('id', 'none')
+    await supabase.from('draws').update({ is_active: false }).not('id', 'is', null)
     await supabase.from('draws').update({ is_active: true }).eq('id', drawDbId)
     await supabase.from('app_settings')
       .upsert({ id: 1, next_slam_label: null, next_slam_starts_at: null })

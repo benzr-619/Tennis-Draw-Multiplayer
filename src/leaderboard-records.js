@@ -1,15 +1,30 @@
-// Records tab — trophy room layout
+// Records tab — trophy room layout.
+// Redesigned 2026-07-18: shrinkage-adjusted Slam Index standings replace the old
+// averaged-stat podium. Simplified same day (Ben's follow-up): dropped the
+// raw/vs.-chalk toggle entirely (it was just measuring how well always-picking-
+// chalk does, and everyone's negative on it — not an interesting stat) and
+// dropped the 3-badge honors row (Highest Single Draw Yield / Best Match Pick
+// Value / Biggest Upset) from the middle of the page. Best Slam Index Ever
+// stays, now clickable to a top-10 list. The personal-best tables became
+// pool-wide Top 10 tables (same player can appear more than once) rather than
+// one-row-per-player. Best Match Pick Value moved to the Slams tab (see
+// leaderboard-roi-chip.js) since it's a career/summative stat, not specific to
+// this trophy-room page. See .claude/rules/leaderboard-records-redesign.md.
+// Data/aggregation helpers live in leaderboard-records-data.js; this file is
+// render-only.
 
 import { state } from './state.js'
 import { SLAM_CONFIG } from './data.js'
-import { formatAmerican } from './odds.js'
+import { supabase } from './supabase.js'
 // Circular in ESM is fine: all are function calls, not top-level init
-import { loadDrawStatsForAllUsers, openViewerOriginalPicks, formatStat, fmtScore } from './leaderboard.js'
-import { openListModal } from './leaderboard-slams.js'
+import { loadDrawStatsForAllUsers, fmtScore } from './leaderboard.js'
+import {
+  buildAllTimeAgg, buildAllBrackets, topByKey, buildShrinkageStandings, computePoolMeanIndex,
+} from './leaderboard-records-data.js'
 
 // ── MODULE STATE ──
-let recPeriod     = 'all'
-let recSort       = { col: 'slamIndex', dir: -1 }
+let recPeriod    = 'all'
+let _recHintOpen = false
 
 let _recContainer    = null
 let _recProfs        = null
@@ -17,75 +32,10 @@ let _recAllDraws     = null
 let _recAllStatsMaps = null
 let _recYears        = null
 let _recContentEl    = null
+let _recKActive      = 5 // k_active from shrinkage_k, defaulting to 5 if the table is missing/empty — see .claude/rules/slam-index.md
 
 // ── CONSTANTS ──
-const AGG_KEY   = { score: 'avgScore', matchYield: 'avgMatchYield', slamIndex: 'avgSlamIndex' }
-const POD_LABEL = { avgScore: 'SCORE', avgMatchYield: 'MATCH YLD', avgSlamIndex: 'INDEX' }
-const ROUND_LBL = ['R1', 'R2', 'R3', 'R4', 'QF', 'SF', 'Final']
-
-// ── DATA HELPERS ──
-
-function hasAnyResults(draws) {
-  return draws.some(d => d.rounds.some(r => r.matches.some(m => m.winner)))
-}
-
-function buildAllTimeAgg(profs, draws, statsMaps) {
-  const agg = {}
-  profs.forEach(prof => {
-    let totalScore = 0, drawsPlayed = 0
-    let totalMY = 0, myCount = 0, totalSI = 0, siCount = 0
-    let totalFlatYield = 0, totalFlatBets = 0
-    let totalDH = 0, dhCount = 0
-    statsMaps.forEach(sm => {
-      const s = sm[prof.id]
-      if (!s?.hasAnyPicks || !s?.poolEligible) return
-      drawsPlayed++
-      totalScore += s.score
-      if (s.matchYield !== null) { totalMY += s.matchYield; myCount++ }
-      if (s.slamIndex  !== null) { totalSI += s.slamIndex;  siCount++ }
-      if (s.flatYieldResolved > 0) { totalFlatYield += s.flatYield; totalFlatBets += s.flatYieldResolved }
-      if (s.drawHealth !== null && s.drawHealth !== undefined) { totalDH += s.drawHealth; dhCount++ }
-    })
-    agg[prof.id] = {
-      drawsPlayed,
-      hasAnyPicks:    drawsPlayed > 0,
-      avgScore:       drawsPlayed > 0 ? totalScore / drawsPlayed : null,
-      totalMatchYield: myCount > 0   ? Math.round(totalMY)                  : null,
-      avgMatchYield:   myCount > 0   ? Math.round(totalMY / myCount)        : null,
-      avgSlamIndex:    siCount > 0   ? Math.round(totalSI / siCount)        : null,
-      flatROI:         totalFlatBets > 0 ? totalFlatYield / totalFlatBets   : null,
-      totalFlatBets,
-      avgDrawHealth:   dhCount > 0 ? totalDH / dhCount : null,
-    }
-  })
-  return agg
-}
-
-function buildAllBrackets(profs, draws, statsMaps) {
-  const out = []
-  draws.forEach((draw, i) => {
-    const sm = statsMaps[i]
-    profs.forEach(prof => {
-      const s = sm[prof.id]
-      if (!s?.hasAnyPicks || !s?.poolEligible) return
-      out.push({ prof, draw, score: s.score, matchYield: s.matchYield, slamIndex: s.slamIndex })
-    })
-  })
-  return out
-}
-
-function buildPoolBestUpset(profs, draws, statsMaps) {
-  const all = []
-  draws.forEach((draw, i) => {
-    statsMaps[i] && profs.forEach(prof => {
-      const s = statsMaps[i][prof.id]
-      if (s?.bestUpset && s?.poolEligible) all.push({ ...s.bestUpset, prof, draw })
-    })
-  })
-  if (!all.length) return []
-  const maxYld = Math.max(...all.map(e => e.yld))
-  return all.filter(e => e.yld === maxYld)
-}
+const TOP_N = 10
 
 // ── RE-RENDER HELPERS ──
 
@@ -116,7 +66,12 @@ export async function renderRecordsTab(container, profs) {
     container.innerHTML = '<div class="lb-empty">No completed draws yet.</div>'
     return
   }
-  _recAllStatsMaps = await Promise.all(_recAllDraws.map(d => loadDrawStatsForAllUsers(d)))
+  const [statsMaps, kRow] = await Promise.all([
+    Promise.all(_recAllDraws.map(d => loadDrawStatsForAllUsers(d))),
+    supabase.from('shrinkage_k').select('k_active').eq('id', 1).maybeSingle(),
+  ])
+  _recAllStatsMaps = statsMaps
+  _recKActive      = kRow?.data?.k_active ?? 5
   _recYears        = [...new Set(_recAllDraws.map(d => d.year))].sort((a, b) => b - a)
   if (recPeriod !== 'all' && !_recYears.includes(recPeriod)) recPeriod = 'all'
   _rerenderAll()
@@ -134,16 +89,19 @@ function renderPeriodContent(content) {
   const periodDraws = recPeriod === 'all'
     ? _recAllDraws
     : _recAllDraws.filter(d => d.year === recPeriod)
-  const periodMaps = periodDraws.map(d => _recAllStatsMaps[_recAllDraws.indexOf(d)])
-  const agg        = buildAllTimeAgg(_recProfs, periodDraws, periodMaps)
-  const brackets   = buildAllBrackets(_recProfs, periodDraws, periodMaps)
-  const bestUpset  = buildPoolBestUpset(_recProfs, periodDraws, periodMaps)
-  const aggKey     = AGG_KEY[recSort.col] ?? 'avgSlamIndex'
+  const periodMaps    = periodDraws.map(d => _recAllStatsMaps[_recAllDraws.indexOf(d)])
+  const agg           = buildAllTimeAgg(_recProfs, periodDraws, periodMaps)
+  const brackets      = buildAllBrackets(_recProfs, periodDraws, periodMaps)
+  // Anchor is the pool's own mean for whatever period is in view (all-time or one
+  // year) — not a hardcoded 100. See shrinkSlamIndex (scoring.js) / computePoolMeanIndex.
+  const standings     = buildShrinkageStandings(_recProfs, agg, computePoolMeanIndex(brackets), _recKActive)
+  const topSlamIndex  = topByKey(brackets, 'slamIndex', TOP_N)
+  const topDrawYield  = topByKey(brackets, 'score', TOP_N)
+  const topMatchYield = topByKey(brackets, 'matchYield', TOP_N)
 
-  const eligible = _recProfs.filter(p => agg[p.id]?.hasAnyPicks && agg[p.id]?.[aggKey] !== null)
-  if (eligible.length >= 3 && hasAnyResults(periodDraws)) content.appendChild(buildPodium(eligible, agg, aggKey))
-  content.appendChild(buildStandingsTable(_recProfs, agg))
-  content.appendChild(buildHonorsRow(_recProfs, brackets, agg, bestUpset))
+  content.appendChild(buildSlamIndexSectionHeader())
+  if (standings.length >= 3) content.appendChild(buildPodium(standings))
+  content.appendChild(buildTopTenSection(topSlamIndex, topDrawYield, topMatchYield))
 
   // FLIP: animate podium names from old positions to new
   if (Object.keys(oldRects).length) {
@@ -183,35 +141,28 @@ function buildPeriodPicker() {
   return row
 }
 
-// ── PODIUM ──
+// ── PODIUM (shrinkage-adjusted Slam Index) ──
 
-function buildPodium(eligible, agg, aggKey) {
-  const top3 = [...eligible]
-    .sort((a, b) => {
-      const da = agg[a.id]?.[aggKey] ?? -Infinity, db = agg[b.id]?.[aggKey] ?? -Infinity
-      if (da !== db) return db - da
-      return (agg[b.id]?.avgDrawHealth ?? -1) - (agg[a.id]?.avgDrawHealth ?? -1)
-    })
-    .slice(0, 3)
+function buildPodium(standings) {
+  const top3 = standings.slice(0, 3)
 
   const wrap = document.createElement('div')
   wrap.className = 'rec-podium'
 
   // Visual order: rank2 left, rank1 center, rank3 right
-  ;[[top3[1], 2], [top3[0], 1], [top3[2], 3]].forEach(([prof, rank]) => {
-    const s = agg[prof.id]
+  ;[[top3[1], 2], [top3[0], 1], [top3[2], 3]].forEach(([entry, rank]) => {
+    if (!entry) return
     const block = document.createElement('div')
     block.className = 'rec-pod-block' + (rank === 1 ? ' rec-pod-top' : '')
 
     const nameEl = document.createElement('div')
-    nameEl.className = 'rec-pod-name' + (prof.id === state.currentUser?.id ? ' rec-pod-you' : '')
-    nameEl.dataset.id = prof.id
-    nameEl.textContent = prof.display_name
+    nameEl.className = 'rec-pod-name' + (entry.prof.id === state.currentUser?.id ? ' rec-pod-you' : '')
+    nameEl.dataset.id = entry.prof.id
+    nameEl.textContent = entry.prof.display_name
 
     const sub = document.createElement('div')
     sub.className = 'rec-pod-stat'
-    const lbl = POD_LABEL[aggKey] ?? 'INDEX'
-    sub.textContent = `${lbl} ${formatStat(recSort.col, s[aggKey])} · ${s.drawsPlayed} DRAW${s.drawsPlayed !== 1 ? 'S' : ''}`
+    sub.textContent = `INDEX ${Math.round(entry.shown)} · ${entry.n} DRAW${entry.n !== 1 ? 'S' : ''}`
 
     const rankEl = document.createElement('div')
     rankEl.className = 'rec-pod-rank' + (rank === 1 ? ' rec-pod-rank-1' : '')
@@ -226,208 +177,124 @@ function buildPodium(eligible, agg, aggKey) {
   return wrap
 }
 
-// ── STANDINGS TABLE ──
+// ── SLAM INDEX SECTION HEADER + SHRINKAGE HINT ──
+// The hint lives here — a standalone header ABOVE the podium/standings block —
+// rather than inside the standings table's header cell (where it originally
+// shipped). `.rec-standings-wrap` needs `overflow:hidden` so row backgrounds
+// respect its rounded corners, which was silently clipping the expanded hint
+// box. Moving the hint to an unclipped ancestor fixes that outright, rather
+// than fighting the table's own overflow requirement. Not the shared
+// `#stats-drawer` (`.claude/rules/ui-detail.md`) — that drawer is scoped to the
+// current slam's Slam Index, not this all-time aggregate. See
+// .claude/rules/leaderboard-records-redesign.md "Correction from the original
+// brief."
 
-function buildStandingsTable(profs, agg) {
-  const wrap = document.createElement('div')
-  wrap.className = 'rec-standings-wrap'
-  const table = document.createElement('div')
-  table.className = 'lb-table rec-standings-table'
-  wrap.appendChild(table)
-
-  const COLS = [
-    { key: 'score',      aggKey: 'avgScore',      label: 'Draw Yld' },
-    { key: 'matchYield', aggKey: 'avgMatchYield',  label: 'Match Yld' },
-    { key: 'slamIndex',  aggKey: 'avgSlamIndex',   label: 'Index' },
-  ]
-
-  const sortedProfs = [...profs]
-    .filter(p => agg[p.id]?.hasAnyPicks)
-    .sort((a, b) => {
-      const ak = AGG_KEY[recSort.col] ?? 'avgSlamIndex'
-      const va = agg[a.id]?.[ak] ?? -Infinity
-      const vb = agg[b.id]?.[ak] ?? -Infinity
-      if (va !== vb) return (va < vb ? -1 : 1) * recSort.dir
-      return (agg[b.id]?.avgDrawHealth ?? -1) - (agg[a.id]?.avgDrawHealth ?? -1)
-    })
-
-  // Header
+function buildSlamIndexSectionHeader() {
   const hdr = document.createElement('div')
-  hdr.className = 'lb-row lb-row-standings lb-header-row'
-  const mkHdrCell = (cls, text) => {
-    const c = document.createElement('div'); c.className = cls; c.textContent = text; return c
-  }
-  hdr.appendChild(mkHdrCell('lb-cell lb-cell-srank', ''))
-  hdr.appendChild(mkHdrCell('lb-cell lb-cell-name', 'Player'))
-  hdr.appendChild(mkHdrCell('lb-cell lb-cell-draws', 'Draws'))
-  COLS.forEach(col => {
-    const cell = document.createElement('div')
-    cell.className = 'lb-cell lb-cell-' + col.key + ' lb-sortable' + (recSort.col === col.key ? ' lb-sort-active' : '')
-    cell.textContent = col.label
-    const arrow = document.createElement('span')
-    arrow.className = 'lb-sort-arrow'
-    arrow.textContent = recSort.col === col.key ? (recSort.dir === -1 ? ' ↓' : ' ↑') : ' ↕'
-    cell.appendChild(arrow)
-    cell.addEventListener('click', () => {
-      recSort.col === col.key ? (recSort.dir *= -1) : (recSort.col = col.key, recSort.dir = -1)
-      _rerenderContent()
-    })
-    hdr.appendChild(cell)
-  })
-  table.appendChild(hdr)
+  hdr.className = 'rec-si-hdr'
 
-  // Rows
-  sortedProfs.forEach((prof, rank) => {
-    const s   = agg[prof.id] || {}
-    const isSelf = prof.id === state.currentUser?.id
+  const label = document.createElement('span')
+  label.className = 'rec-si-title'
+  label.textContent = 'ADJUSTED CAREER INDEX'
+  hdr.appendChild(label)
+
+  const wrap = document.createElement('span')
+  wrap.className = 'rec-hint-wrap'
+
+  const btn = document.createElement('button')
+  btn.className = 'rec-hint-btn'
+  btn.textContent = 'ⓘ'
+  btn.setAttribute('aria-expanded', String(_recHintOpen))
+  wrap.appendChild(btn)
+
+  const box = document.createElement('div')
+  box.className = 'rec-hint-box' + (_recHintOpen ? ' open' : '')
+  box.innerHTML = `<div class="rec-hint-def">Career-average Slam Index, weighted
+    toward the pool average for players with fewer draws.</div>`
+  wrap.appendChild(box)
+
+  btn.addEventListener('click', e => {
+    e.stopPropagation()
+    _recHintOpen = !_recHintOpen
+    _rerenderContent()
+  })
+
+  hdr.appendChild(wrap)
+  return hdr
+}
+
+// ── TOP 10 ALL-TIME: SLAM INDEX / DRAW YIELD / MATCH YIELD (pool-wide
+// single-draw performances — same player can appear more than once) ──
+
+function buildTopTenSection(topSlamIndex, topDrawYield, topMatchYield) {
+  const section = document.createElement('div')
+  section.className = 'rec-pb-section'
+
+  const hdr = document.createElement('div')
+  hdr.className = 'rec-pb-section-hdr'
+  const label = document.createElement('span')
+  label.className = 'rec-pb-section-title'
+  label.textContent = 'TOP 10 ALL-TIME'
+  hdr.appendChild(label)
+  section.appendChild(hdr)
+
+  section.appendChild(buildTopTenTable('SLAM INDEX', topSlamIndex, 'slamIndex'))
+
+  const grid = document.createElement('div')
+  grid.className = 'rec-pb-grid'
+  grid.appendChild(buildTopTenTable('DRAW YIELD', topDrawYield, 'score'))
+  grid.appendChild(buildTopTenTable('MATCH YIELD', topMatchYield, 'matchYield'))
+  section.appendChild(grid)
+
+  return section
+}
+
+function buildTopTenTable(title, entries, statKey) {
+  const wrap = document.createElement('div')
+  wrap.className = 'rec-pb-table-wrap'
+  const hdr = document.createElement('div')
+  hdr.className = 'rec-pb-table-title'
+  hdr.textContent = title
+  wrap.appendChild(hdr)
+
+  if (!entries.length) { wrap.appendChild(mkEmpty()); return wrap }
+
+  entries.forEach((e, rank) => {
     const row = document.createElement('div')
-    row.className = 'lb-row lb-row-standings' + (rank % 2 === 1 ? ' lb-row-alt' : '') + (isSelf ? ' lb-row-self' : '')
+    row.className = 'rec-pb-row' + (rank % 2 === 1 ? ' lb-row-alt' : '')
 
     const rnk = document.createElement('div')
-    rnk.className = 'lb-cell lb-cell-srank lb-rank'
+    rnk.className = 'rec-pb-rank'
     rnk.textContent = rank + 1
     row.appendChild(rnk)
 
+    const cfg = SLAM_CONFIG[e.draw.slam] || {}
     const nameCell = document.createElement('div')
-    nameCell.className = 'lb-cell lb-cell-name'
-    const nameSpan = document.createElement('span')
-    nameSpan.className = 'lb-rec-name'
-    nameSpan.textContent = prof.display_name
-    nameCell.appendChild(nameSpan)
-    if (isSelf) {
-      const badge = document.createElement('span')
-      badge.className = 'rec-you-badge'
-      badge.textContent = 'YOU'
-      nameCell.appendChild(badge)
-    }
+    nameCell.className = 'rec-pb-name lb-player-name'
+    nameCell.textContent = e.prof.display_name
     row.appendChild(nameCell)
 
-    const drw = document.createElement('div')
-    drw.className = 'lb-cell lb-cell-draws'
-    drw.textContent = s.drawsPlayed ?? '—'
-    row.appendChild(drw)
+    // Draw tag sits next to the score (not stacked under the name) — the
+    // tables are wide enough for it, and this matches the old single-line
+    // card format ("player · slam year draw · value") this replaced.
+    const valGroup = document.createElement('div')
+    valGroup.className = 'rec-pb-val-group'
+    const subEl = document.createElement('span')
+    subEl.className = 'rec-pb-sub'
+    subEl.textContent = `${cfg.name || e.draw.slam} ${e.draw.year} ${e.draw.draw}`
+    const dotEl = document.createElement('span')
+    dotEl.className = 'rec-pb-dot'
+    dotEl.textContent = '·'
+    const valEl = document.createElement('span')
+    valEl.className = 'rec-pb-val'
+    valEl.textContent = fmtScore(e[statKey])
+    valGroup.append(subEl, dotEl, valEl)
+    row.appendChild(valGroup)
 
-    COLS.forEach(col => {
-      const cell = document.createElement('div')
-      cell.className = 'lb-cell lb-cell-' + col.key + (recSort.col === col.key ? ' lb-cell-active-col' : '')
-      cell.textContent = formatStat(col.key, s[col.aggKey])
-      row.appendChild(cell)
-    })
-
-    table.appendChild(row)
+    wrap.appendChild(row)
   })
 
   return wrap
-}
-
-// ── HONORS ROW ──
-
-function buildHonorsRow(profs, brackets, agg, bestUpset) {
-  const row = document.createElement('div')
-  row.className = 'rec-honors-row'
-  row.appendChild(buildBestDrawChip(profs, brackets))
-  row.appendChild(buildSharpestBettorChip(profs, agg))
-  row.appendChild(buildBiggestUpsetChip(bestUpset))
-  return row
-}
-
-// ── HONOR CHIP: HIGHEST SINGLE DRAW YIELD ──
-
-function buildBestDrawChip(profs, brackets) {
-  const sorted = [...brackets].sort((a, b) => b.score - a.score)
-  const best   = sorted[0]
-  const chip   = document.createElement('div')
-  chip.className = 'lb-rec-card rec-honor-chip'
-  const hdr = document.createElement('div'); hdr.className = 'lb-rec-card-header'
-  const title = document.createElement('span'); title.className = 'lb-rec-card-title'
-  title.textContent = 'HIGHEST SINGLE DRAW YIELD'; hdr.appendChild(title); chip.appendChild(hdr)
-  if (!best || best.score === 0) { chip.appendChild(mkEmpty()); return chip }
-  const cfg = SLAM_CONFIG[best.draw.slam] || {}
-  const body = document.createElement('div')
-  body.className = 'rec-honor-body rec-honor-clickable'
-  body.addEventListener('click', () => openListModal('Highest Single Draw Yield', sorted.map(e => {
-    const ec = SLAM_CONFIG[e.draw.slam] || {}
-    return { name: e.prof.display_name, sub: (ec.name || e.draw.slam) + ' ' + e.draw.year + ' ' + e.draw.draw, val: fmtScore(e.score) }
-  })))
-  const main = document.createElement('div'); main.className = 'rec-honor-main'
-  main.textContent = `${best.prof.display_name} · ${cfg.name || best.draw.slam} ${best.draw.year} ${best.draw.draw} · ${fmtScore(best.score)}`
-  body.appendChild(main); chip.appendChild(body)
-  return chip
-}
-
-// ── HONOR CHIP: BEST MATCH PICK VALUE ──
-// Flat-stake ROI: each resolved matchPick with locked odds = $1 bet.
-// Win: +(oddsDecimal − 1). Loss: −1. Average over all bets = ROI per unit.
-// Normalises out round stakes so early-round and final-round bets count equally.
-
-function buildSharpestBettorChip(profs, agg) {
-  const chip = document.createElement('div')
-  chip.className = 'lb-rec-card rec-honor-chip'
-  const hdr = document.createElement('div'); hdr.className = 'lb-rec-card-header'
-  const title = document.createElement('span'); title.className = 'lb-rec-card-title'; title.textContent = 'BEST MATCH PICK VALUE'
-  const sub = document.createElement('span'); sub.className = 'lb-rec-card-title'
-  sub.style.cssText = 'font-size:9px;opacity:0.7'; sub.textContent = 'FLAT-STAKE ROI'
-  hdr.append(title, sub); chip.appendChild(hdr)
-
-  const sorted = [...profs]
-    .filter(p => agg[p.id]?.hasAnyPicks && agg[p.id]?.flatROI !== null)
-    .sort((a, b) => (agg[b.id]?.flatROI ?? -Infinity) - (agg[a.id]?.flatROI ?? -Infinity))
-
-  if (sorted.length === 0) { chip.appendChild(mkEmpty()); return chip }
-
-  const best = sorted[0], bs = agg[best.id], bPct = Math.round(bs.flatROI * 100)
-  const body = document.createElement('div')
-  body.className = 'rec-honor-body rec-honor-clickable'
-  body.addEventListener('click', () => openListModal('Best Match Pick Value', sorted.map(p => {
-    const s = agg[p.id], pct = Math.round(s.flatROI * 100), pos = pct >= 0
-    return { name: p.display_name, sub: s.totalFlatBets + (s.totalFlatBets === 1 ? ' pick' : ' picks'), val: (pos ? '+' : '−') + Math.abs(pct) + '%', valClass: pos ? 'lb-modal-val-pos' : '' }
-  })))
-  const main = document.createElement('div'); main.className = 'rec-honor-main'
-  main.textContent = `${best.display_name} · ${bPct >= 0 ? '+' : '−'}${Math.abs(bPct)}% · ${bs.totalFlatBets} pick${bs.totalFlatBets !== 1 ? 's' : ''}`
-  body.appendChild(main); chip.appendChild(body)
-  return chip
-}
-
-// ── HONOR CHIP: BIGGEST UPSET ──
-
-function buildBiggestUpsetChip(bestUpsets) {
-  const chip = document.createElement('div')
-  chip.className = 'lb-rec-card rec-honor-chip'
-
-  const hdr = document.createElement('div')
-  hdr.className = 'lb-rec-card-header'
-  const title = document.createElement('span')
-  title.className = 'lb-rec-card-title'
-  title.textContent = 'BIGGEST UPSET'
-  hdr.appendChild(title)
-  chip.appendChild(hdr)
-
-  if (!bestUpsets.length) { chip.appendChild(mkEmpty()); return chip }
-
-  const first = bestUpsets[0]
-  const body = document.createElement('div')
-  body.className = 'rec-honor-body rec-honor-clickable'
-  body.addEventListener('click', () => {
-    openListModal('Biggest Upset', bestUpsets.map(e => {
-      const cfg = SLAM_CONFIG[e.draw.slam] || {}
-      return {
-        name: e.prof.display_name,
-        sub: `Beat ${e.opponent} · ${cfg.name || e.draw.slam} ${e.draw.year} · ${ROUND_LBL[e.ri] || 'R' + (e.ri + 1)}`,
-        val: `+${e.yld}`,
-        valClass: 'lb-modal-val-pos',
-      }
-    }))
-  })
-
-  const main = document.createElement('div')
-  main.className = 'rec-honor-main'
-  main.textContent = bestUpsets.length > 1
-    ? `${bestUpsets.length} players · ${first.pickedName} ${formatAmerican(first.decimalOdds)}`
-    : `${first.pickedName} ${formatAmerican(first.decimalOdds)}`
-  body.appendChild(main)
-
-  chip.appendChild(body)
-  return chip
 }
 
 // ── UTILS ──

@@ -9,7 +9,7 @@ import { buildDrawView } from './draw-view.js'
 import { feederWinnerName } from './lock.js'
 import { renderBracketLayout } from './bracket-layout.js'
 import { renderBracketList } from './bracket-list.js'
-import { $c } from './commissioner-shared.js'
+import { $c, escHtml } from './commissioner-shared.js'
 import { supabase } from './supabase.js'
 
 // ── SEARCH STATE ──
@@ -85,6 +85,107 @@ export async function renderHealthBandsStatusSection() {
     pill.textContent = `Health bands · last attempt FAILED ${_bandsAgoLabel(status.last_attempt)} (${status.last_source || '—'}) · ${status.last_error}`
   }
   wrap.appendChild(pill)
+}
+
+// ── SHRINKAGE K STATUS CARD ──
+// Mirrors the health-bands status card above: a persisted row (shrinkage_k) that
+// survives reloads/sessions, plus a manual recompute the commissioner can run any
+// time (not just at Getting Ready). See .claude/rules/slam-index.md "The K
+// recomputation procedure" for what computeShrinkageK actually does — this is
+// wiring only. k_active is what buildShrinkageStandings actually uses; a
+// recompute only ever proposes k_suggested — moving it to k_active needs an
+// explicit Apply click, and Apply is disabled whenever a guard tripped
+// (last_error set / k_suggested null).
+export async function recomputeShrinkageK() {
+  const [{ loadAllProfiles, loadDrawStatsForAllUsers }, { buildAllBrackets, computeShrinkageK }] = await Promise.all([
+    import('./leaderboard.js'),
+    import('./leaderboard-records-data.js'),
+  ])
+  const profs = await loadAllProfiles()
+  const draws = state.draws.filter(d => !d.excludeFromLeaderboard && d.locked)
+  const statsMaps = await Promise.all(draws.map(d => loadDrawStatsForAllUsers(d)))
+  const brackets = buildAllBrackets(profs, draws, statsMaps)
+  const result = computeShrinkageK(brackets)
+  const row = {
+    id: 1,
+    k_suggested: result.reason ? null : result.k,
+    sigma_within: result.sigma_within,
+    sigma_between: result.sigma_between,
+    n_players: result.n_players,
+    n_draws: result.n_draws,
+    draw_gap_max: result.draw_gap_max,
+    computed_at: new Date().toISOString(),
+    last_error: result.reason,
+  }
+  const { error } = await supabase.from('shrinkage_k').upsert(row, { onConflict: 'id' })
+  if (error) throw error
+  return row
+}
+
+async function handleRecomputeK() {
+  if (!state.currentUser?.is_commissioner) return
+  const btn = $c('comm-recompute-k-btn')
+  const msg = $c('comm-shrinkage-k-msg')
+  if (btn) btn.disabled = true
+  if (msg) { msg.className = 'comm-msg'; msg.textContent = 'Recomputing…' }
+  try {
+    await recomputeShrinkageK()
+    if (msg) { msg.className = 'comm-msg success'; msg.textContent = 'Done.' }
+  } catch (err) {
+    if (msg) { msg.className = 'comm-msg error'; msg.textContent = 'Error: ' + err.message }
+  } finally {
+    if (btn) btn.disabled = false
+    renderShrinkageKSection()
+  }
+}
+
+async function handleApplyK() {
+  if (!state.currentUser?.is_commissioner) return
+  const { data } = await supabase.from('shrinkage_k').select('k_suggested').eq('id', 1).maybeSingle()
+  if (data?.k_suggested == null) return
+  await supabase.from('shrinkage_k').update({ k_active: data.k_suggested }).eq('id', 1)
+  renderShrinkageKSection()
+}
+
+let _shrinkageKGen = 0
+export async function renderShrinkageKSection() {
+  const wrap = $c('comm-shrinkage-k-wrap')
+  if (!wrap) return
+  const gen = ++_shrinkageKGen
+  const { data: row } = await supabase.from('shrinkage_k').select('*').eq('id', 1).maybeSingle()
+  if (gen !== _shrinkageKGen) return // a newer call already superseded this one
+
+  wrap.innerHTML = ''
+  const kActive = row?.k_active ?? 5
+
+  const pill = document.createElement('div')
+  pill.style.cssText = 'font-family:var(--mono);font-size:11px;color:var(--text3);padding:4px 12px;line-height:1.7'
+  if (!row || row.computed_at == null) {
+    pill.textContent = `Shrinkage K: k_active=${kActive} (never recomputed)`
+  } else if (row.last_error) {
+    pill.innerHTML = `Shrinkage K: k_active=${kActive} · recompute ${new Date(row.computed_at).toLocaleString()} — not applicable: ${escHtml(row.last_error)}`
+  } else {
+    const gapFlag = row.draw_gap_max != null && row.draw_gap_max > 10
+    const gapStr = row.draw_gap_max != null
+      ? `<span${gapFlag ? ' style="color:var(--red)"' : ''}>draw_gap_max=${row.draw_gap_max.toFixed(1)}${gapFlag ? ' ⚠ normalisation check' : ''}</span>`
+      : 'draw_gap_max=—'
+    pill.innerHTML = `Shrinkage K: k_active=${kActive} · k_suggested=${row.k_suggested != null ? Number(row.k_suggested).toFixed(2) : '—'} · `
+      + `σ_within=${row.sigma_within != null ? Number(row.sigma_within).toFixed(1) : '—'} · σ_between=${row.sigma_between != null ? Number(row.sigma_between).toFixed(1) : '—'} · `
+      + `n_players=${row.n_players ?? '—'} · n_draws=${row.n_draws ?? '—'} · ${gapStr}<br>`
+      + `recomputed ${new Date(row.computed_at).toLocaleString()}`
+  }
+  wrap.appendChild(pill)
+
+  const btnRow = document.createElement('div')
+  btnRow.style.cssText = 'padding:4px 12px 8px;display:flex;gap:8px;align-items:center'
+  btnRow.innerHTML = `
+    <button class="comm-btn comm-btn-secondary" id="comm-recompute-k-btn">Recompute K</button>
+    <button class="comm-btn comm-btn-secondary" id="comm-apply-k-btn"${row?.k_suggested == null ? ' disabled' : ''}>Apply k_suggested → k_active</button>
+    <div class="comm-msg" id="comm-shrinkage-k-msg"></div>`
+  wrap.appendChild(btnRow)
+
+  $c('comm-recompute-k-btn')?.addEventListener('click', handleRecomputeK)
+  $c('comm-apply-k-btn')?.addEventListener('click', handleApplyK)
 }
 
 // ── MOBILE ROUND STATE ──
