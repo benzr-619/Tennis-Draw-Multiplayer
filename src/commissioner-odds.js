@@ -9,6 +9,7 @@ import {
   getUnmatchedApiNames, forceOddsRefresh, normaliseName,
 } from './odds.js'
 import { supabase } from './supabase.js'
+import { isPlaceholderName } from './player-names.js'
 
 const SLAM_SURFACE = { AO: 'h', RG: 'c', WIM: 'g', USO: 'h' }
 
@@ -149,11 +150,12 @@ export async function renderOddsTab() {
       <div class="comm-msg" id="elo-status-msg" style="margin-top:8px"></div>`
     wrap.appendChild(eloSection)
 
-    // Draw players still missing ELO — used both for triage guard and dropdown options
+    // Draw players still missing ELO — used both for triage guard and row labels.
+    // Placeholder/qualifier slots (no real player yet) can't be ELO-matched, so exclude them.
     const eloUnmatchedPlayers = []
     r0Matches.forEach(m => {
-      if (m.p1?.name && m.elo_p1 == null) eloUnmatchedPlayers.push(m.p1.name)
-      if (m.p2?.name && m.elo_p2 == null) eloUnmatchedPlayers.push(m.p2.name)
+      if (m.p1?.name && m.elo_p1 == null && !isPlaceholderName(m.p1.name)) eloUnmatchedPlayers.push(m.p1.name)
+      if (m.p2?.name && m.elo_p2 == null && !isPlaceholderName(m.p2.name)) eloUnmatchedPlayers.push(m.p2.name)
     })
 
     // Render any unmatched ELO names from last sync (only for this draw, only if draw still has unmatched players)
@@ -166,38 +168,45 @@ export async function renderOddsTab() {
         Saved mappings persist across slams.</div>`
       eloTriageWrap.appendChild(eloTriageHdr)
 
-      const drawPlayerNames = eloUnmatchedPlayers
-
       const eloGrid = document.createElement('div')
       eloGrid.style.cssText = 'display:flex;flex-direction:column;gap:6px'
+
+      const datalistId = 'elo-unmatched-names-list'
+      const datalist = document.createElement('datalist')
+      datalist.id = datalistId
       _lastEloUnmatched.forEach(apiName => {
+        const opt = document.createElement('option')
+        opt.value = apiName
+        datalist.appendChild(opt)
+      })
+      eloGrid.appendChild(datalist)
+
+      eloUnmatchedPlayers.forEach(pName => {
         const row = document.createElement('div')
         row.style.cssText = 'display:flex;align-items:center;gap:10px;flex-wrap:wrap'
-        const apiLabel = document.createElement('span')
-        apiLabel.style.cssText = 'font-family:var(--mono);font-size:12px;color:var(--text);flex:0 0 200px;min-width:140px'
-        apiLabel.textContent = apiName
+        const playerLabel = document.createElement('span')
+        playerLabel.style.cssText = 'font-family:var(--mono);font-size:12px;color:var(--text);flex:0 0 200px;min-width:140px'
+        playerLabel.textContent = pName
         const arrow = document.createElement('span')
         arrow.style.cssText = 'color:var(--text3);font-size:12px'
         arrow.textContent = '→'
-        const sel = document.createElement('select')
-        sel.className = 'comm-input'
-        sel.style.cssText = 'flex:1;min-width:180px;max-width:260px;font-size:12px'
-        sel.innerHTML = `<option value="">— pick a player —</option>`
-        drawPlayerNames.forEach(pName => {
-          const opt = document.createElement('option')
-          opt.value = pName; opt.textContent = pName
-          sel.appendChild(opt)
-        })
+        const input = document.createElement('input')
+        input.type = 'text'
+        input.setAttribute('list', datalistId)
+        input.placeholder = 'Search ELO names…'
+        input.className = 'comm-input'
+        input.style.cssText = 'flex:1;min-width:180px;max-width:260px;font-size:12px'
         const saveBtn = document.createElement('button')
         saveBtn.className = 'comm-btn comm-btn-primary'
         saveBtn.textContent = 'Save'
         saveBtn.addEventListener('click', async () => {
-          if (!sel.value) return
+          const apiName = input.value.trim()
+          if (!apiName) return
           saveBtn.disabled = true
           try {
-            await saveNameMapping(apiName, sel.value)
+            await saveNameMapping(apiName, pName)
             row.style.opacity = '0.4'
-            row.innerHTML = `<span style="font-family:var(--mono);font-size:11px;color:var(--green)">✓ ${escHtml(apiName)} → ${escHtml(sel.value)}</span>`
+            row.innerHTML = `<span style="font-family:var(--mono);font-size:11px;color:var(--green)">✓ ${escHtml(apiName)} → ${escHtml(pName)}</span>`
           } catch (err) {
             saveBtn.disabled = false
             const errEl = document.createElement('span')
@@ -206,7 +215,7 @@ export async function renderOddsTab() {
             row.appendChild(errEl)
           }
         })
-        row.appendChild(apiLabel); row.appendChild(arrow); row.appendChild(sel); row.appendChild(saveBtn)
+        row.appendChild(playerLabel); row.appendChild(arrow); row.appendChild(input); row.appendChild(saveBtn)
         eloGrid.appendChild(row)
       })
       eloTriageWrap.appendChild(eloGrid)
