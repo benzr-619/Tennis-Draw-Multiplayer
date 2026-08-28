@@ -4,6 +4,54 @@ Historical record of build steps, refactors, and fixed bugs. **Not loaded into c
 
 ---
 
+## 2026-08-28 — Slam Index v3: Monte Carlo σ replaces the closed-form estimate
+
+v2's `calcChalkBaselines` computed σ_DY/σ_MY with a closed-form independent-Bernoulli
+sum, which drops the positive covariance a real bracket has (a busted round-1 pick
+kills every later round it fed) — this understated σ_DY by 30-50% and by a
+*different* amount per draw, undermining v2's whole "same index at every slam"
+premise. New module `src/slam-index-sim.js` (`simulateChalkSigma`, 40,000 seeded
+full-bracket Monte Carlo runs) replaces just the two denominators — realized
+`chalkDY`/`chalkMY` are unchanged. Never run inline on a render: a new
+commissioner-triggered action (`renderSlamIndexSimSection`/
+`handleRecomputeSlamIndexSim` in `commissioner-results.js`, `#comm-sim-wrap` on the
+Results tab) computes and persists the result to seven new `draws` columns
+(`sigma_dy`, `sigma_my`, `chalk_dy`, `chalk_my`, `sim_seed`, `sim_runs`,
+`sim_computed_at`), bumping `slam_index_version` to 3. `chalkBaselinesForVersion()`
+in `scoring.js` is the new single dispatch point every v2/v3 call site
+(`leaderboard.js`, `leaderboard-slams.js`, `leaderboard-slams-combined.js`,
+`stats.js`) now goes through, falling back to the (still fully intact) v2 closed
+form wherever no persisted snapshot applies (movement-arrow as-of-round baselines,
+or a v3 draw before its first recompute). Also fixed a real, pre-existing bug found
+while wiring this: `data.js`'s `reloadActiveDraw()` rebuilds its `drawRow` from
+local flags rather than a fresh fetch, and was silently missing
+`slam_index_version` — every post-commissioner-action reload was resetting it to
+the `?? 1` default. Computed and persisted for both Wimbledon 2026 draws against
+real production data (σ_DY: 41.1→61.85 MS, 43.8→56.85 WS); `slam_index_version`
+bumped to 3 on all six existing draws, matching v2's unconditional-backfill
+precedent. Full derivation, the corrected (previously backwards) covariance-direction
+writeup, and the K re-estimation note: `.claude/rules/slam-index.md` "v3".
+
+---
+
+## 2026-08-28 — ELO sync disabled once a draw completes
+
+Guarded the commissioner Odds tab's "Sync ELO" button against overwriting
+frozen ratings once a tournament's champion is decided. `matches.elo_p1/elo_p2`
+feed `calcChalkBaselines()`'s `chalkDY`/`σ_DY`, which in turn feed every
+player's Slam Index for that draw (`.claude/rules/slam-index.md`) — those
+ratings become historical data the moment the draw finishes, and ELO drifts as
+other tournaments are played afterward, so re-syncing post-completion would
+silently rewrite a finished draw's standings. `src/commissioner-odds.js`:
+computed `isComplete` from the Final match's `winner`, disabled the button and
+showed a short explanatory line in the existing `#elo-status-msg` slot when
+true, and added an early-return guard in the click handler itself. No change
+to `_matchEloData()`, the ELO data model, or a force-override path — sync
+stays fully available for the whole live tournament, including after a
+mid-draw Lucky Loser swap, only locking once the Final has a winner.
+
+---
+
 ## 2026-08-25 — Records tab simplified: podium + three unadjusted Top 10 tables
 
 Same-day follow-up to the shrinkage fix below. Ben questioned whether the full

@@ -178,6 +178,15 @@ Twin of the odds auto-pick. When a player's **original pick is missing OR names 
 
 **Alert copy:** the roster-change alert modal (`showRosterAlerts` in `main.js`) notes that unrepicked matches will be auto-scored to the ELO favourite.
 
+## ELO Sync Frozen Once a Draw Is Complete
+
+Once a draw's champion is decided (`champion.winner != null`), the commissioner
+Odds tab's "Sync ELO" button is disabled — ratings feed that draw's frozen
+historical chalk baseline (`.claude/rules/slam-index.md`) and drift after the
+tournament ends, so re-syncing would silently rewrite a finished draw's Slam
+Index. The button stays enabled for the entire live tournament (including after
+a Lucky Loser swap mid-draw), only locking once the Final has a winner.
+
 ## First-Slam Troubleshooting
 
 - Commissioner → Odds tab shows fetch status and last fetch time.

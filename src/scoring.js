@@ -374,7 +374,7 @@ export function healthHue(pct, n, healthBands) {
 // from real R0 players, chalk winner = higher ELO at each slot (missing ELO → 1500).
 // favProb = the propagated favourite's win probability for that specific matchup —
 // feeds sigmaDY's "how coin-flippy was this chalk matchup" term.
-function _buildEloChalkBracket(d) {
+export function buildEloChalkBracket(d) {
   const eloLookup = eloMap(d)
   const occ = d.rounds.map(r => r.matches.map(() => ({ p1: null, p2: null, winner: null, favProb: null })))
   d.rounds.forEach((r, ri) => {
@@ -424,7 +424,7 @@ export function calcChalkBaselines(d, filterRi = Infinity) {
     buildDrawView(view)
   }
   const config = getScoringConfig(view.scoring_version ?? 1)
-  const chalk = _buildEloChalkBracket(view)
+  const chalk = buildEloChalkBracket(view)
   let chalkDY = 0, sigmaDYsq = 0
   let chalkMY = 0, sigmaMYsq = 0
   let hasElo = false, hasOdds = false
@@ -462,6 +462,44 @@ export function calcChalkBaselines(d, filterRi = Infinity) {
   }
 }
 
+// ── SLAM INDEX v3 — MONTE CARLO σ (persisted, commissioner-triggered) ──
+// See .claude/rules/slam-index.md "v3". v2's sigmaDY/sigmaMY (above) treat each
+// match as an independent Bernoulli trial, which drops the positive covariance a
+// real bracket has (a busted round-1 pick kills every later round it fed) — this
+// understates sigma_DY by 20-30%, inflating every z-score, by a DIFFERENT amount
+// per draw, which defeats the point of a cross-slam-comparable index. v3 replaces
+// only the two denominators with a Monte Carlo estimate (src/slam-index-sim.js) —
+// chalkDY/chalkMY (the realized scores) are unchanged, still the plain closed-form
+// values above. The simulation is expensive (40k full-bracket walks) and is never
+// run inline on a render — a commissioner action runs it once and persists the
+// result onto the draws row (sigma_dy, sigma_my, chalk_dy, chalk_my, sim_seed,
+// sim_runs, sim_computed_at), threaded through by data.js like any other draws
+// column.
+export function chalkBaselinesV3(d) {
+  const valid = d.chalk_dy != null && d.chalk_my != null && d.sigma_dy > 0 && d.sigma_my > 0
+  return { chalkDY: d.chalk_dy ?? 0, chalkMY: d.chalk_my ?? 0, sigmaDY: d.sigma_dy ?? 0, sigmaMY: d.sigma_my ?? 0, valid }
+}
+
+// Single dispatch point every v2/v3 call site should use instead of calling
+// calcChalkBaselines/chalkBaselinesV3 directly. version 3 with filterRi === Infinity
+// (the "live/current" baseline) reads the persisted Monte Carlo snapshot when one
+// exists; version 3 at any other filterRi (the Slams-tab movement-arrow "as of
+// round R-1" baseline, which has no per-round persisted snapshot) and version 3
+// with no persisted snapshot yet both fall back to the v2 closed form — cheap to
+// compute inline, unlike the simulation, so this never violates "don't simulate on
+// every render." version 2 always uses the closed form. Anything else → null.
+export function chalkBaselinesForVersion(d, version, filterRi = Infinity) {
+  if (version === 3) {
+    if (filterRi === Infinity) {
+      const v3 = chalkBaselinesV3(d)
+      if (v3.valid) return v3
+    }
+    return calcChalkBaselines(d, filterRi)
+  }
+  if (version === 2) return calcChalkBaselines(d, filterRi)
+  return null
+}
+
 // Combines two draws' chalk baselines (e.g. MS+WS for the Slams-tab Combined card)
 // by summing the chalk totals and adding variances (the two draws' outcomes are
 // independent). Used only where a caller has already summed a player's Draw
@@ -489,7 +527,7 @@ export function combineChalkBaselines(c1, c2) {
 // z = 0 for everyone (index = 100).
 export function calcSlamIndex(entries, opts = {}) {
   const { version = 1, chalk = null } = opts
-  if (version === 2 && chalk?.valid) {
+  if ((version === 2 || version === 3) && chalk?.valid) {
     return entries.map(e => Math.round(100 + 15 * (
       ((e.score ?? 0) - chalk.chalkDY) / chalk.sigmaDY +
       ((e.matchYield ?? 0) - chalk.chalkMY) / chalk.sigmaMY

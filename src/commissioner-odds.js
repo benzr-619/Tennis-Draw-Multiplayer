@@ -133,6 +133,8 @@ export async function renderOddsTab() {
       if (m.p2?.name) { eloTotalPlayers++; if (m.elo_p2 != null) eloMatchedCount++ }
     }
     const lastEloSync = d.elo_synced_at ? new Date(d.elo_synced_at).toLocaleString() : null
+    const champion = d.rounds[d.rounds.length - 1]?.matches[0]
+    const isComplete = champion?.winner != null
 
     const eloSection = document.createElement('div')
     eloSection.className = 'comm-section'
@@ -145,9 +147,9 @@ export async function renderOddsTab() {
         <span style="font-size:13px;color:var(--text2)">
           Matched: <span style="color:var(--text);font-family:var(--mono);font-size:12px">${eloMatchedCount} / ${eloTotalPlayers}</span>
         </span>
-        <button class="comm-btn comm-btn-primary" id="elo-sync-btn">Sync ELO</button>
+        <button class="comm-btn comm-btn-primary" id="elo-sync-btn"${isComplete ? ' disabled' : ''}>Sync ELO</button>
       </div>
-      <div class="comm-msg" id="elo-status-msg" style="margin-top:8px"></div>`
+      <div class="comm-msg" id="elo-status-msg" style="margin-top:8px">${isComplete ? 'ELO frozen — this draw is complete. Ratings feed the historical chalk baseline and can\'t be re-synced.' : ''}</div>`
     wrap.appendChild(eloSection)
 
     // Draw players still missing ELO — used both for triage guard and row labels.
@@ -223,6 +225,7 @@ export async function renderOddsTab() {
     }
 
     document.getElementById('elo-sync-btn')?.addEventListener('click', async () => {
+      if (isComplete) return
       const btn = document.getElementById('elo-sync-btn')
       const msg = document.getElementById('elo-status-msg')
       if (btn) { btn.disabled = true; btn.textContent = 'Syncing…' }

@@ -7,7 +7,7 @@ import { state, activeDraw, applyTheme } from './state.js'
 import { loadAllDraws, reloadActiveDraw, slamLabel, slamKey } from './data.js'
 import { extractPdfText, parseTnnsText, validateParsedDraw } from './parser.js'
 import { $c, escHtml } from './commissioner-shared.js'
-import { renderResults, setPendingSearch, renderHealthBandsStatusSection, renderShrinkageKSection, recomputeShrinkageK } from './commissioner-results.js'
+import { renderResults, setPendingSearch, renderHealthBandsStatusSection, renderShrinkageKSection, recomputeShrinkageK, renderSlamIndexSimSection } from './commissioner-results.js'
 import { renderLockManaging } from './commissioner-locks.js'
 import { renderOddsTab } from './commissioner-odds.js'
 import { renderEspnScoreFeedSection } from './commissioner-scores.js'
@@ -73,6 +73,7 @@ export function initCommissioner() {
   renderEspnScoreFeedSection()
   renderHealthBandsStatusSection()
   renderShrinkageKSection()
+  renderSlamIndexSimSection()
   if (_isResultsTabActive()) startResultsRealtime(activeDraw()?.db_id, _onResultsRealtimeChange)
 
   if (_initialized) return
@@ -102,7 +103,7 @@ export function initCommissioner() {
       stopResultsRealtime() // re-scoped below only if the results tab is what's now showing
       if (tab === 'lock') renderLockManaging()
       if (tab === 'results') {
-        renderResults(); renderEspnScoreFeedSection(); renderHealthBandsStatusSection(); renderShrinkageKSection()
+        renderResults(); renderEspnScoreFeedSection(); renderHealthBandsStatusSection(); renderShrinkageKSection(); renderSlamIndexSimSection()
         startResultsRealtime(activeDraw()?.db_id, _onResultsRealtimeChange)
       }
       if (tab === 'odds') renderOddsTab()
@@ -181,7 +182,7 @@ export function renderCommHeader() {
         else if (activeTab === 'odds') renderOddsTab()
         else if (activeTab === 'draw') { const ad = activeDraw(); if (ad) renderPickCompletion(ad); renderReuploadSection() }
         else {
-          renderResults(); renderEspnScoreFeedSection(); renderHealthBandsStatusSection(); renderShrinkageKSection()
+          renderResults(); renderEspnScoreFeedSection(); renderHealthBandsStatusSection(); renderShrinkageKSection(); renderSlamIndexSimSection()
           startResultsRealtime(activeDraw()?.db_id, _onResultsRealtimeChange) // re-scope to the newly selected M/W draw
         }
       })

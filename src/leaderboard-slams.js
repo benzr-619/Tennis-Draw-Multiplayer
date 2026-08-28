@@ -2,7 +2,7 @@
 
 import { state } from './state.js'
 import { SLAM_CONFIG, SLAM_COLORS, slamKey } from './data.js'
-import { calcStatsAsOf, calcSlamIndex, calcChalkBaselines, healthHue, isPoolEligible } from './scoring.js'
+import { calcStatsAsOf, calcSlamIndex, chalkBaselinesForVersion, healthHue, isPoolEligible } from './scoring.js'
 import { supabase } from './supabase.js'
 import { formatAmerican } from './odds.js'
 import {
@@ -172,7 +172,10 @@ async function _loadBaseline(group, profs, R) {
       return { id: p.id, score: s.baseScore + s.skillBonus, my: s.matchYieldResolved > 0 ? s.matchYield : 0, has: s.filled > 0 && isPoolEligible(ud) }
     }).filter(e => e.has)
     const siVersion = d.slam_index_version ?? 1
-    const chalk = siVersion === 2 ? calcChalkBaselines(assembleDrawForUser(d, []), R - 1) : null
+    // R-1 (not Infinity) — always routes to the v2 closed form inside
+    // chalkBaselinesForVersion regardless of siVersion, since there's no persisted
+    // per-round Monte Carlo snapshot to read for an "as of round R-1" baseline.
+    const chalk = (siVersion === 2 || siVersion === 3) ? chalkBaselinesForVersion(assembleDrawForUser(d, []), siVersion, R - 1) : null
     const idxs = calcSlamIndex(ents.map(e => ({ score: e.score, matchYield: e.my })), { version: siVersion, chalk })
     ;[...ents].map((e, i) => ({ ...e, si: idxs[i] }))
       .sort((a, b) => (b.si ?? -Infinity) - (a.si ?? -Infinity))

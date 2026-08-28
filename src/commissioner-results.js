@@ -188,6 +188,91 @@ export async function renderShrinkageKSection() {
   $c('comm-apply-k-btn')?.addEventListener('click', handleApplyK)
 }
 
+// ── SLAM INDEX v3 — MONTE CARLO σ STATUS CARD (persisted, per-draw) ──
+// Mirrors the shrinkage-K card's shape (a persisted row + a manual recompute
+// button) but scoped to the currently active draw, not the whole pool — sigma_dy/
+// sigma_my are a property of one draw's own bracket, not a cross-draw quantity.
+// See .claude/rules/slam-index.md "v3" and src/slam-index-sim.js for what the
+// recompute actually does; this is wiring only.
+async function handleRecomputeSlamIndexSim() {
+  if (!state.currentUser?.is_commissioner) return
+  const d = activeDraw()
+  if (!d) return
+  const btn = $c('comm-recompute-sim-btn')
+  const msg = $c('comm-sim-msg')
+  if (btn) btn.disabled = true
+  if (msg) { msg.className = 'comm-msg'; msg.textContent = 'Simulating (40,000 runs)…' }
+  try {
+    const [{ calcChalkBaselines, getScoringConfig, buildEloChalkBracket }, { simulateChalkSigma }] = await Promise.all([
+      import('./scoring.js'),
+      import('./slam-index-sim.js'),
+    ])
+    const config = getScoringConfig(d.scoring_version ?? 1)
+    const realized = calcChalkBaselines(d) // chalkDY/chalkMY are unchanged — same closed form as v2
+    if (!realized.valid) throw new Error('Not enough ELO/odds data for this draw to trust a chalk baseline.')
+    const chalk = buildEloChalkBracket(d)
+    const seed = 42, runs = 40000
+    const { sigmaDY, sigmaMY } = simulateChalkSigma(d, chalk, config, { runs, seed })
+    const computedAt = new Date().toISOString()
+
+    const { error } = await supabase.from('draws').update({
+      chalk_dy: realized.chalkDY, chalk_my: realized.chalkMY,
+      sigma_dy: sigmaDY, sigma_my: sigmaMY,
+      sim_seed: seed, sim_runs: runs, sim_computed_at: computedAt,
+      slam_index_version: 3,
+    }).eq('id', d.db_id)
+    if (error) throw error
+
+    // Patch in-memory BEFORE reload — reloadActiveDraw() rebuilds its drawRow from
+    // local flags, not a fresh draws fetch (see data.js reloadActiveDraw).
+    d.chalk_dy = realized.chalkDY; d.chalk_my = realized.chalkMY
+    d.sigma_dy = sigmaDY; d.sigma_my = sigmaMY
+    d.sim_seed = seed; d.sim_runs = runs; d.sim_computed_at = computedAt
+    d.slam_index_version = 3
+    await reloadActiveDraw()
+
+    if (msg) { msg.className = 'comm-msg success'; msg.textContent = `Done — σ_DY=${sigmaDY.toFixed(1)}, σ_MY=${sigmaMY.toFixed(1)}` }
+    renderResults()
+  } catch (err) {
+    if (msg) { msg.className = 'comm-msg error'; msg.textContent = 'Error: ' + err.message }
+  } finally {
+    if (btn) btn.disabled = false
+    renderSlamIndexSimSection()
+  }
+}
+
+let _simStatusGen = 0
+export async function renderSlamIndexSimSection() {
+  const wrap = $c('comm-sim-wrap')
+  if (!wrap) return
+  const gen = ++_simStatusGen
+  const d = activeDraw()
+  if (gen !== _simStatusGen) return
+
+  wrap.innerHTML = ''
+  if (!d) return
+
+  const pill = document.createElement('div')
+  pill.style.cssText = 'font-family:var(--mono);font-size:11px;color:var(--text3);padding:4px 12px;line-height:1.7'
+  if (d.sim_computed_at == null) {
+    pill.textContent = 'Slam Index σ (Monte Carlo): not yet computed for this draw — falls back to the v2 closed-form estimate'
+  } else {
+    pill.innerHTML = `Slam Index σ (Monte Carlo): σ_DY=${Number(d.sigma_dy).toFixed(1)} · σ_MY=${Number(d.sigma_my).toFixed(1)} · `
+      + `chalk_DY=${Number(d.chalk_dy).toFixed(1)} · chalk_MY=${Number(d.chalk_my).toFixed(1)} · runs=${d.sim_runs} · seed=${d.sim_seed}<br>`
+      + `computed ${new Date(d.sim_computed_at).toLocaleString()}`
+  }
+  wrap.appendChild(pill)
+
+  const btnRow = document.createElement('div')
+  btnRow.style.cssText = 'padding:4px 12px 8px;display:flex;gap:8px;align-items:center'
+  btnRow.innerHTML = `
+    <button class="comm-btn comm-btn-secondary" id="comm-recompute-sim-btn">Recompute σ (Monte Carlo)</button>
+    <div class="comm-msg" id="comm-sim-msg"></div>`
+  wrap.appendChild(btnRow)
+
+  $c('comm-recompute-sim-btn')?.addEventListener('click', handleRecomputeSlamIndexSim)
+}
+
 // ── MOBILE ROUND STATE ──
 let _commMobileRound = 0
 export function getCommMobileRound() { return _commMobileRound }

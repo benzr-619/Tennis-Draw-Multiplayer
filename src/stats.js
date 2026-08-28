@@ -1,7 +1,7 @@
 // Stats bar renderer
 
 import { activeDraw, state, isMobile } from './state.js'
-import { calcStatsAsOf, calcChalkScore, isBackupPick, healthHue as _hHue, calcSlamIndex, calcChalkBaselines, isPoolEligible } from './scoring.js'
+import { calcStatsAsOf, calcChalkScore, isBackupPick, healthHue as _hHue, calcSlamIndex, chalkBaselinesForVersion, isPoolEligible } from './scoring.js'
 import { formatYield } from './odds.js'
 import { loadDrawStatsForAllUsers } from './leaderboard.js'
 import { nextScheduledLock, lockMissingPickCount, findLinkedLock, combinedMissingCount, backupPickFraction } from './lock.js'
@@ -83,14 +83,15 @@ export async function fetchPoolSlamIndex(draw, userId) {
   _poolSlamIndexIsV2 = false
   if (!draw || !userId) return
 
-  if ((draw.slam_index_version ?? 1) === 2) {
+  const siVersion = draw.slam_index_version ?? 1
+  if (siVersion === 2 || siVersion === 3) {
     if (!isPoolEligible(draw)) return
-    const chalk = calcChalkBaselines(draw)
-    if (chalk.valid) {
+    const chalk = chalkBaselinesForVersion(draw, siVersion)
+    if (chalk?.valid) {
       const s = calcStatsAsOf(draw, null)
       const score = s.baseScore + s.skillBonus
       const matchYield = s.matchYieldResolved > 0 ? s.matchYield : 0
-      _poolSlamIndex = calcSlamIndex([{ score, matchYield }], { version: 2, chalk })[0]
+      _poolSlamIndex = calcSlamIndex([{ score, matchYield }], { version: siVersion, chalk })[0]
       _poolFlatROI = _computeFlatROI(draw)
       _poolSlamIndexIsV2 = true
       return

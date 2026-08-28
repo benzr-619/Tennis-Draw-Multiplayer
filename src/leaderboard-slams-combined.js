@@ -9,7 +9,7 @@
 // indices). Slams-tab-only — never surfaced on the Records tab.
 
 import { state } from './state.js'
-import { calcSlamIndex, calcChalkBaselines, combineChalkBaselines } from './scoring.js'
+import { calcSlamIndex, chalkBaselinesForVersion, combineChalkBaselines } from './scoring.js'
 import { formatStat, assembleDrawForUser } from './leaderboard.js'
 
 const COLS = [
@@ -56,11 +56,14 @@ function buildCombinedCard(group, allMaps, profs, color) {
     score: (m1[p.id].score ?? 0) + (m2[p.id].score ?? 0),
     matchYield: (m1[p.id].matchYield ?? 0) + (m2[p.id].matchYield ?? 0),
   }))
-  // Both draws must be on v2 to trust a combined chalk baseline — a mixed v1/v2
-  // pairing falls back to the pool-relative index (see calcSlamIndex).
-  const siVersion = (d1.slam_index_version ?? 1) === 2 && (d2.slam_index_version ?? 1) === 2 ? 2 : 1
-  const chalk = siVersion === 2
-    ? combineChalkBaselines(calcChalkBaselines(assembleDrawForUser(d1, [])), calcChalkBaselines(assembleDrawForUser(d2, [])))
+  // Both draws must be on a chalk-referenced version (v2 or v3, mixed is fine —
+  // the formula shape is identical) to trust a combined chalk baseline; otherwise
+  // fall back to the pool-relative index (see calcSlamIndex).
+  const v1c = d1.slam_index_version ?? 1, v2c = d2.slam_index_version ?? 1
+  const bothChalkOk = (v1c === 2 || v1c === 3) && (v2c === 2 || v2c === 3)
+  const siVersion = bothChalkOk ? Math.max(v1c, v2c) : 1
+  const chalk = bothChalkOk
+    ? combineChalkBaselines(chalkBaselinesForVersion(assembleDrawForUser(d1, []), v1c), chalkBaselinesForVersion(assembleDrawForUser(d2, []), v2c))
     : null
   const indexes = calcSlamIndex(totals.map(t => ({ score: t.score, matchYield: t.matchYield })), { version: siVersion, chalk })
   const rows = totals.map((t, i) => ({ ...t, slamIndex: indexes[i] }))

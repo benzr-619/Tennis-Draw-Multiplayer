@@ -31,7 +31,7 @@ export async function loadAllDraws() {
   console.time('loadAllDraws:drawRows')
   const { data: drawRows, error: de } = await supabase
     .from('draws')
-    .select('id, slam, draw_type, year, original_picks_locked, is_active, exclude_from_leaderboard, created_at, elo_synced_at, scoring_version, slam_index_version, qualifiers_placed_at')
+    .select('id, slam, draw_type, year, original_picks_locked, is_active, exclude_from_leaderboard, created_at, elo_synced_at, scoring_version, slam_index_version, qualifiers_placed_at, sigma_dy, sigma_my, chalk_dy, chalk_my, sim_seed, sim_runs, sim_computed_at')
     .order('created_at', { ascending: true })
   console.timeEnd('loadAllDraws:drawRows')
 
@@ -197,6 +197,16 @@ export async function loadDraw(drawRow) {
     scoring_version: drawRow.scoring_version ?? 1,
     slam_index_version: drawRow.slam_index_version ?? 1,
     qualifiers_placed_at: drawRow.qualifiers_placed_at ?? null,
+    // Slam Index v3 — persisted Monte Carlo chalk-baseline snapshot (see
+    // .claude/rules/slam-index.md "v3" and src/slam-index-sim.js). null until a
+    // commissioner runs the recompute for this draw.
+    sigma_dy: drawRow.sigma_dy ?? null,
+    sigma_my: drawRow.sigma_my ?? null,
+    chalk_dy: drawRow.chalk_dy ?? null,
+    chalk_my: drawRow.chalk_my ?? null,
+    sim_seed: drawRow.sim_seed ?? null,
+    sim_runs: drawRow.sim_runs ?? null,
+    sim_computed_at: drawRow.sim_computed_at ?? null,
     rounds,
   }
 
@@ -309,7 +319,12 @@ export async function refreshAll() {
 export async function reloadActiveDraw() {
   const d = state.draws[state.activeTab]
   if (!d) return
-  const drawRow = { id: d.db_id, slam: d.slam, draw_type: d.draw, year: d.year, original_picks_locked: d.locked, is_active: d.is_active, exclude_from_leaderboard: d.excludeFromLeaderboard, scoring_version: d.scoring_version, qualifiers_placed_at: d.qualifiers_placed_at }
+  // Note: this hand-built row is missing elo_synced_at, same pre-existing gap as
+  // slam_index_version was before this fix — a reload silently resets whatever
+  // isn't listed here. slam_index_version and the v3 sim columns are added now
+  // because a reload right after the new Monte Carlo recompute action (below)
+  // would otherwise immediately erase the values it just wrote.
+  const drawRow = { id: d.db_id, slam: d.slam, draw_type: d.draw, year: d.year, original_picks_locked: d.locked, is_active: d.is_active, exclude_from_leaderboard: d.excludeFromLeaderboard, scoring_version: d.scoring_version, slam_index_version: d.slam_index_version, qualifiers_placed_at: d.qualifiers_placed_at, sigma_dy: d.sigma_dy, sigma_my: d.sigma_my, chalk_dy: d.chalk_dy, chalk_my: d.chalk_my, sim_seed: d.sim_seed, sim_runs: d.sim_runs, sim_computed_at: d.sim_computed_at }
   const refreshed = await loadDraw(drawRow)
   state.draws[state.activeTab] = refreshed
   await loadLockSchedules()

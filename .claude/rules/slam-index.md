@@ -1,4 +1,4 @@
-# Slam Index v2 — Absolute Cross-Slam Rating
+# Slam Index v2/v3 — Absolute Cross-Slam Rating
 
 Read this before touching `calcSlamIndex`, `calcChalkBaselines`, or anything that
 compares a Slam Index across more than one draw (Records shrinkage standings, the
@@ -307,16 +307,171 @@ if it's real, the fix (if any) belongs in the chalk-baseline math itself
 (`calcChalkBaselines`), and only once there's enough draws to tell a persistent
 bias apart from one chalky slam.
 
-## Known weakness — sigmaDY runs slightly hot
+## v3 — Monte Carlo σ (2026-08-28)
 
-`sigmaDY` treats each of the draw's matches as an independent Bernoulli trial. Real
-bracket outcomes are chained — you can't reach round 3 without having already won
-rounds 1 and 2 — so the true variance of "total chalk-bracket points scored" is
-somewhat lower than the sum of each match's marginal variance computed in isolation.
-Practically: `sigmaDY` is a slight overestimate, which understates a real player's
-Draw Yield z-score a bit (their edge divides by a denominator that's too generous).
-Correcting this properly needs a Monte Carlo simulation of the whole bracket (or an
-exact recursive convolution) — considered and explicitly rejected as too much
-machinery for a ~20-person pool. Revisit only if this bias is ever shown to matter in
-practice (e.g. it starts visibly compressing Draw Yield's contribution relative to
-Match Yield across several slams).
+Read this before touching `calcChalkBaselinesV3`/`chalkBaselinesForVersion`/`buildEloChalkBracket` in `scoring.js` or `src/slam-index-sim.js`.
+
+### Why the closed-form σ_DY was wrong, and by how much
+
+v2's `sigmaDYsq = Σ base_i² · p_i(1−p_i)` (in `calcChalkBaselines`) treats each match
+as an **independent** Bernoulli trial. A real bracket isn't independent — a busted
+round-1 pick kills every later round it fed, so a real player's actual score has
+positive covariance across rounds that the closed form drops entirely (it's the
+variance of a sum of independents, not the variance of a sum of *dependent* wins
+along one bracket path). Dropped covariance is always positive here, so the closed
+form always **understates** σ_DY — confirmed on Wimbledon 2026 by direct Monte
+Carlo comparison: closed-form σ_DY was 41.1 (MS) / 43.8 (WS) vs. the simulated
+61.9 (MS) / 56.9 (WS) — a 30-50% understatement. Understating a denominator
+inflates every z-score, and it inflates by a **different amount per draw** (the
+understatement's size depends on how top-heavy/predictable that specific bracket
+was), which directly defeats v2's whole purpose: an index that's supposed to mean
+the same thing at every slam was actually still carrying a per-draw distortion, just
+a smaller one than v1's pool-relative scaling.
+
+σ_MY didn't have this problem structurally — each flat-stake bet against fair odds
+has conditional expectation zero, so by the law of total variance the cross-terms
+genuinely vanish and `10·√(Σ(odds−1))` is a structurally correct closed form. Its
+only flaw: it evaluates that sum using real market odds for exactly the 127 matches
+that actually happened, rather than path-averaging over the different matchups a
+hypothetical replay could produce. Since round-2+ matchups diverge fast from the one
+real historical path across random replays, most of a simulated tournament's
+non-round-1 matches fall back to ELO-implied *fair* odds (no house margin) rather
+than the real, margin-shaved market odds the closed form always used — which is why
+σ_MY moved by ~8-9% under simulation (a bit more than the ~3% back-of-envelope
+guess, but the same mechanism and same direction: fair odds run slightly hot vs.
+real odds, so the path-averaged variance runs slightly hot too).
+
+### What changed, and what didn't
+
+`chalkDY`/`chalkMY` (the realized scores, still from the unchanged closed-form walk
+in `calcChalkBaselines`) are **untouched** — only the two denominators moved. The
+formula shape in `calcSlamIndex` is untouched too (`(version === 2 || version ===
+3) && chalk?.valid` — same `100 + 15×avg(...)`  shape, same 15 multiplier, never
+retuned per this file's standing "no tuning constant" stance). `src/slam-index-sim.js`
+(`simulateChalkSigma`) runs 40,000 full-bracket forward simulations from real R0
+players, using the exact same ELO win-probability formula the chalk baseline itself
+uses (`p = 1/(1+10^(-ΔELO/400))`, divisor 400, missing ELO → 1500). At every
+simulated match: **DY** — does the simulated winner equal the FIXED chalk bracket's
+predicted winner for that slot (`buildEloChalkBracket`, unchanged, exported from
+`scoring.js` now instead of module-private)? If so, award that round's base points;
+σ_DY = the stddev of a run's total score across all 40,000 runs. **MY** — accumulate
+`(favOdds − 1)` for every match reached in that run's walk (real locked odds when the
+simulated matchup is the one that actually happened, ELO fair odds `1/p` otherwise);
+σ_MY = `10 · √(mean of that accumulator across runs)`.
+
+A deterministic seeded PRNG (mulberry32, not `Math.random()`) makes the estimate
+reproducible — `sim_seed`/`sim_runs` are persisted alongside the result specifically
+so a stored σ can be reproduced or audited later.
+
+### Never simulated on a render — persisted, commissioner-triggered
+
+40,000 full-bracket walks is cheap in absolute terms (well under a second) but the
+whole point of the persisted-snapshot design (mirroring the health-bands pattern —
+`.claude/rules/health-bands.md`) is that no render path may ever call
+`simulateChalkSigma` inline. New nullable columns on `draws`: `sigma_dy`,
+`sigma_my`, `chalk_dy`, `chalk_my`, `sim_seed`, `sim_runs`, `sim_computed_at` —
+threaded through `data.js` like any other draws column (including
+`reloadActiveDraw()`'s hand-built synthetic `drawRow`, which was already silently
+dropping `slam_index_version` on every reload before this fix — see the code
+comment there). `chalkBaselinesV3(d)` (`scoring.js`) reads these four numbers
+straight off the draw object; `valid` requires all four non-null and both sigmas
+`> 0`.
+
+`chalkBaselinesForVersion(d, version, filterRi = Infinity)` is the single dispatch
+point every v2/v3 call site now uses instead of calling `calcChalkBaselines`/
+`chalkBaselinesV3` directly:
+- `version === 3` and `filterRi === Infinity` (the live/current baseline) → reads
+  the persisted snapshot if valid.
+- Everything else — `version === 3` with no persisted snapshot yet, or **any**
+  `filterRi` truncation (the Slams-tab movement-arrow "as of round R-1" baseline,
+  which has no per-round persisted snapshot to read) — falls back to the v2 closed
+  form, computed inline. This is fine: the closed form is cheap (no simulation), so
+  falling back to it never violates "don't simulate on every render." It does mean
+  the movement-arrow baseline and a not-yet-simulated v3 draw's live index both use
+  v2-quality σ until a commissioner runs the recompute for that specific need — an
+  accepted, disclosed simplification, not an oversight.
+
+Commissioner UI: `renderSlamIndexSimSection()` / `handleRecomputeSlamIndexSim()` in
+`commissioner-results.js`, mounted at `#comm-sim-wrap` on the Results tab (same
+three call sites as the health-bands/shrinkage-K status cards — init, tab switch,
+M/W switch). The button computes `calcChalkBaselines(d)` (closed form, for the
+unchanged realized chalkDY/chalkMY) and `simulateChalkSigma` in the same click,
+writes all seven columns plus bumps `slam_index_version` to 3, patches the in-memory
+draw object **before** calling `reloadActiveDraw()` (same qualifiers.js-established
+discipline — `reloadActiveDraw()` rebuilds its `drawRow` from local flags, not a
+fresh fetch), then reloads and re-renders.
+
+### Verified (2026-08-28, Wimbledon 2026 MS+WS, real production data)
+
+| | MS | WS |
+|---|---|---|
+| chalkDY (unchanged) | 330 | 171 |
+| chalkMY (unchanged) | −68 | 16 |
+| σ_DY closed-form (v2) | 41.1 | 43.8 |
+| σ_DY Monte Carlo (v3) | 61.85 | 56.85 |
+| σ_MY closed-form (v2) | 70.3 | 72.0 |
+| σ_MY Monte Carlo (v3) | 76.83 | 78.07 |
+
+Computed via a standalone Node script that re-implements `buildEloChalkBracket`/
+`calcChalkBaselines`/`simulateChalkSigma` verbatim against real match/ELO/odds rows
+pulled directly from Supabase (bypassing the browser build, since `odds.js`/
+`supabase.js` need `import.meta.env` — same reason `recompute-health-bands` copies
+functions rather than importing them, see `.claude/rules/health-bands.md`). 40,000
+runs, seed 42. σ_DY landed within ~0.5% of an independently-computed reference
+value at the same seed count and divisor (61.6/57.2 expected vs. 61.85/56.85
+actual) — strong evidence the simulation logic is correct, not just plausible.
+
+Persisted to both Wimbledon draws; `slam_index_version` bumped to 3 for **all** six
+existing draws (French Open 2026 MS/WS, US Open 2026 MS/WS, Wimbledon 2026 MS/WS) —
+same unconditional-backfill precedent v2 set, relying on `chalk.valid` to gate the
+fallback at read time rather than gating the version bump itself. French Open still
+has no locked odds and US Open 2026 hadn't started at bump time (0 decided matches)
+— both correctly fall through `chalkBaselinesForVersion` → v2 closed form → still
+invalid → v1 pool-relative, exactly as French Open already did under v2.
+
+### Effective DY/MY blend — did it drift, and the K re-estimate
+
+σ_DY moved far more (+30 to +50%) than σ_MY (+8 to +9%) — **not** a uniform rescale.
+This is expected and is "the correction working," not a red flag: v2's σ_DY was
+understated, which means v2's `z_DY` was systematically *overstated* relative to
+`z_MY` — Draw Yield was quietly carrying more than its documented 50% share of the
+index. Correcting σ_DY upward pulls its typical z-magnitude back down toward parity
+with `z_MY`, which is the intended direction, not drift away from the documented
+50/50 split (`.claude/rules/leaderboard-records-redesign.md` "Why Slam Index is the
+headline"). A precise before/after player-level blend measurement (as opposed to
+this directional argument) needs `loadDrawStatsForAllUsers` run through the app's
+own live pipeline — not reproduced by this session directly (no authenticated
+browser session available here) — but `chalkBaselinesForVersion` already routes
+every real call site to the new v3 numbers now that both draws' `slam_index_version`
+is 3, so the commissioner's existing "Recompute K" button
+(`.claude/rules/leaderboard-records-redesign.md`'s "K recomputation procedure")
+picks up v3-based indices automatically on its next click — no code change needed
+there. The **old** guarded K estimate (pre-v3, still the last real number on record
+as of this write-up): `sigma_within ≈ 13.18`, `sigma_between ≈ 5.67`, `n_draws = 2`
+(guard tripped, never applied). Since K is a ratio of two variances both already in
+index units, it's invariant to a *pure* common rescale of everything — but this
+rescale isn't pure (DY moved much more than MY), so K is expected to shift
+somewhat on the next recompute, just not through any mechanism this file's existing
+"do not retune K by hand" guidance was written to guard against.
+
+## Known weakness — v2's closed-form sigmaDY (SUPERSEDED by v3, see above — 2026-08-28)
+
+**This section originally got the error's direction backwards, and is kept only for
+record.** It claimed `sigmaDY` was "a slight overestimate" because bracket rounds
+are chained (can't reach round 3 without winning rounds 1-2 first), reasoning that
+chaining makes the true variance *lower* than the independent-sum closed form. That
+reasoning was wrong: chaining means round-survival indicators are **positively**
+correlated (winning round 2 requires having already won round 1), and positive
+covariance between summed terms always *increases* total variance relative to
+treating them as independent — the opposite conclusion from what this section
+originally drew. Confirmed directly by Monte Carlo simulation (`src/slam-index-sim.js`
+— see the "v3" section above): the closed form **understated** σ_DY by 30-50% on
+real Wimbledon 2026 data (41.1 vs. simulated 61.85 for MS), not overstated it. v3
+is the actual fix this section speculated about and declined to build — a full
+Monte Carlo simulation of the whole bracket, now implemented, persisted (never run
+inline on a render), and commissioner-triggered rather than automatic. v2's closed
+form is kept fully intact as v3's cheap interim/no-simulation-yet fallback (see
+`chalkBaselinesForVersion` above), not because it was correct, but because it's
+cheap enough to compute inline where a persisted snapshot doesn't exist yet
+(the movement-arrow "as of round R-1" baseline, or a v3 draw before its first
+recompute).
