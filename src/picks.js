@@ -8,6 +8,7 @@ import { buildDrawView } from './draw-view.js'
 import { HEALTH_BANDS_LIVE_MODE, updateBandAtN, revertBandAtN } from './health-bands.js'
 import { loadAllProfiles } from './leaderboard.js'
 import { onBandsUpdating, onBandsUpdated } from './commissioner-results.js'
+import { displayName } from './player-names.js'
 
 // Fire-and-forget health-band recompute after a result change. `fn` is updateBandAtN
 // (confirm) or revertBandAtN (undo). Never awaited — the band module yields internally
@@ -129,7 +130,7 @@ async function saveCascadeToSupabase(d, ri, mi) {
 function showPickConfirm(playerName) {
   return new Promise(resolve => {
     const modal = document.getElementById('pick-confirm-modal')
-    document.getElementById('pcm-name').textContent = playerName
+    document.getElementById('pcm-name').textContent = displayName(playerName)
     modal.style.display = 'flex'
     function cleanup(result) {
       modal.style.display = 'none'

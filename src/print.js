@@ -3,6 +3,7 @@
 
 import { isBackupPick } from './scoring.js'
 import { flagPrintHTML } from './flags.js'
+import { displayName } from './player-names.js'
 
 const SLAM_CONFIG = {
   AO: { name: 'Australian Open' },
@@ -71,7 +72,7 @@ export function buildPrintHTML(d) {
       + '<span style="font-size:5pt;min-width:7pt;text-align:center;flex-shrink:0;color:' + accent + '">' + ind + '</span>'
       + '<span style="font-family:\'DM Mono\',monospace;font-size:5pt;color:' + seedCol + ';min-width:9pt;text-align:right;flex-shrink:0">' + escH(p.seed) + '</span>'
       + flagPrintHTML(countryMap[p.name] || '')
-      + '<span style="font-family:\'Playfair Display\',Georgia,serif;font-size:7.5pt;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;' + nameStyle + '">' + escH(p.name) + '</span>'
+      + '<span style="font-family:\'Playfair Display\',Georgia,serif;font-size:7.5pt;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;' + nameStyle + '">' + escH(displayName(p.name)) + '</span>'
       + '</div>'
   }
 
@@ -103,7 +104,7 @@ export function buildPrintHTML(d) {
   function buildPage(startR1, endR1, pageNum, isTopHalf) {
     const r1Slice = r1.slice(startR1, endR1)
     const finMatch = rounds[rounds.length - 1] && rounds[rounds.length - 1].matches[0]
-    const champName = finMatch && (finMatch.winner || finMatch.matchPick) || '—'
+    const champName = displayName(finMatch && (finMatch.winner || finMatch.matchPick)) || '—'
     const halfLabel = isTopHalf ? 'Top half' : 'Bottom half'
 
     // Header row: tournament name (left) + draw/half/page (right)

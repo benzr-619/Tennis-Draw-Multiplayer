@@ -950,7 +950,7 @@ body.tutorial-active #mobile-search-wrap{pointer-events:none;opacity:0.35}
 .pr-check{font-family:var(--mono);font-size:11px;color:var(--purple);margin-left:auto;padding-left:4px;flex-shrink:0}
 
 /* ── MODAL ── */
-#edit-player-modal,#pick-confirm-modal,#rename-modal,#elo-confirm-modal,#roster-alert-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:200;align-items:center;justify-content:center}
+#edit-player-modal,#pick-confirm-modal,#rename-modal,#elo-confirm-modal,#roster-alert-modal,#qualifiers-placed-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:200;align-items:center;justify-content:center}
 @keyframes mc-roster-pulse{0%,100%{box-shadow:0 0 0 3px var(--accent)}50%{box-shadow:none}}
 .mc.mc-roster-swap{animation:mc-roster-pulse 0.5s ease 3}
 
@@ -1237,6 +1237,8 @@ body.tutorial-active #mobile-search-wrap{pointer-events:none;opacity:0.35}
       <div class="comm-section" id="comm-r1-wrap" style="display:none"></div>
       <!-- Pick Completion (shown when draw is active) -->
       <div class="comm-section" id="comm-pick-completion-wrap" style="display:none"></div>
+      <!-- Re-upload draw PDF (qualifier placement / late withdrawals) -->
+      <div class="comm-section" id="comm-reupload-wrap"></div>
       <!-- Getting Ready Mode -->
       <div class="comm-section" id="comm-getting-ready-wrap"></div>
       <!-- Draw Health Bands (calibration) -->
@@ -1418,6 +1420,15 @@ body.tutorial-active #mobile-search-wrap{pointer-events:none;opacity:0.35}
       <button id="ram-goto" style="flex:1;padding:9px;background:var(--accent);color:var(--accent-text);border:none;border-radius:7px;font-family:var(--sans);font-size:13px;font-weight:600;cursor:pointer">Go to match</button>
       <button id="ram-next" style="padding:9px 16px;background:var(--surface2);border:1px solid var(--border2);color:var(--text);border-radius:7px;font-family:var(--sans);font-size:13px;cursor:pointer">Dismiss</button>
     </div>
+  </div>
+</div>
+
+<!-- ── QUALIFIERS PLACED MODAL ── -->
+<div id="qualifiers-placed-modal">
+  <div style="background:var(--surface);border:1px solid var(--border2);border-radius:12px;padding:22px;width:340px;max-width:92vw;box-shadow:0 8px 32px rgba(0,0,0,0.18)">
+    <div style="font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--accent);margin-bottom:6px">Draw Update</div>
+    <div id="qpm-body" style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.6">The qualifiers have been placed — your picks carried over.</div>
+    <button id="qpm-dismiss" style="width:100%;padding:9px;background:var(--accent);color:var(--accent-text);border:none;border-radius:7px;font-family:var(--sans);font-size:13px;font-weight:600;cursor:pointer">Got it</button>
   </div>
 </div>
 

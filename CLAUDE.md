@@ -33,6 +33,7 @@ Current rules files:
 - `.claude/rules/scoring-redesign.md` — post-Wimbledon-2026 scoring redesign, IMPLEMENTED 2026-07-17, made RETROACTIVE 2026-07-18: `draws.scoring_version` column, every existing draw now `= 2` (v1 kept fully working as a rollback lever only) — strict-doubling Draw Yield, no upset bonus, flat 10-point Match Yield stake, fixed stale-pick auto-favourite fallback; `SCORING_CONFIGS`/`getScoringConfig()` in `scoring.js`; `health_bands`/`health_band_samples` wiped and rebuilt uniformly under v2 across all draws (no more v1/v2 split to reconcile)
 - `.claude/rules/leaderboard-records-redesign.md` — Records tab redesign (design finalized 2026-07-18, not yet implemented): shrinkage-adjusted Slam Index standings replace the old averaged podium, Draw Yield/Match Yield personal-best tables with a raw/vs.-chalk toggle, Slams-tab-only click-to-reveal Combined M/W card
 - `.claude/rules/slam-index.md` — Slam Index v2 (2026-08-24): `draws.slam_index_version`, `calcChalkBaselines()` (ELO-favourite Draw Yield baseline + flat-stake odds-favourite Match Yield baseline, both with derived-not-fitted standard deviations), why no tuning constant, v1 pool-relative fallback, all call sites
+- `.claude/rules/qualifiers.md` — QUALIFIER/BYE parser handling (2026-08-27): `Qualifier <position>` placeholder naming (`src/player-names.js` `isPlaceholderName`/`displayName`, identity vs. display split), the two parser bugs found live (dropped QUALIFIER entries, flat-array match-shift corruption), `validateParsedDraw` 64/128 gate, re-upload/diff flow (`commissioner-qualifiers.js`) with its two buckets + three safety gates, `place_qualifiers` RPC, pre-lock-only assumption
 
 ---
 
@@ -109,17 +110,20 @@ src/
   lock.js — isMatchLocked() + lock/unlock helpers
   commissioner.js — orchestrator + Draw Management tab + commissioner header
   commissioner-shared.js — $c(), escHtml()
-  commissioner-results.js — Results tab: renderResults(), winner confirm/undo
+  commissioner-results.js — Results tab: renderResults(), winner confirm/undo, applyPlayerSwap()
   commissioner-locks.js — Lock Managing tab orchestrator: renderLockManaging()
   commissioner-locks-orig.js — Original Picks lock controls
   commissioner-locks-backup.js — Backup Pick locks + Scheduled Locks list
+  commissioner-qualifiers.js — Re-upload draw PDF: diff stored draw vs. re-parsed PDF,
+    qualifier-placement + roster-change buckets — see .claude/rules/qualifiers.md
   leaderboard.js — renderLeaderboard(), stats aggregation, shared helpers (formatStat, loadDrawStatsForAllUsers)
   leaderboard-slams.js — Slams tab: live slam cards, sortable M/W table, past slams, storyline chips
   leaderboard-records.js — Records tab: all-time/per-year standings, podium, honor chips
   leaderboard-yourdraws.js — Your Draws tab: sortable table of user's own draws with stats
   viewer-bracket.js — renderViewerBracket() + placeViewerCard(): read-only viewer painting
   print.js — buildPrintHTML() (ported verbatim)
-  parser.js — extractPdfText(), parseTnnsText(), buildInitialRounds()
+  parser.js — extractPdfText(), parseTnnsText(), validateParsedDraw(), buildInitialRounds()
+  player-names.js — isPlaceholderName(), displayName() — see .claude/rules/qualifiers.md
   seg-thumb.js — animateSegThumb(container, oldIdx, newIdx)
 index.html / vite.config.js / .env.local (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY)
 ```

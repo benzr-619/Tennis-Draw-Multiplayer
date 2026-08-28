@@ -10,6 +10,7 @@ import { formatAmerican } from './odds.js'
 import { eloMap } from './elo.js'
 import { appendScoreWithServeDot } from './bracket-shared.js'
 import { makeFlagEl } from './flags.js'
+import { displayName } from './player-names.js'
 
 // Per-draw ELO cache — rebuilt once when the draw ID changes, stable within a render pass
 let _eloCache = { drawId: null, map: new Map(), withdrawn: new Set() }
@@ -48,16 +49,16 @@ function _doRenderBracket() {
       const champLbl = document.createElement('div'); champLbl.className = 'champ-label'; champLbl.textContent = 'Champion'
       const champNm = document.createElement('div'); champNm.className = 'champ-name'
       if (isWrong) {
-        champNm.textContent = f.winner
+        champNm.textContent = displayName(f.winner)
         const displaced = document.createElement('div')
         displaced.className = 'mc-champ-elim'
-        displaced.textContent = pick
+        displaced.textContent = displayName(pick)
         champDiv.appendChild(displaced)
       } else if (isCorrect) {
-        champNm.textContent = pick
+        champNm.textContent = displayName(pick)
         champNm.style.color = 'var(--green)'
       } else {
-        champNm.textContent = pick || f.winner || '—'
+        champNm.textContent = displayName(pick || f.winner) || '—'
         if (pick && !f.winner) champNm.style.color = 'var(--accent)'
       }
       champDiv.appendChild(champLbl); champDiv.appendChild(champNm); wrap.appendChild(champDiv)
@@ -149,7 +150,7 @@ export function placeCard(d, m, ri, mi, x, y, wrap) {
       const row = document.createElement('div'); row.className = 'pr s-orig-wrong'; row.style.position = 'relative'
       const seedEl = document.createElement('span'); seedEl.className = 'pr-seed'; seedEl.textContent = p.seed || ''
       row.appendChild(seedEl); row.appendChild(makeFlagEl(d.countryMap?.[p.name]))
-      const nameEl = document.createElement('span'); nameEl.className = 'pr-name'; nameEl.textContent = p.name || '—'
+      const nameEl = document.createElement('span'); nameEl.className = 'pr-name'; nameEl.textContent = displayName(p.name) || '—'
       row.appendChild(nameEl)
       // No click handler: elim slots aren't directly clickable.
       return row
@@ -207,7 +208,7 @@ export function placeCard(d, m, ri, mi, x, y, wrap) {
       row.classList.add('pr-has-star')
     }
     row.appendChild(gutterEl); row.appendChild(makeFlagEl(d.countryMap?.[p.name]))
-    const nameEl = document.createElement('span'); nameEl.className = 'pr-name'; nameEl.textContent = p.name || '—'
+    const nameEl = document.createElement('span'); nameEl.className = 'pr-name'; nameEl.textContent = displayName(p.name) || '—'
     row.appendChild(nameEl)
     // Persistent gold dot at card's left edge when high-confidence is ON
     if (isLivePick && m.highConfidence) {
@@ -287,7 +288,7 @@ export function placeCard(d, m, ri, mi, x, y, wrap) {
     if (!name) return
     const lbl = document.createElement('div')
     lbl.className = `mc-orig-elim mc-orig-elim-${pos}`
-    lbl.textContent = name
+    lbl.textContent = displayName(name)
     card.appendChild(lbl)
   })
 

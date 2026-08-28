@@ -453,16 +453,15 @@ export function openEditPlayerModal(ri, mi, side) {
   setTimeout(() => document.getElementById('epm-name').focus(), 50)
 }
 
-export async function confirmEditPlayer() {
-  if (!editCtx) return
-  const d = activeDraw(); if (!d) return
-  const { ri, mi, side } = editCtx
+// Applies one round-0 player-slot edit: DB write (name/seed/country, roster_changed_at
+// + replaced_name stamping, odds/ELO clearing) + in-memory patch + pre/post-lock
+// stale-pick handling. Shared by the modal-driven single edit (confirmEditPlayer,
+// below) and the batch re-upload diff flow's ROSTER CHANGE bucket
+// (commissioner-qualifiers.js — see .claude/rules/qualifiers.md). Does NOT call
+// buildDrawView or re-render — callers do that once after all their edits land.
+export async function applyPlayerSwap(d, ri, mi, side, newName, newSeed, newIoc) {
   const m = d.rounds[ri].matches[mi]
   const oldName = m[side].name
-  const newName = document.getElementById('epm-name').value.trim()
-  const newSeed = document.getElementById('epm-seed').value.trim()
-  const rawCountry = document.getElementById('epm-country').value.trim()
-  const newIoc = rawCountry ? (countryNameToIoc(rawCountry) ?? null) : null
   m[side] = { name: newName, seed: newSeed, country: newIoc }
   if (m.matchPick === oldName) m.matchPick = null
   if (m.originalPick === oldName) m.originalPick = null
@@ -514,12 +513,25 @@ export async function confirmEditPlayer() {
     }
   }
 
-  // Re-derive slot occupants so R2+ reflect the new player before rendering.
-  buildDrawView(d)
   // Patch countryMap so flag renders update immediately without a full reload.
   if (oldName && oldName !== newName) delete d.countryMap[oldName]
   if (newName && newIoc) d.countryMap[newName] = newIoc
   else if (newName) delete d.countryMap[newName]
+}
+
+export async function confirmEditPlayer() {
+  if (!editCtx) return
+  const d = activeDraw(); if (!d) return
+  const { ri, mi, side } = editCtx
+  const newName = document.getElementById('epm-name').value.trim()
+  const newSeed = document.getElementById('epm-seed').value.trim()
+  const rawCountry = document.getElementById('epm-country').value.trim()
+  const newIoc = rawCountry ? (countryNameToIoc(rawCountry) ?? null) : null
+
+  await applyPlayerSwap(d, ri, mi, side, newName, newSeed, newIoc)
+
+  // Re-derive slot occupants so R2+ reflect the new player before rendering.
+  buildDrawView(d)
   closeModal(); editCtx = null
   renderResults()
 }

@@ -8,6 +8,7 @@ import { eloMap } from './elo.js'
 import { isAutoAssign, withdrawnNames, eloFavourite } from './scoring.js'
 import { makeFlagEl } from './flags.js'
 import { appendScoreWithServeDot } from './bracket-shared.js'
+import { displayName } from './player-names.js'
 
 let _viewerEloCache = { drawId: null, map: new Map(), withdrawn: new Set() }
 function _getViewerEloCache(d) {
@@ -38,13 +39,13 @@ export function renderViewerBracket(draw, mode = 'original') {
         const isCorrect = result === 'correct'
         const isWrong   = result === 'wrong'
         champDiv.className = 'champ-box' + (isCorrect ? ' champ-correct' : isWrong ? ' champ-wrong' : '')
-        champNm.textContent = pick || f.winner || '—'
+        champNm.textContent = displayName(pick || f.winner) || '—'
         if (isWrong) {
           champNm.style.cssText = 'text-decoration:line-through;color:var(--red)'
           if (f.winner) {
             const actual = document.createElement('div')
             actual.className = 'mc-champ-actual'
-            actual.textContent = f.winner
+            actual.textContent = displayName(f.winner)
             champDiv.appendChild(actual)
           }
         } else if (isCorrect) {
@@ -54,7 +55,7 @@ export function renderViewerBracket(draw, mode = 'original') {
         }
       } else {
         champDiv.className = 'champ-box'
-        champNm.textContent = f.matchPick || f.winner || '—'
+        champNm.textContent = displayName(f.matchPick || f.winner) || '—'
       }
       champDiv.style.cssText = `left:${x}px;top:${y}px;position:absolute`
       champDiv.appendChild(champLbl); champDiv.appendChild(champNm); wrap.appendChild(champDiv)
@@ -133,7 +134,7 @@ function placeViewerCard(draw, m, ri, mi, x, y, wrap, mode) {
       const row = document.createElement('div'); row.className = cls; row.style.position = 'relative'
       const seedEl = document.createElement('span'); seedEl.className = 'pr-seed'; seedEl.textContent = p.seed || ''
       row.appendChild(seedEl); row.appendChild(makeFlagEl(draw.countryMap?.[p.name]))
-      const nameEl = document.createElement('span'); nameEl.className = 'pr-name'; nameEl.textContent = p.name || '—'
+      const nameEl = document.createElement('span'); nameEl.className = 'pr-name'; nameEl.textContent = displayName(p.name) || '—'
       row.appendChild(nameEl)
 
       // Odds inline after name
@@ -187,7 +188,7 @@ function placeViewerCard(draw, m, ri, mi, x, y, wrap, mode) {
       const row = document.createElement('div'); row.className = cls; row.style.position = 'relative'
       const seedEl = document.createElement('span'); seedEl.className = 'pr-seed'; seedEl.textContent = p.seed || ''
       row.appendChild(seedEl); row.appendChild(makeFlagEl(draw.countryMap?.[p.name]))
-      const nameEl = document.createElement('span'); nameEl.className = 'pr-name'; nameEl.textContent = p.name || '—'
+      const nameEl = document.createElement('span'); nameEl.className = 'pr-name'; nameEl.textContent = displayName(p.name) || '—'
       row.appendChild(nameEl)
       if (_autoFavName && p.name === _autoFavName) {
         row.classList.add('s-elo-auto')
@@ -211,7 +212,7 @@ function placeViewerCard(draw, m, ri, mi, x, y, wrap, mode) {
         if (actualP.name === predictedName) return
         const lbl = document.createElement('div')
         lbl.className = 'mc-actual-' + pos
-        lbl.textContent = actualP.name
+        lbl.textContent = displayName(actualP.name)
         card.appendChild(lbl)
       }
       makeActualLabel(m.actualP1, 'top')

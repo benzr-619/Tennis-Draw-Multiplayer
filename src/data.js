@@ -31,7 +31,7 @@ export async function loadAllDraws() {
   console.time('loadAllDraws:drawRows')
   const { data: drawRows, error: de } = await supabase
     .from('draws')
-    .select('id, slam, draw_type, year, original_picks_locked, is_active, exclude_from_leaderboard, created_at, elo_synced_at, scoring_version, slam_index_version')
+    .select('id, slam, draw_type, year, original_picks_locked, is_active, exclude_from_leaderboard, created_at, elo_synced_at, scoring_version, slam_index_version, qualifiers_placed_at')
     .order('created_at', { ascending: true })
   console.timeEnd('loadAllDraws:drawRows')
 
@@ -196,6 +196,7 @@ export async function loadDraw(drawRow) {
     elo_synced_at: drawRow.elo_synced_at ?? null,
     scoring_version: drawRow.scoring_version ?? 1,
     slam_index_version: drawRow.slam_index_version ?? 1,
+    qualifiers_placed_at: drawRow.qualifiers_placed_at ?? null,
     rounds,
   }
 
@@ -308,7 +309,7 @@ export async function refreshAll() {
 export async function reloadActiveDraw() {
   const d = state.draws[state.activeTab]
   if (!d) return
-  const drawRow = { id: d.db_id, slam: d.slam, draw_type: d.draw, year: d.year, original_picks_locked: d.locked, is_active: d.is_active, exclude_from_leaderboard: d.excludeFromLeaderboard, scoring_version: d.scoring_version }
+  const drawRow = { id: d.db_id, slam: d.slam, draw_type: d.draw, year: d.year, original_picks_locked: d.locked, is_active: d.is_active, exclude_from_leaderboard: d.excludeFromLeaderboard, scoring_version: d.scoring_version, qualifiers_placed_at: d.qualifiers_placed_at }
   const refreshed = await loadDraw(drawRow)
   state.draws[state.activeTab] = refreshed
   await loadLockSchedules()

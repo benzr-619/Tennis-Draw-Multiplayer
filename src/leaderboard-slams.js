@@ -10,6 +10,7 @@ import {
   openViewerOriginalPicks, formatStat, setLbDetail, renderLeaderboard, fetchAllRows,
 } from './leaderboard.js'
 import { buildCombinedSection } from './leaderboard-slams-combined.js'
+import { displayName } from './player-names.js'
 
 const STATUS_NAMES = ['Round 1', 'Round 2', 'Round 3', 'Round 4', 'Quarterfinals', 'Semifinals', 'Final']
 const ROUND_LBL    = ['R1', 'R2', 'R3', 'R4', 'QF', 'SF', 'F']
@@ -363,14 +364,14 @@ function _buildChipsRow(section, group, allMaps, profs) {
     const topEntries = upsetEntries.filter(e => e.yld === maxYld)
     const first = topEntries[0]
     const chipText = topEntries.length > 1
-      ? `${topEntries.length} players · ${first.pickedName} ${formatAmerican(first.decimalOdds)}`
-      : `${first.pickedName} ${formatAmerican(first.decimalOdds)}`
+      ? `${topEntries.length} players · ${displayName(first.pickedName)} ${formatAmerican(first.decimalOdds)}`
+      : `${displayName(first.pickedName)} ${formatAmerican(first.decimalOdds)}`
     const body = document.createElement('div'); body.className = 'rec-honor-body rec-honor-clickable'
     const main = document.createElement('div'); main.className = 'rec-honor-main'; main.textContent = chipText
     body.appendChild(main)
     body.addEventListener('click', () => openListModal('Biggest Upset', topEntries.map(e => {
       const cfg = SLAM_CONFIG[e.draw.slam] || {}
-      return { name: e.prof.display_name, sub: `Beat ${e.opponent} · ${cfg.name || e.draw.slam} ${e.draw.year} · ${ROUND_LBL[e.ri] || 'R' + (e.ri + 1)}`, val: `+${e.yld}`, valClass: 'lb-modal-val-pos' }
+      return { name: e.prof.display_name, sub: `Beat ${displayName(e.opponent)} · ${cfg.name || e.draw.slam} ${e.draw.year} · ${ROUND_LBL[e.ri] || 'R' + (e.ri + 1)}`, val: `+${e.yld}`, valClass: 'lb-modal-val-pos' }
     })))
     cA.appendChild(body)
   }

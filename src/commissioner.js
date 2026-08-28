@@ -5,7 +5,7 @@
 import { supabase } from './supabase.js'
 import { state, activeDraw, applyTheme } from './state.js'
 import { loadAllDraws, reloadActiveDraw, slamLabel, slamKey } from './data.js'
-import { extractPdfText, parseTnnsText } from './parser.js'
+import { extractPdfText, parseTnnsText, validateParsedDraw } from './parser.js'
 import { $c, escHtml } from './commissioner-shared.js'
 import { renderResults, setPendingSearch, renderHealthBandsStatusSection, renderShrinkageKSection, recomputeShrinkageK } from './commissioner-results.js'
 import { renderLockManaging } from './commissioner-locks.js'
@@ -15,6 +15,7 @@ import { startResultsRealtime, stopResultsRealtime } from './realtime.js'
 import { animateSegThumb } from './seg-thumb.js'
 import { refreshHealthBands } from './picks.js'
 import { updateBandAtN } from './health-bands.js'
+import { renderReuploadSection } from './commissioner-qualifiers.js'
 
 export { renderResults } from './commissioner-results.js'
 export { renderLockManaging } from './commissioner-locks.js'
@@ -133,6 +134,7 @@ export function initCommissioner() {
   renderHealthBandsSection()
   const _ad = activeDraw()
   if (_ad) renderPickCompletion(_ad)
+  renderReuploadSection()
 }
 
 // ── COMMISSIONER HEADER ──
@@ -177,7 +179,7 @@ export function renderCommHeader() {
         const activeTab = document.querySelector('#comm-hdr-nav .hdr-nav-link.active')?.dataset.tab
         if (activeTab === 'lock') renderLockManaging()
         else if (activeTab === 'odds') renderOddsTab()
-        else if (activeTab === 'draw') { const ad = activeDraw(); if (ad) renderPickCompletion(ad) }
+        else if (activeTab === 'draw') { const ad = activeDraw(); if (ad) renderPickCompletion(ad); renderReuploadSection() }
         else {
           renderResults(); renderEspnScoreFeedSection(); renderHealthBandsStatusSection(); renderShrinkageKSection()
           startResultsRealtime(activeDraw()?.db_id, _onResultsRealtimeChange) // re-scope to the newly selected M/W draw
@@ -251,13 +253,12 @@ async function handleParseClick() {
   try {
     const text = await extractPdfText(file)
     parsedR1 = parseTnnsText(text)
-    if (!parsedR1 || parsedR1.length === 0) {
-      throw new Error('No matches found. Is this a TNNS Live draw PDF?')
-    }
+    const validation = validateParsedDraw(parsedR1)
+    if (!validation.ok) throw new Error(validation.error)
     renderR1Table(parsedR1)
     const confirmBtn = $c('comm-confirm-btn')
     if (confirmBtn) confirmBtn.style.display = ''
-    setDrawMsg('Parsed ' + parsedR1.length + ' R1 matches. Review below, then confirm.', 'success')
+    setDrawMsg(`64 matches, 128 positions, ${validation.placeholderCount} placeholder slot${validation.placeholderCount === 1 ? '' : 's'}.`, 'success')
   } catch (err) {
     setDrawMsg('Parse error: ' + err.message, 'error')
   } finally {
@@ -408,6 +409,7 @@ async function handleConfirmDraw() {
     renderExistingDraws()
     const _ad2 = activeDraw()
     if (_ad2) renderPickCompletion(_ad2)
+    renderReuploadSection()
   } catch (err) {
     setDrawMsg('Error saving draw: ' + err.message, 'error')
     btn.disabled = false; btn.textContent = 'Confirm draw'
@@ -675,13 +677,14 @@ async function handleReactivateDraw(drawDbId) {
     await renderGettingReadySection()
     const ad = activeDraw()
     if (ad) renderPickCompletion(ad)
+    renderReuploadSection()
   } catch (err) {
     alert('Error: ' + err.message)
   }
 }
 
 // ── PICK COMPLETION ──
-async function renderPickCompletion(d) {
+export async function renderPickCompletion(d) {
   const wrap = $c('comm-pick-completion-wrap')
   if (!wrap) return
   if (!d) { wrap.style.display = 'none'; return }

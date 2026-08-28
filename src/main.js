@@ -1056,6 +1056,25 @@ function showRosterAlerts(d) {
   render()
 }
 
+// ── QUALIFIERS PLACED ALERT ──
+// One draw-level modal, ack'd session-only exactly like _rosterAlertsAcked above —
+// see .claude/rules/qualifiers.md. Keyed by draw id + timestamp (not just draw id)
+// so a later re-upload that places MORE qualifiers shows the modal again.
+const _qualifiersPlacedAcked = new Set()
+
+function showQualifiersPlacedModal(d) {
+  if (!d?.qualifiers_placed_at) return
+  const key = d.db_id + '@' + d.qualifiers_placed_at
+  if (_qualifiersPlacedAcked.has(key)) return
+  _qualifiersPlacedAcked.add(key)
+
+  const modal = $('qualifiers-placed-modal')
+  const dismissBtn = $('qpm-dismiss')
+  if (!modal || !dismissBtn) return
+  dismissBtn.onclick = () => { modal.style.display = 'none' }
+  modal.style.display = 'flex'
+}
+
 // ── SHOW BRACKET SCREEN ──
 async function showBracketScreen() {
   stopBracketRealtime() // always reset; re-started below only when there's an active draw
@@ -1097,6 +1116,7 @@ async function showBracketScreen() {
   showScreen('screen-bracket')
   fetchPoolSlamIndex(activeDraw(), state.currentUser?.id).then(() => renderStats())
   showRosterAlerts(activeDraw())
+  showQualifiersPlacedModal(activeDraw())
   _captureWinnerBaseline()
   _startResultsPoll()
   _startRealtimeForActiveDraw()
