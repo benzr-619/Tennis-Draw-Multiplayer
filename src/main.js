@@ -1071,11 +1071,15 @@ function showQualifiersPlacedModal(d) {
   const modal = $('qualifiers-placed-modal')
   const dismissBtn = $('qpm-dismiss')
   if (!modal || !dismissBtn) return
-  dismissBtn.onclick = () => {
+  dismissBtn.onclick = async () => {
     modal.style.display = 'none'
     if (state.currentUser) {
+      const userId = state.currentUser.id
       state.currentUser.qualifiers_ack_key = key
-      supabase.from('profiles').update({ qualifiers_ack_key: key }).eq('id', state.currentUser.id)
+      // supabase-js query builders are lazy — the request only fires once awaited/
+      // .then()'d. A bare, un-awaited call here would silently never hit the DB.
+      const { error } = await supabase.from('profiles').update({ qualifiers_ack_key: key }).eq('id', userId)
+      if (error) console.error('Failed to persist qualifiers ack:', error)
     }
   }
   modal.style.display = 'flex'
