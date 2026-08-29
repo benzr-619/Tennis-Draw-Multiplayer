@@ -206,39 +206,46 @@ modal again instead of staying silently ack'd from the first placement.
 
 This raised a real question, not an assumed one: bucket A also stamps
 `roster_changed_at` on the match (same column bucket B/every roster swap uses), and
-`data.js`'s pre-lock branch (`loadDraw`) independently detects **any** match with
-`roster_changed_at` set and clears a user's stale `matchPick` if it doesn't match
-either current occupant. Verified directly against the database (not assumed) that
-this does **not** fire for bucket A:
+`data.js`'s pre-lock **and** post-lock branches (`loadDraw`) independently detect
+**any** match with `roster_changed_at` set and push a per-match `rosterAlerts`
+entry (pre-lock also clears a stale `matchPick`; post-lock reopens the match for a
+one-time repick).
 
-- `picks` has a `BEFORE UPDATE` trigger (`picks_updated_at` → `handle_updated_at()`)
-  that unconditionally sets `updated_at = now()` on **any** UPDATE, value-changed or
-  not.
-- `place_qualifiers`'s `UPDATE picks SET match_pick = ...` therefore bumps
-  `updated_at` on every pick row it touches — i.e. every user who had actually
-  picked the placeholder name.
-- `data.js`'s pre-lock branch skips a match entirely when
-  `pickUpdatedAt >= roster_changed_at` (`repickedSinceChange`). Since the RPC runs
-  strictly after the client stamps `roster_changed_at` (a `matches` UPDATE that
-  completes before the RPC call starts), every pick row the RPC touches ends up
-  with `updated_at` later than `roster_changed_at` — the exact condition that
-  short-circuits both the stale-pick-clearing block and the per-match
-  `rosterAlerts` push for that user.
-- By the time this check runs, `m.matchPick` (if it existed) already equals the
-  real name too (the RPC already rewrote it) — so even the narrower "does the
-  clearing condition literally trigger" question is moot twice over: the row is
-  skipped by `repickedSinceChange`, and even if it weren't, `m.matchPick !==
-  m.p1.name && m.matchPick !== m.p2.name` would already be false.
+**First attempt (wrong, shipped and then broken live 2026-08-28).** The initial
+reasoning was that `picks`' `BEFORE UPDATE` trigger (`picks_updated_at` →
+`handle_updated_at()`, unconditionally sets `updated_at = now()` on any UPDATE)
+would make `place_qualifiers`'s pick rewrite bump `updated_at` past
+`roster_changed_at` for every touched row, so the existing `repickedSinceChange`
+check (`pickUpdatedAt >= roster_changed_at`) would silently suppress the alert for
+anyone the RPC actually rewrote. That part was true — but it only covers users who
+had a **real pick row** naming the placeholder. A user who simply hadn't reached
+that match yet (no pick row at all, so no `updated_at` to compare) has
+`repickedSinceChange` evaluate falsy regardless, and both branches push the alert
+unconditionally whenever that happens — not just when there's something to clear.
+Confirmed live: the commissioner (also a player) got "Qualifier 5 has withdrawn —
+go to match" immediately after their own qualifiers-placed modal, because they
+hadn't picked that far into round 1 yet. Worse, the wording is simply **wrong**
+regardless of the timing question — bucket A's `replaced_name` is the placeholder
+itself (`"Qualifier 5"`), and the shared alert modal (`showRosterAlerts` in
+`main.js`) always renders it as `"<replaced_name> has withdrawn"`. A placeholder
+was never a real withdrawn player, so this text is nonsensical no matter whose pick
+timing happens to trip the check.
 
-**Known, accepted edge case:** a user who never picked that match at all (no pick
-row, so nothing for the RPC to touch, so no `updated_at` to compare) still falls
-through to the pre-lock branch's unconditional `rosterAlerts.push(...)` — they'll
-see an informational (non-blocking, no repick required) per-match alert alongside
-the new draw-level modal. This is not new or qualifier-specific: it's the same
-existing behavior for any real withdrawal swap on a match a user hasn't reached
-yet. Not fixed here — doing so would need a way to distinguish "roster_changed_at
-because of a qualifier placement" from "because of a withdrawal" in `data.js`,
-which is exactly the kind of new abstraction this feature was scoped to avoid.
+**Real fix: don't let a qualifier placement enter this code path at all.** Both
+branches in `data.js` now guard on `isPlaceholderName(m.replaced_name)` and skip
+the match entirely (no alert push, no clearing) when true:
+```js
+if (m.winner || !m.roster_changed_at || isPlaceholderName(m.replaced_name)) return
+```
+This needs no new column — `replaced_name` already unambiguously distinguishes the
+two cases: a real withdrawal always stamps a real player's name, a qualifier
+placement always stamps the placeholder (`_applyQualifierPlacement` in
+`commissioner-qualifiers.js` sets `replaced_name = oldName`, and `oldName` is by
+definition `Qualifier <position>` for bucket A). No timing dependency, no "did the
+RPC happen to touch this row" edge case — bucket A matches are unconditionally
+exempt from the per-match `rosterAlerts` mechanism, full stop. The draw-level
+`showQualifiersPlacedModal` (see above) remains the only alert a player sees for a
+qualifier placement.
 
 ## Files touched
 
@@ -251,7 +258,8 @@ which is exactly the kind of new abstraction this feature was scoped to avoid.
 - `src/commissioner-qualifiers.js` — new. Re-upload UI, diff, safety gates,
   bucket A/B apply paths.
 - `src/data.js` — `qualifiers_placed_at` selected/assembled/threaded through
-  `reloadActiveDraw`.
+  `reloadActiveDraw`; both `rosterAlerts` branches skip matches where
+  `replaced_name` is a placeholder (see "Pre-lock-only assumption" above).
 - `src/main.js` — `showQualifiersPlacedModal`, wired into `showBracketScreen`'s
   active-draw branch alongside `showRosterAlerts`.
 - `index.html` — `#qualifiers-placed-modal`, `#comm-reupload-wrap`.

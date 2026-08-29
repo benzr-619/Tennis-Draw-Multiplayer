@@ -4,6 +4,7 @@
 import { supabase } from './supabase.js'
 import { state } from './state.js'
 import { buildDrawView } from './draw-view.js'
+import { isPlaceholderName } from './player-names.js'
 
 // Background archive load — resolves when all inactive draws are merged into state.draws.
 // Leaderboard awaits this before rendering. null = not yet started / already complete.
@@ -220,7 +221,13 @@ export async function loadDraw(drawRow) {
     // Reach ALL players (even those whose pick is still valid) — the prompt is a heads-up.
     // A repick advances updated_at past roster_changed_at, silencing the alert on next load.
     assembled.rounds[0]?.matches.forEach((m, mi) => {
-      if (m.winner || !m.roster_changed_at) return
+      // A roster_changed_at stamped by a qualifier placement (bucket A in
+      // commissioner-qualifiers.js) is not a withdrawal — replaced_name is the
+      // placeholder itself ("Qualifier N"), never a real player. That flow has its
+      // own draw-level modal (main.js showQualifiersPlacedModal) and its own pick
+      // rewrite (the place_qualifiers RPC) — never fall through to the
+      // per-match "X has withdrawn" alert/reopen for it. See .claude/rules/qualifiers.md.
+      if (m.winner || !m.roster_changed_at || isPlaceholderName(m.replaced_name)) return
       const pickUpdatedAt = pickMap[m.db_id]?.updated_at
       const repickedSinceChange = pickUpdatedAt && new Date(pickUpdatedAt) >= new Date(m.roster_changed_at)
       if (repickedSinceChange) return
@@ -244,7 +251,10 @@ export async function loadDraw(drawRow) {
     // Pre-lock: clear stale in-memory picks (no editedAfterLock), push alerts.
     // No DB writes — RLS prevents writing to other users' picks rows.
     assembled.rounds[0]?.matches.forEach((m, mi) => {
-      if (m.winner || !m.roster_changed_at) return
+      // See the matching comment in the post-lock branch above — a qualifier
+      // placement's roster_changed_at is not a withdrawal and must never fall
+      // through to this per-match alert/clearing path.
+      if (m.winner || !m.roster_changed_at || isPlaceholderName(m.replaced_name)) return
       const pickUpdatedAt = pickMap[m.db_id]?.updated_at
       const repickedSinceChange = pickUpdatedAt && new Date(pickUpdatedAt) >= new Date(m.roster_changed_at)
       if (repickedSinceChange) return
