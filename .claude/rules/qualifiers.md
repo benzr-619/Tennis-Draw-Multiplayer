@@ -199,10 +199,29 @@ Qualifier placement always happens before the original-picks lock (qualifying
 finishes before the tournament's own matches start). Bucket A's alert is a single
 draw-level "Got it" modal (`#qualifiers-placed-modal`, `showQualifiersPlacedModal`
 in `main.js`) — **not** the existing per-match `rosterAlerts` reopen-for-repick flow
-that bucket B (and every other roster swap) uses. It's session-ack'd exactly like
-`_rosterAlertsAcked`, but keyed by `d.db_id + '@' + d.qualifiers_placed_at` (not
-just the draw id) so a *later* re-upload that places more qualifiers shows the
-modal again instead of staying silently ack'd from the first placement.
+that bucket B (and every other roster swap) uses. Keyed by `d.db_id + '@' +
+d.qualifiers_placed_at` (not just the draw id) so a *later* re-upload that places
+more qualifiers shows the modal again instead of staying silently ack'd from the
+first placement.
+
+**Ack'd via `profiles.qualifiers_ack_key` (persisted), not an in-memory Set — fixed
+2026-08-28, same day as ship.** The first version session-ack'd this exactly like
+`_rosterAlertsAcked` (a module-level `Set()`), which is the right call for roster
+alerts because a repick gives them a real, DB-backed completion signal
+(`picks.updated_at` advancing past `roster_changed_at`) independent of the session
+Set — the Set is only a same-session convenience on top of that. A qualifiers-
+placed event has no equivalent per-user signal to fall back on: dismissing the
+modal doesn't change any pick, so a purely in-memory ack re-showed the modal on
+**every single login**, not just the first time. Fixed with a one-column persisted
+ack: `profiles.qualifiers_ack_key text` (migration `add_qualifiers_ack_key_to_profiles`),
+selected in `fetchProfile()` (`auth.js`) alongside `display_name`/`is_commissioner`.
+`showQualifiersPlacedModal` checks `state.currentUser?.qualifiers_ack_key === key`
+before showing; the dismiss handler writes the key back via
+`supabase.from('profiles').update({ qualifiers_ack_key: key }).eq('id', ...)`
+(already covered by the existing "Users can update their own profile" RLS policy —
+no new policy needed) and patches `state.currentUser` locally so it doesn't
+re-prompt again later in the same session before the next profile fetch. One
+column is enough — a player only ever needs to remember the *last* key they acked.
 
 This raised a real question, not an assumed one: bucket A also stamps
 `roster_changed_at` on the match (same column bucket B/every roster swap uses), and
@@ -261,9 +280,12 @@ qualifier placement.
   `reloadActiveDraw`; both `rosterAlerts` branches skip matches where
   `replaced_name` is a placeholder (see "Pre-lock-only assumption" above).
 - `src/main.js` — `showQualifiersPlacedModal`, wired into `showBracketScreen`'s
-  active-draw branch alongside `showRosterAlerts`.
+  active-draw branch alongside `showRosterAlerts`; ack persisted via
+  `profiles.qualifiers_ack_key`, not an in-memory Set.
+- `src/auth.js` — `fetchProfile()` selects `qualifiers_ack_key`.
 - `index.html` — `#qualifiers-placed-modal`, `#comm-reupload-wrap`.
 - `src/bracket.js`, `src/viewer-bracket.js`, `src/print.js`, `src/picks.js`,
   `src/leaderboard-slams.js` — `displayName()` wired into every player-facing name
   render site (see table above).
-- DB migrations: `add_qualifiers_placed_at_to_draws`, `add_place_qualifiers_rpc`.
+- DB migrations: `add_qualifiers_placed_at_to_draws`, `add_place_qualifiers_rpc`,
+  `add_qualifiers_ack_key_to_profiles`.

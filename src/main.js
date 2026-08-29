@@ -1057,21 +1057,27 @@ function showRosterAlerts(d) {
 }
 
 // ── QUALIFIERS PLACED ALERT ──
-// One draw-level modal, ack'd session-only exactly like _rosterAlertsAcked above —
-// see .claude/rules/qualifiers.md. Keyed by draw id + timestamp (not just draw id)
-// so a later re-upload that places MORE qualifiers shows the modal again.
-const _qualifiersPlacedAcked = new Set()
-
+// One draw-level modal. Ack'd via profiles.qualifiers_ack_key (persisted), NOT an
+// in-memory Set like _rosterAlertsAcked above — a qualifiers-placed event has no
+// real per-user completion signal the way a roster-alert repick does (advancing
+// picks.updated_at), so session-only acking re-showed this on every single login.
+// Keyed by draw id + timestamp (not just draw id) so a later re-upload that places
+// MORE qualifiers shows the modal again. See .claude/rules/qualifiers.md.
 function showQualifiersPlacedModal(d) {
   if (!d?.qualifiers_placed_at) return
   const key = d.db_id + '@' + d.qualifiers_placed_at
-  if (_qualifiersPlacedAcked.has(key)) return
-  _qualifiersPlacedAcked.add(key)
+  if (state.currentUser?.qualifiers_ack_key === key) return
 
   const modal = $('qualifiers-placed-modal')
   const dismissBtn = $('qpm-dismiss')
   if (!modal || !dismissBtn) return
-  dismissBtn.onclick = () => { modal.style.display = 'none' }
+  dismissBtn.onclick = () => {
+    modal.style.display = 'none'
+    if (state.currentUser) {
+      state.currentUser.qualifiers_ack_key = key
+      supabase.from('profiles').update({ qualifiers_ack_key: key }).eq('id', state.currentUser.id)
+    }
+  }
   modal.style.display = 'flex'
 }
 
