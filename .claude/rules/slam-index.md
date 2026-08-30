@@ -666,7 +666,20 @@ inferring the exception from data at read time altogether.
   (leaderboard.js), `_loadBaseline` (leaderboard-slams.js), `buildCombinedCard`
   (leaderboard-slams-combined.js).
 
-### Migration (2026-08-30)
+**Implemented same day.** All four call sites above now branch on
+`draws.slam_index_version` first: `siVersion === 1` runs the real v1
+pool-relative `calcSlamIndex` path; `siVersion === 2 || 4` only ever produces a
+number when `chalkBaselinesForVersion(...).valid` is true, otherwise sets
+`slamIndex`/the drawer's pool index to `null` (→ "—") while still flagging v2/v4
+copy (`_poolSlamIndexIsV2` in stats.js is now set unconditionally for a v2/v4
+draw, not only when chalk validates). `_loadBaseline`'s movement-arrow baseline
+does the analogous thing by `continue`-ing past a v2/v4 draw with invalid chalk
+for that round, rather than computing a v1-scale rank that would produce
+meaningless arrows against the current (correctly v2/v4-scored) rank.
+French Open 2026 MS/WS were updated in the live `draws` table to
+`slam_index_version = 1` (previously `4`, inferred-as-v1 only via `chalk.valid`
+being permanently false for them) — the only two draws expected to ever carry
+this flag.
 
 `chalk_dy`, `chalk_my`, `sigma_my` columns dropped from `draws`. `dy_sim_matrix`
 (text, base64) added. `slam_index_version` column default bumped to `4`;

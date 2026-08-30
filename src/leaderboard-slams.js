@@ -172,14 +172,26 @@ async function _loadBaseline(group, profs, R) {
       return { id: p.id, score: s.baseScore + s.skillBonus, my: s.matchYieldResolved > 0 ? s.matchYield : 0, has: s.filled > 0 && isPoolEligible(ud) }
     }).filter(e => e.has)
     const siVersion = d.slam_index_version ?? 1
-    // R-1 (not Infinity) — always routes to the v2 closed form inside
-    // chalkBaselinesForVersion regardless of siVersion, since there's no persisted
-    // per-round Monte Carlo snapshot to read for an "as of round R-1" baseline.
-    const chalk = (siVersion === 2 || siVersion === 4) ? chalkBaselinesForVersion(assembleDrawForUser(d, []), siVersion, R - 1) : null
-    const idxs = calcSlamIndex(ents.map(e => ({ score: e.score, matchYield: e.my })), { version: siVersion, chalk })
-    ;[...ents].map((e, i) => ({ ...e, si: idxs[i] }))
-      .sort((a, b) => (b.si ?? -Infinity) - (a.si ?? -Infinity))
-      .forEach((e, i) => { result[d.db_id + ':' + e.id] = i + 1 })
+    if (siVersion === 2 || siVersion === 4) {
+      // R-1 (not Infinity) — always routes to the v2 closed form inside
+      // chalkBaselinesForVersion regardless of siVersion, since there's no persisted
+      // per-round Monte Carlo snapshot to read for an "as of round R-1" baseline.
+      const chalk = chalkBaselinesForVersion(assembleDrawForUser(d, []), siVersion, R - 1)
+      // No trustworthy chalk baseline yet — no v1 substitution (see
+      // .claude/rules/slam-index.md "Fallback policy reversal"). Skip this draw
+      // entirely so movement arrows just don't render for it, rather than comparing
+      // ranks computed on two different scales.
+      if (!chalk?.valid) continue
+      const idxs = calcSlamIndex(ents.map(e => ({ score: e.score, matchYield: e.my })), { version: siVersion, chalk })
+      ;[...ents].map((e, i) => ({ ...e, si: idxs[i] }))
+        .sort((a, b) => (b.si ?? -Infinity) - (a.si ?? -Infinity))
+        .forEach((e, i) => { result[d.db_id + ':' + e.id] = i + 1 })
+    } else {
+      const idxs = calcSlamIndex(ents.map(e => ({ score: e.score, matchYield: e.my })), { version: 1 })
+      ;[...ents].map((e, i) => ({ ...e, si: idxs[i] }))
+        .sort((a, b) => (b.si ?? -Infinity) - (a.si ?? -Infinity))
+        .forEach((e, i) => { result[d.db_id + ':' + e.id] = i + 1 })
+    }
   }
   return result
 }

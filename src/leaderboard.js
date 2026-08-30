@@ -256,21 +256,31 @@ export async function loadDrawStatsForAllUsers(baseDraw) {
   const eligibleProfs = profs.filter(p => result[p.id]?.hasAnyPicks && result[p.id]?.poolEligible)
   if (eligibleProfs.length > 0) {
     const siVersion = baseDraw.slam_index_version ?? 1
-    const chalk = (siVersion === 2 || siVersion === 4)
-      ? chalkBaselinesForVersion(buildDrawView(structuredClone(baseDraw)), siVersion)
-      : null
-    // The ACTUAL formula used, not just the draw's own flag — a v2/v3 draw without
-    // enough ELO/odds data (or, for v3, without a persisted simulation yet) falls
-    // back to v1 internally (calcSlamIndex), and downstream consumers that need to
-    // know which scale a slamIndex sits on (computeShrinkageK) must read this, not
-    // baseDraw.slam_index_version.
-    const usedVersion = (siVersion === 2 || siVersion === 4) && chalk?.valid ? siVersion : 1
-    const entries = eligibleProfs.map(p => ({
-      score: result[p.id].score ?? 0,
-      matchYield: result[p.id].matchYield ?? 0,
-    }))
-    const indexes = calcSlamIndex(entries, { version: siVersion, chalk })
-    eligibleProfs.forEach((prof, i) => { result[prof.id].slamIndex = indexes[i]; result[prof.id].slamIndexVersion = usedVersion })
+    if (siVersion === 2 || siVersion === 4) {
+      // v2/v4: only ever computed against the draw's own chalk baseline — no v1
+      // pool-relative substitution. An invalid/not-yet-decided chalk baseline means
+      // no number yet (null), not a silent fallback to a different formula. See
+      // .claude/rules/slam-index.md "Fallback policy reversal".
+      const chalk = chalkBaselinesForVersion(buildDrawView(structuredClone(baseDraw)), siVersion)
+      if (chalk?.valid) {
+        const entries = eligibleProfs.map(p => ({
+          score: result[p.id].score ?? 0,
+          matchYield: result[p.id].matchYield ?? 0,
+        }))
+        const indexes = calcSlamIndex(entries, { version: siVersion, chalk })
+        eligibleProfs.forEach((prof, i) => { result[prof.id].slamIndex = indexes[i]; result[prof.id].slamIndexVersion = siVersion })
+      } else {
+        eligibleProfs.forEach(prof => { result[prof.id].slamIndex = null; result[prof.id].slamIndexVersion = siVersion })
+      }
+    } else {
+      // siVersion === 1 — real v1 pool-relative index, only for a draw explicitly flagged v1.
+      const entries = eligibleProfs.map(p => ({
+        score: result[p.id].score ?? 0,
+        matchYield: result[p.id].matchYield ?? 0,
+      }))
+      const indexes = calcSlamIndex(entries, { version: 1 })
+      eligibleProfs.forEach((prof, i) => { result[prof.id].slamIndex = indexes[i]; result[prof.id].slamIndexVersion = 1 })
+    }
   }
 
   statsCache.set(baseDraw.db_id, result)
