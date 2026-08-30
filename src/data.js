@@ -32,7 +32,7 @@ export async function loadAllDraws() {
   console.time('loadAllDraws:drawRows')
   const { data: drawRows, error: de } = await supabase
     .from('draws')
-    .select('id, slam, draw_type, year, original_picks_locked, is_active, exclude_from_leaderboard, created_at, elo_synced_at, scoring_version, slam_index_version, qualifiers_placed_at, sigma_dy, sigma_my, chalk_dy, chalk_my, sim_seed, sim_runs, sim_computed_at')
+    .select('id, slam, draw_type, year, original_picks_locked, is_active, exclude_from_leaderboard, created_at, elo_synced_at, scoring_version, slam_index_version, qualifiers_placed_at, sigma_dy, sim_seed, sim_runs, sim_computed_at')
     .order('created_at', { ascending: true })
   console.timeEnd('loadAllDraws:drawRows')
 
@@ -198,13 +198,14 @@ export async function loadDraw(drawRow) {
     scoring_version: drawRow.scoring_version ?? 1,
     slam_index_version: drawRow.slam_index_version ?? 1,
     qualifiers_placed_at: drawRow.qualifiers_placed_at ?? null,
-    // Slam Index v3 — persisted Monte Carlo chalk-baseline snapshot (see
-    // .claude/rules/slam-index.md "v3" and src/slam-index-sim.js). null until a
-    // commissioner runs the recompute for this draw.
+    // Slam Index v4 — persisted σ_DY, kept in sync (never re-simulated) on every
+    // winner confirm/undo from the persisted dy_sim_matrix (see
+    // .claude/rules/slam-index.md "v4" and src/slam-index-sim.js). The matrix
+    // itself is deliberately NOT selected here — it's a ~800KB blob only ever
+    // needed by the confirm/undo trigger, not by any render path. chalkDY/chalkMY/
+    // sigmaMY are no longer persisted at all under v4 — always computed live.
+    // null until the draw's first winner confirmation.
     sigma_dy: drawRow.sigma_dy ?? null,
-    sigma_my: drawRow.sigma_my ?? null,
-    chalk_dy: drawRow.chalk_dy ?? null,
-    chalk_my: drawRow.chalk_my ?? null,
     sim_seed: drawRow.sim_seed ?? null,
     sim_runs: drawRow.sim_runs ?? null,
     sim_computed_at: drawRow.sim_computed_at ?? null,
@@ -331,10 +332,10 @@ export async function reloadActiveDraw() {
   if (!d) return
   // Note: this hand-built row is missing elo_synced_at, same pre-existing gap as
   // slam_index_version was before this fix — a reload silently resets whatever
-  // isn't listed here. slam_index_version and the v3 sim columns are added now
-  // because a reload right after the new Monte Carlo recompute action (below)
-  // would otherwise immediately erase the values it just wrote.
-  const drawRow = { id: d.db_id, slam: d.slam, draw_type: d.draw, year: d.year, original_picks_locked: d.locked, is_active: d.is_active, exclude_from_leaderboard: d.excludeFromLeaderboard, scoring_version: d.scoring_version, slam_index_version: d.slam_index_version, qualifiers_placed_at: d.qualifiers_placed_at, sigma_dy: d.sigma_dy, sigma_my: d.sigma_my, chalk_dy: d.chalk_dy, chalk_my: d.chalk_my, sim_seed: d.sim_seed, sim_runs: d.sim_runs, sim_computed_at: d.sim_computed_at }
+  // isn't listed here. slam_index_version and the v4 sim columns are included so a
+  // reload right after updateSlamIndexSigmaDY's in-memory patch (commissioner-
+  // results.js) doesn't immediately erase the value it just wrote.
+  const drawRow = { id: d.db_id, slam: d.slam, draw_type: d.draw, year: d.year, original_picks_locked: d.locked, is_active: d.is_active, exclude_from_leaderboard: d.excludeFromLeaderboard, scoring_version: d.scoring_version, slam_index_version: d.slam_index_version, qualifiers_placed_at: d.qualifiers_placed_at, sigma_dy: d.sigma_dy, sim_seed: d.sim_seed, sim_runs: d.sim_runs, sim_computed_at: d.sim_computed_at }
   const refreshed = await loadDraw(drawRow)
   state.draws[state.activeTab] = refreshed
   await loadLockSchedules()

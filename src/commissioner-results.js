@@ -101,8 +101,12 @@ export async function recomputeShrinkageK() {
     import('./leaderboard.js'),
     import('./leaderboard-records-data.js'),
   ])
+  const { isDrawComplete } = await import('./scoring.js')
   const profs = await loadAllProfiles()
-  const draws = state.draws.filter(d => !d.excludeFromLeaderboard && d.locked)
+  // Completed draws only — same restriction the Records tab itself now applies
+  // (v4, see .claude/rules/slam-index.md) — this K estimate calibrates that same
+  // standings table, so it must be measured over the same population.
+  const draws = state.draws.filter(d => !d.excludeFromLeaderboard && isDrawComplete(d))
   const statsMaps = await Promise.all(draws.map(d => loadDrawStatsForAllUsers(d)))
   const brackets = buildAllBrackets(profs, draws, statsMaps)
   const result = computeShrinkageK(brackets)
@@ -188,13 +192,69 @@ export async function renderShrinkageKSection() {
   $c('comm-apply-k-btn')?.addEventListener('click', handleApplyK)
 }
 
-// ── SLAM INDEX v3 — MONTE CARLO σ STATUS CARD (persisted, per-draw) ──
-// Mirrors the shrinkage-K card's shape (a persisted row + a manual recompute
-// button) but scoped to the currently active draw, not the whole pool — sigma_dy/
-// sigma_my are a property of one draw's own bracket, not a cross-draw quantity.
-// See .claude/rules/slam-index.md "v3" and src/slam-index-sim.js for what the
-// recompute actually does; this is wiring only.
-async function handleRecomputeSlamIndexSim() {
+// ── SLAM INDEX v4 — PERSISTED σ_DY MATRIX (per-draw) ──
+// See .claude/rules/slam-index.md "v4". Unlike v3, chalk's realized score
+// (chalkDY/chalkMY) and σ_MY are never persisted at all — both are cheap closed
+// forms recomputed live on every call (chalkBaselinesForVersion in scoring.js).
+// The only thing persisted here is σ_DY's supporting Monte Carlo evidence: a
+// 40,000-run × 127-position outcome matrix (draws.dy_sim_matrix), written ONCE per
+// draw (normally by updateSlamIndexSigmaDY's fire-and-forget call from picks.js —
+// see picks.js applyWinner/undoWinner — the instant the draw's first winner is
+// confirmed), plus the scalar draws.sigma_dy it's masked down to on every
+// subsequent confirm/undo. This section is a status readout + a manual
+// "force resimulate" escape hatch (e.g. after a large ELO resync) — the button is
+// not needed for normal operation, which self-triggers from picks.js.
+export async function updateSlamIndexSigmaDY(d, source) {
+  if (!state.currentUser?.is_commissioner || !d?.db_id) return
+  if ((d.slam_index_version ?? 1) !== 4) return
+  try {
+    const [{ getScoringConfig, buildEloChalkBracket }, simMod] = await Promise.all([
+      import('./scoring.js'),
+      import('./slam-index-sim.js'),
+    ])
+    const config = getScoringConfig(d.scoring_version ?? 1)
+    const decidedKeys = new Set()
+    d.rounds.forEach((r, ri) => r.matches.forEach((m, mi) => { if (m.winner) decidedKeys.add(`${ri}-${mi}`) }))
+    if (decidedKeys.size === 0) return // nothing decided yet — nothing to score chalk against
+
+    let sigmaDY
+    if (!d.sim_computed_at) {
+      // First confirmation for this draw (qualifiers are placed well before any
+      // match can decide) — run the one-time 40k full-bracket simulation and
+      // persist its outcome matrix. Every later confirm/undo only masks this
+      // matrix; it is never re-simulated.
+      const chalk = buildEloChalkBracket(d)
+      const { matrix, positions, runs, seed } = simMod.runChalkSimulationMatrix(d, chalk, { runs: 40000, seed: 42 })
+      sigmaDY = simMod.sigmaDYFromMatrix(matrix, positions, runs, decidedKeys, config.roundBase)
+      const computedAt = new Date().toISOString()
+      const { error } = await supabase.from('draws').update({
+        dy_sim_matrix: simMod.matrixToBase64(matrix),
+        sim_seed: seed, sim_runs: runs, sim_computed_at: computedAt, sigma_dy: sigmaDY,
+      }).eq('id', d.db_id)
+      if (error) throw error
+      d.sim_seed = seed; d.sim_runs = runs; d.sim_computed_at = computedAt
+    } else {
+      // Matrix already persisted for this draw — fetch it (a separate targeted
+      // query; the matrix is deliberately NOT part of the normal draw-load select,
+      // see .claude/rules/slam-index.md) and mask it down to the newly-changed
+      // decided set. No re-simulation.
+      const { data, error } = await supabase.from('draws').select('dy_sim_matrix').eq('id', d.db_id).single()
+      if (error) throw error
+      if (!data?.dy_sim_matrix) return
+      const matrix = simMod.base64ToMatrix(data.dy_sim_matrix)
+      const positions = simMod.flattenDrawPositions(d)
+      sigmaDY = simMod.sigmaDYFromMatrix(matrix, positions, d.sim_runs, decidedKeys, config.roundBase)
+      const { error: uErr } = await supabase.from('draws').update({ sigma_dy: sigmaDY }).eq('id', d.db_id)
+      if (uErr) throw uErr
+    }
+    d.sigma_dy = sigmaDY
+    renderSlamIndexSimSection()
+  } catch (err) {
+    console.error(`Slam Index σ_DY update failed (source=${source})`, err)
+  }
+}
+
+async function handleForceResimulate() {
   if (!state.currentUser?.is_commissioner) return
   const d = activeDraw()
   if (!d) return
@@ -203,36 +263,13 @@ async function handleRecomputeSlamIndexSim() {
   if (btn) btn.disabled = true
   if (msg) { msg.className = 'comm-msg'; msg.textContent = 'Simulating (40,000 runs)…' }
   try {
-    const [{ calcChalkBaselines, getScoringConfig, buildEloChalkBracket }, { simulateChalkSigma }] = await Promise.all([
-      import('./scoring.js'),
-      import('./slam-index-sim.js'),
-    ])
-    const config = getScoringConfig(d.scoring_version ?? 1)
-    const realized = calcChalkBaselines(d) // chalkDY/chalkMY are unchanged — same closed form as v2
-    if (!realized.valid) throw new Error('Not enough ELO/odds data for this draw to trust a chalk baseline.')
-    const chalk = buildEloChalkBracket(d)
-    const seed = 42, runs = 40000
-    const { sigmaDY, sigmaMY } = simulateChalkSigma(d, chalk, config, { runs, seed })
-    const computedAt = new Date().toISOString()
-
-    const { error } = await supabase.from('draws').update({
-      chalk_dy: realized.chalkDY, chalk_my: realized.chalkMY,
-      sigma_dy: sigmaDY, sigma_my: sigmaMY,
-      sim_seed: seed, sim_runs: runs, sim_computed_at: computedAt,
-      slam_index_version: 3,
-    }).eq('id', d.db_id)
-    if (error) throw error
-
-    // Patch in-memory BEFORE reload — reloadActiveDraw() rebuilds its drawRow from
-    // local flags, not a fresh draws fetch (see data.js reloadActiveDraw).
-    d.chalk_dy = realized.chalkDY; d.chalk_my = realized.chalkMY
-    d.sigma_dy = sigmaDY; d.sigma_my = sigmaMY
-    d.sim_seed = seed; d.sim_runs = runs; d.sim_computed_at = computedAt
-    d.slam_index_version = 3
-    await reloadActiveDraw()
-
-    if (msg) { msg.className = 'comm-msg success'; msg.textContent = `Done — σ_DY=${sigmaDY.toFixed(1)}, σ_MY=${sigmaMY.toFixed(1)}` }
-    renderResults()
+    // Force a fresh full simulation regardless of whether one already exists —
+    // clear the persisted markers first so updateSlamIndexSigmaDY takes the
+    // "first confirmation" branch instead of just masking the old matrix.
+    d.sim_computed_at = null
+    await updateSlamIndexSigmaDY(d, 'manual-force')
+    if (!d.sim_computed_at) throw new Error('Nothing decided yet in this draw to simulate against.')
+    if (msg) { msg.className = 'comm-msg success'; msg.textContent = `Done — σ_DY=${Number(d.sigma_dy).toFixed(1)}` }
   } catch (err) {
     if (msg) { msg.className = 'comm-msg error'; msg.textContent = 'Error: ' + err.message }
   } finally {
@@ -252,25 +289,32 @@ export async function renderSlamIndexSimSection() {
   wrap.innerHTML = ''
   if (!d) return
 
+  const { chalkBaselinesForVersion } = await import('./scoring.js')
+  if (gen !== _simStatusGen) return
+  const siVersion = d.slam_index_version ?? 1
+  const chalk = (siVersion === 2 || siVersion === 4) ? chalkBaselinesForVersion(d, siVersion) : null
+
   const pill = document.createElement('div')
   pill.style.cssText = 'font-family:var(--mono);font-size:11px;color:var(--text3);padding:4px 12px;line-height:1.7'
+  const liveBits = chalk
+    ? `chalk_DY=${chalk.chalkDY.toFixed(1)} · chalk_MY=${chalk.chalkMY.toFixed(1)} · σ_MY=${chalk.sigmaMY.toFixed(1)} (both live, recomputed every render)`
+    : 'not enough ELO/odds data yet to trust a chalk baseline'
   if (d.sim_computed_at == null) {
-    pill.textContent = 'Slam Index σ (Monte Carlo): not yet computed for this draw — falls back to the v2 closed-form estimate'
+    pill.innerHTML = `Slam Index σ_DY (Monte Carlo): not yet computed for this draw — falls back to the v2 closed-form estimate<br>${liveBits}`
   } else {
-    pill.innerHTML = `Slam Index σ (Monte Carlo): σ_DY=${Number(d.sigma_dy).toFixed(1)} · σ_MY=${Number(d.sigma_my).toFixed(1)} · `
-      + `chalk_DY=${Number(d.chalk_dy).toFixed(1)} · chalk_MY=${Number(d.chalk_my).toFixed(1)} · runs=${d.sim_runs} · seed=${d.sim_seed}<br>`
-      + `computed ${new Date(d.sim_computed_at).toLocaleString()}`
+    pill.innerHTML = `Slam Index σ_DY (Monte Carlo): ${Number(d.sigma_dy).toFixed(1)} · runs=${d.sim_runs} · seed=${d.sim_seed} `
+      + `· matrix computed ${new Date(d.sim_computed_at).toLocaleString()} (masked to current results on every confirm/undo, never re-simulated)<br>${liveBits}`
   }
   wrap.appendChild(pill)
 
   const btnRow = document.createElement('div')
   btnRow.style.cssText = 'padding:4px 12px 8px;display:flex;gap:8px;align-items:center'
   btnRow.innerHTML = `
-    <button class="comm-btn comm-btn-secondary" id="comm-recompute-sim-btn">Recompute σ (Monte Carlo)</button>
+    <button class="comm-btn comm-btn-secondary" id="comm-recompute-sim-btn">Force resimulate σ_DY</button>
     <div class="comm-msg" id="comm-sim-msg"></div>`
   wrap.appendChild(btnRow)
 
-  $c('comm-recompute-sim-btn')?.addEventListener('click', handleRecomputeSlamIndexSim)
+  $c('comm-recompute-sim-btn')?.addEventListener('click', handleForceResimulate)
 }
 
 // ── MOBILE ROUND STATE ──

@@ -56,11 +56,11 @@ function buildCombinedCard(group, allMaps, profs, color) {
     score: (m1[p.id].score ?? 0) + (m2[p.id].score ?? 0),
     matchYield: (m1[p.id].matchYield ?? 0) + (m2[p.id].matchYield ?? 0),
   }))
-  // Both draws must be on a chalk-referenced version (v2 or v3, mixed is fine —
+  // Both draws must be on a chalk-referenced version (v2 or v4, mixed is fine —
   // the formula shape is identical) to trust a combined chalk baseline; otherwise
   // fall back to the pool-relative index (see calcSlamIndex).
   const v1c = d1.slam_index_version ?? 1, v2c = d2.slam_index_version ?? 1
-  const bothChalkOk = (v1c === 2 || v1c === 3) && (v2c === 2 || v2c === 3)
+  const bothChalkOk = (v1c === 2 || v1c === 4) && (v2c === 2 || v2c === 4)
   const siVersion = bothChalkOk ? Math.max(v1c, v2c) : 1
   const chalk = bothChalkOk
     ? combineChalkBaselines(chalkBaselinesForVersion(assembleDrawForUser(d1, []), v1c), chalkBaselinesForVersion(assembleDrawForUser(d2, []), v2c))

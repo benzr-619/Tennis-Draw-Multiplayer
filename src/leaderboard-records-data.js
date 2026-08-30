@@ -75,7 +75,7 @@ export function topByKey(brackets, key, n = 10) {
 // construction) and would corrupt the v2 mean. null when there are no v2
 // entries at all (caller falls back to 100, the only sane default left).
 export function computePoolMeanIndex(brackets) {
-  const v2 = brackets.filter(e => e.slamIndexVersion === 2 && e.slamIndex != null)
+  const v2 = brackets.filter(e => (e.slamIndexVersion === 2 || e.slamIndexVersion === 4) && e.slamIndex != null)
   if (!v2.length) return null
   return v2.reduce((s, e) => s + e.slamIndex, 0) / v2.length
 }
@@ -162,7 +162,7 @@ export function buildShrinkageStandings(profs, agg, poolMeanIndex, K = 5) {
 export function computeShrinkageK(brackets) {
   const byPlayer = new Map()
   brackets
-    .filter(e => e.slamIndexVersion === 2 && e.slamIndex != null)
+    .filter(e => (e.slamIndexVersion === 2 || e.slamIndexVersion === 4) && e.slamIndex != null)
     .forEach(e => {
       if (!byPlayer.has(e.prof.id)) byPlayer.set(e.prof.id, [])
       byPlayer.get(e.prof.id).push(e)

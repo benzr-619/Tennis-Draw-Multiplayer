@@ -332,6 +332,18 @@ export function calcStats(d) { return calcStatsAsOf(d, null) }
 // .claude/rules/leaderboard-detail.md "Pool Eligibility" (decided 2026-07-02).
 export const POOL_ELIGIBILITY_THRESHOLD = 0.5
 
+// A draw is "complete" once its champion is decided (the Final has a winner) —
+// distinct from `d.locked` (original_picks_locked), which flips at tournament
+// START, not finish. Slam Index v4: only completed draws may feed career
+// aggregates (Records tab) — a live draw's index is still meaningful moment-to-
+// moment (shown on the Slams tab), but it isn't a finished result yet and
+// shouldn't be averaged into a player's all-time standing while it's still moving.
+export function isDrawComplete(d) {
+  const rounds = d.rounds
+  if (!rounds?.length) return false
+  return !!rounds[rounds.length - 1].matches[0]?.winner
+}
+
 export function isPoolEligible(d) {
   let picked = 0, total = 0
   d.rounds.forEach(r => r.matches.forEach(m => {
@@ -462,40 +474,76 @@ export function calcChalkBaselines(d, filterRi = Infinity) {
   }
 }
 
-// ── SLAM INDEX v3 — MONTE CARLO σ (persisted, commissioner-triggered) ──
-// See .claude/rules/slam-index.md "v3". v2's sigmaDY/sigmaMY (above) treat each
-// match as an independent Bernoulli trial, which drops the positive covariance a
-// real bracket has (a busted round-1 pick kills every later round it fed) — this
-// understates sigma_DY by 20-30%, inflating every z-score, by a DIFFERENT amount
-// per draw, which defeats the point of a cross-slam-comparable index. v3 replaces
-// only the two denominators with a Monte Carlo estimate (src/slam-index-sim.js) —
-// chalkDY/chalkMY (the realized scores) are unchanged, still the plain closed-form
-// values above. The simulation is expensive (40k full-bracket walks) and is never
-// run inline on a render — a commissioner action runs it once and persists the
-// result onto the draws row (sigma_dy, sigma_my, chalk_dy, chalk_my, sim_seed,
-// sim_runs, sim_computed_at), threaded through by data.js like any other draws
-// column.
-export function chalkBaselinesV3(d) {
-  const valid = d.chalk_dy != null && d.chalk_my != null && d.sigma_dy > 0 && d.sigma_my > 0
-  return { chalkDY: d.chalk_dy ?? 0, chalkMY: d.chalk_my ?? 0, sigmaDY: d.sigma_dy ?? 0, sigmaMY: d.sigma_my ?? 0, valid }
+// ── SLAM INDEX v4 — LIVE CHALK REALIZED, LIVE σ_MY, PERSISTED σ_DY MATRIX ──
+// See .claude/rules/slam-index.md "v4". Replaces v3. v3's mistake was freezing
+// chalk's realized score (chalk_dy/chalk_my) at simulation time — wrong, because
+// it's fully deterministic from real results and must track them as more matches
+// decide, not sit pinned to whatever was true the day the commissioner clicked
+// "recompute." v4 always recomputes chalkDY/chalkMY live via calcChalkBaselines'
+// existing closed-form walk (that part of the v2/v3 math was never wrong, only the
+// freezing of its output was) — no persistence for those two numbers at all.
+//
+// σ_MY no longer needs simulation, or even v2's independent-Bernoulli-sum
+// approximation: a flat-stake bet's payout on one match is completely independent
+// of every other match's payout (bets settle on their own, with no cascade/path
+// dependency the way Draw Yield's bracket rounds have), so the closed-form
+// binomial-variance sum in calcSigmaMYLive is *exact*, not an approximation to be
+// superseded by simulation later.
+//
+// σ_DY is the one piece that still needs Monte Carlo — a real bracket has genuine
+// cross-round covariance a closed form can't capture (busting round 1 kills every
+// later round it fed). But instead of freezing a scalar, only the simulated
+// OUTCOME MATRIX is persisted once per draw (draws.dy_sim_matrix — see
+// src/slam-index-sim.js), and draws.sigma_dy is a cheap scalar kept in sync on
+// every winner confirm/undo by masking that persisted matrix to whatever's
+// currently decided — never by re-simulating.
+export function chalkBaselinesV4(d, filterRi = Infinity) {
+  const v2 = calcChalkBaselines(d, filterRi) // chalkDY/chalkMY (live, unchanged math) + v2 closed-form sigmaDY as fallback
+  const sigmaMYLive = calcSigmaMYLive(d, filterRi)
+  // The persisted Monte Carlo σ_DY only applies to the live (uncut) baseline — the
+  // Slams-tab movement-arrow "as of round R-1" baseline has no per-round persisted
+  // value, so it falls back to the v2 closed form, same posture v3 had.
+  const sigmaDY = (filterRi === Infinity && d.sigma_dy > 0) ? d.sigma_dy : v2.sigmaDY
+  const valid = v2.valid && sigmaDY > 0 && sigmaMYLive.valid
+  return { chalkDY: v2.chalkDY, chalkMY: v2.chalkMY, sigmaDY, sigmaMY: sigmaMYLive.sigmaMY, valid }
 }
 
-// Single dispatch point every v2/v3 call site should use instead of calling
-// calcChalkBaselines/chalkBaselinesV3 directly. version 3 with filterRi === Infinity
-// (the "live/current" baseline) reads the persisted Monte Carlo snapshot when one
-// exists; version 3 at any other filterRi (the Slams-tab movement-arrow "as of
-// round R-1" baseline, which has no per-round persisted snapshot) and version 3
-// with no persisted snapshot yet both fall back to the v2 closed form — cheap to
-// compute inline, unlike the simulation, so this never violates "don't simulate on
-// every render." version 2 always uses the closed form. Anything else → null.
+// Exact variance of a single flat-stake bet's payout on the ODDS FAVOURITE side of
+// a decided match: a win pays stake*(favOdds-1), a loss pays -stake, so
+// Var = p(1-p) × (stake×favOdds)² where p is the DE-VIGGED implied win probability
+// of the favourite — not the raw 1/favOdds, which still carries the bookmaker's
+// margin and would overstate p. Summed over every decided match with locked odds;
+// bets settle independently of each other, so — unlike Draw Yield — there is no
+// cross-match covariance term simulation could ever add.
+export function calcSigmaMYLive(d, filterRi = Infinity) {
+  const config = getScoringConfig(d.scoring_version ?? 1)
+  let sigmaMYsq = 0, hasOdds = false
+  d.rounds.forEach((r, ri) => {
+    if (ri > filterRi) return
+    const stake = config.stakeByRound[ri] ?? 10
+    r.matches.forEach(m => {
+      if (!m.winner) return
+      if (!m.odds_p1_locked || !m.odds_p2_locked) return
+      const o1 = parseFloat(m.odds_p1_locked), o2 = parseFloat(m.odds_p2_locked)
+      const q1 = 1 / o1, q2 = 1 / o2
+      const favIsP1 = o1 <= o2
+      const favOdds = favIsP1 ? o1 : o2
+      const pFav = (favIsP1 ? q1 : q2) / (q1 + q2) // de-vigged
+      hasOdds = true
+      sigmaMYsq += pFav * (1 - pFav) * (stake * favOdds) ** 2
+    })
+  })
+  return { sigmaMY: Math.sqrt(sigmaMYsq), valid: hasOdds && sigmaMYsq > 0 }
+}
+
+// Single dispatch point every v2/v4 call site should use instead of calling
+// calcChalkBaselines/chalkBaselinesV4 directly. version 2 always uses the fully
+// intact v2 closed form (both sigmas) — kept as a one-row rollback lever. version 4
+// is the current formula. Anything else (including a stray leftover v3, which no
+// longer has a code path now that its frozen columns are gone) → null, meaning the
+// caller falls back to the v1 pool-relative index — always safe, just less precise.
 export function chalkBaselinesForVersion(d, version, filterRi = Infinity) {
-  if (version === 3) {
-    if (filterRi === Infinity) {
-      const v3 = chalkBaselinesV3(d)
-      if (v3.valid) return v3
-    }
-    return calcChalkBaselines(d, filterRi)
-  }
+  if (version === 4) return chalkBaselinesV4(d, filterRi)
   if (version === 2) return calcChalkBaselines(d, filterRi)
   return null
 }
@@ -527,7 +575,7 @@ export function combineChalkBaselines(c1, c2) {
 // z = 0 for everyone (index = 100).
 export function calcSlamIndex(entries, opts = {}) {
   const { version = 1, chalk = null } = opts
-  if ((version === 2 || version === 3) && chalk?.valid) {
+  if ((version === 2 || version === 4) && chalk?.valid) {
     return entries.map(e => Math.round(100 + 15 * (
       ((e.score ?? 0) - chalk.chalkDY) / chalk.sigmaDY +
       ((e.matchYield ?? 0) - chalk.chalkMY) / chalk.sigmaMY

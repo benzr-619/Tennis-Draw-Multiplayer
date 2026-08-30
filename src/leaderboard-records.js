@@ -16,6 +16,7 @@
 import { state } from './state.js'
 import { SLAM_CONFIG } from './data.js'
 import { supabase } from './supabase.js'
+import { isDrawComplete } from './scoring.js'
 // Circular in ESM is fine: all are function calls, not top-level init
 import { loadDrawStatsForAllUsers, fmtScore } from './leaderboard.js'
 import {
@@ -61,7 +62,11 @@ export async function renderRecordsTab(container, profs) {
   }
   _recContainer    = container
   _recProfs        = profs
-  _recAllDraws     = state.draws.filter(d => !d.excludeFromLeaderboard && d.locked)
+  // Only COMPLETED draws (champion decided) feed career aggregates — a live draw's
+  // index still moves match to match and belongs on the Slams tab, not averaged
+  // into a still-in-progress career number. See isDrawComplete (scoring.js) / v4
+  // "Only completed draws feed the Records tab" (.claude/rules/slam-index.md).
+  _recAllDraws     = state.draws.filter(d => !d.excludeFromLeaderboard && isDrawComplete(d))
   if (_recAllDraws.length === 0) {
     container.innerHTML = '<div class="lb-empty">No completed draws yet.</div>'
     return

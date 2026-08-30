@@ -175,7 +175,7 @@ async function _loadBaseline(group, profs, R) {
     // R-1 (not Infinity) — always routes to the v2 closed form inside
     // chalkBaselinesForVersion regardless of siVersion, since there's no persisted
     // per-round Monte Carlo snapshot to read for an "as of round R-1" baseline.
-    const chalk = (siVersion === 2 || siVersion === 3) ? chalkBaselinesForVersion(assembleDrawForUser(d, []), siVersion, R - 1) : null
+    const chalk = (siVersion === 2 || siVersion === 4) ? chalkBaselinesForVersion(assembleDrawForUser(d, []), siVersion, R - 1) : null
     const idxs = calcSlamIndex(ents.map(e => ({ score: e.score, matchYield: e.my })), { version: siVersion, chalk })
     ;[...ents].map((e, i) => ({ ...e, si: idxs[i] }))
       .sort((a, b) => (b.si ?? -Infinity) - (a.si ?? -Infinity))

@@ -307,9 +307,18 @@ if it's real, the fix (if any) belongs in the chalk-baseline math itself
 (`calcChalkBaselines`), and only once there's enough draws to tell a persistent
 bias apart from one chalky slam.
 
-## v3 — Monte Carlo σ (2026-08-28)
+## v3 — Monte Carlo σ (2026-08-28, SUPERSEDED by v4 — see below, 2026-08-30)
 
-Read this before touching `calcChalkBaselinesV3`/`chalkBaselinesForVersion`/`buildEloChalkBracket` in `scoring.js` or `src/slam-index-sim.js`.
+**Kept for record only.** `chalkBaselinesV3`, the frozen `chalk_dy`/`chalk_my`/
+`sigma_my` columns, and `simulateChalkSigma`'s combined DY+MY simulation described
+in this section no longer exist in the codebase — see "v4" below for what replaced
+each piece and why v3's central idea (freeze chalk's realized score alongside the
+simulated σs) turned out to be wrong. The σ_DY *methodology* this section
+describes (Monte Carlo instead of the v2 closed form) is still exactly right and
+carries forward into v4 unchanged — only the persistence shape changed (a full
+outcome matrix instead of a frozen scalar).
+
+Read this before touching `chalkBaselinesV4`/`chalkBaselinesForVersion`/`buildEloChalkBracket` in `scoring.js` or `src/slam-index-sim.js`.
 
 ### Why the closed-form σ_DY was wrong, and by how much
 
@@ -475,3 +484,153 @@ form is kept fully intact as v3's cheap interim/no-simulation-yet fallback (see
 cheap enough to compute inline where a persisted snapshot doesn't exist yet
 (the movement-arrow "as of round R-1" baseline, or a v3 draw before its first
 recompute).
+
+## v4 — live chalk/σ_MY, persisted σ_DY matrix (2026-08-30, current)
+
+Read this before touching `chalkBaselinesV4`/`calcSigmaMYLive`/`isDrawComplete` in
+`scoring.js`, `updateSlamIndexSigmaDY` in `commissioner-results.js`, or
+`runChalkSimulationMatrix`/`sigmaDYFromMatrix` in `src/slam-index-sim.js`.
+
+### What was wrong with v3
+
+v3 ran one 40,000-run simulation pre-tournament-ish (really: at whatever moment
+the commissioner clicked the button) and froze **four** numbers onto the `draws`
+row: `chalk_dy`, `chalk_my`, `sigma_dy`, `sigma_my`. Three separate errors, not one:
+
+1. **Chalk's realized score is deterministic from real results, not a quantity to
+   freeze.** `chalkDY`/`chalkMY` are just "what would chalk's fixed bracket/bettor
+   have scored against reality so far" — a pure function of decided matches. Once
+   more matches decide after the button click, the frozen `chalk_dy`/`chalk_my`
+   silently go stale, understating (never overstating) chalk's realized score
+   relative to what it should be with the fuller decided set.
+2. **σ_MY never needed simulation at all.** A flat-stake bet's payout on one match
+   is completely independent of every other match's payout — bets settle on their
+   own, with none of Draw Yield's cascade/path dependency. The variance of an
+   independent sum has an *exact* closed form; running it through Monte Carlo only
+   ever approximates a number that doesn't need approximating.
+3. **σ_DY has to move as results come in, and freezing it doesn't let it.** σ_DY is
+   "how much would chalk's score vary, over hypothetical replays, given exactly
+   the bracket positions decided so far." That decided set only grows over a
+   tournament — a σ_DY computed against 20 decided matches describes a
+   fundamentally different (much narrower) uncertainty than one computed against
+   120. A single frozen scalar can only ever be right for the one decided-count it
+   was computed at.
+
+### The v4 fix, piece by piece
+
+**Chalk realized (`chalkDY`/`chalkMY`) — always live, never persisted.** Nothing
+about the underlying math changed — it's the exact same closed-form walk
+`calcChalkBaselines` already did (chalk's ELO-favourite bracket for DY, chalk's
+odds-favourite bettor for MY, both scoped to currently-decided matches). The only
+change is deletion: the `chalk_dy`/`chalk_my` columns are gone, so every call site
+computes them fresh, every time, off whatever's decided right now.
+
+**σ_MY — exact closed form, live, no simulation, no persistence.**
+`calcSigmaMYLive(d, filterRi)` in `scoring.js`. A single flat-stake bet's payout is
+a two-outcome random variable: win pays `stake×(favOdds−1)`, lose pays `−stake`.
+The variance of that is exactly `p(1−p) × (stake×favOdds)²`, where `p` is the
+**de-vigged** implied win probability of the odds favourite (the raw `1/favOdds`
+still carries the bookmaker's margin and would overstate `p`, understating the
+variance). De-vig: `q1 = 1/odds1, q2 = 1/odds2, p_fav = q_fav/(q1+q2)`. Summed over
+every decided match with both sides' locked odds — independent bets, so summed
+variances are exact, not an approximation awaiting a future Monte Carlo upgrade
+the way v2's σ_MY closed form was. The old `simulateChalkSigma`'s `myAccum`
+tracking is deleted entirely from `slam-index-sim.js` — there is nothing left for
+simulation to do on the MY side.
+
+**σ_DY — still needs Monte Carlo, but persists the outcome matrix, not a scalar.**
+A real bracket genuinely has cross-round covariance (busting round 1 kills every
+later round it fed), so unlike MY there's no shortcut closed form — this is the
+one piece v3 got structurally right. What v4 changes is *what* gets persisted:
+
+- `runChalkSimulationMatrix(d, chalk, {runs, seed})` (`slam-index-sim.js`) runs
+  40,000 full-bracket walks forward from **original pre-tournament ELO** —
+  exactly like v3's simulation, same win-probability formula, same never-condition-
+  on-real-results discipline — but instead of collapsing straight to a σ, it
+  records one **bit per (run, bracket position)**: did this run's simulated winner
+  match chalk's fixed prediction at that slot? Packed bit-major-by-position into a
+  `Uint8Array` (`bitIndex = posIndex*runs + run`), base64-encoded, persisted once
+  to `draws.dy_sim_matrix` (a ~635KB blob for 40,000×127 bits — deliberately never
+  included in the normal draw-load `select()`, see `data.js`, since no render path
+  needs it; only the confirm/undo trigger below ever fetches it).
+- `sigmaDYFromMatrix(matrix, positions, runs, decidedKeys, roundBase)` masks that
+  persisted matrix down to whatever's **actually decided in reality right now**
+  (`decidedKeys` — a `Set` of `"ri-mi"` strings) and returns the standard
+  deviation of chalk's simulated score across all 40,000 runs, for exactly that
+  decided set. Because the decided set only ever grows one match at a time and is
+  always ancestor-closed (you can't decide round 2 without round 1 already
+  decided), no padding or special-casing is ever needed — it's a straight mask.
+- **`draws.sigma_dy`** is the one scalar still persisted — kept in sync by
+  `updateSlamIndexSigmaDY(d, source)` (`commissioner-results.js`), called
+  fire-and-forget (never awaited — "commissioner must not wait") from both
+  `applyWinner` and `undoWinner` in `picks.js`, exactly mirroring the
+  `refreshHealthBands` pattern those two functions already use for health bands.
+  - **First-ever confirmation for a draw** (`d.sim_computed_at == null`): runs the
+    one-time 40,000-run simulation, persists the matrix + `sim_seed`/`sim_runs`/
+    `sim_computed_at`, and computes/persists the first `sigma_dy` from whatever's
+    decided at that moment.
+  - **Every confirmation/undo after that**: fetches only `dy_sim_matrix` (a
+    separate, targeted `select` — never the normal draw-load path), masks it to
+    the now-changed decided set via `sigmaDYFromMatrix`, and writes back just the
+    updated `sigma_dy` scalar. **Never re-simulates** — re-running a fresh 40k-run
+    simulation on every one of up to 127 confirmations would be dramatically more
+    expensive than the one-time cost, and would also make the index jitter between
+    renders for no reason (two simulations of the same decided set would land on
+    slightly different σ_DY purely from Monte Carlo noise, even with nothing about
+    the real draw having changed) — masking a fixed matrix is deterministic and
+    reproduces byte-identically given the same decided set.
+
+**`chalkBaselinesV4(d, filterRi)`** (`scoring.js`) is the new per-draw entry point:
+returns live `chalkDY`/`chalkMY` (via the unchanged `calcChalkBaselines` walk),
+live `sigmaMY` (via `calcSigmaMYLive`), and `sigmaDY` = the persisted `d.sigma_dy`
+when `filterRi === Infinity` and positive, else falls back to `calcChalkBaselines`'s
+v2 closed-form σ_DY — same posture v3 had for the movement-arrow "as of round R-1"
+baseline (no per-round persisted matrix exists) and for a draw that hasn't had its
+first confirmation yet. `chalkBaselinesForVersion(d, version, filterRi)` now
+dispatches `version === 4` to `chalkBaselinesV4` and `version === 2` to the fully
+intact `calcChalkBaselines` (unchanged rollback lever); `version === 3` has no code
+path left at all (the frozen columns it read are dropped) and falls through to the
+v1 pool-relative index — safe, just less precise, and moot in practice since every
+draw was bumped to `slam_index_version = 4` in the same migration that dropped the
+v3 columns.
+
+### Records-tab career aggregates: completed draws only
+
+Separately from the σ redesign above, this pass also fixed a real gap: the
+Records tab (`leaderboard-records.js`) and the commissioner's shrinkage-K
+recompute (`commissioner-results.js`) both filtered candidate draws on
+`d.locked` (`original_picks_locked`) — which flips at **tournament start**, not
+finish. A live, still-in-progress draw was therefore already being averaged into
+every player's all-time Slam Index the whole time, contaminating career numbers
+with a score that was still moving. Fixed by `isDrawComplete(d)` (`scoring.js` —
+`true` once the Final has a `winner`), now the filter both call sites use instead
+of `d.locked`. A live draw still computes and shows a live index on the Slams tab
+(`fetchPoolSlamIndex` in `stats.js`, unaffected by this change) — it just no
+longer leaks into Records/K until it's actually finished. `buildAllBrackets`'s
+`slamIndexVersion === 2` filters (used by `computePoolMeanIndex` and
+`computeShrinkageK`'s v2-only restriction, `leaderboard-records-data.js`) were
+also widened to `=== 2 || === 4` — a real, if minor, latent bug predating this
+pass (v3 entries were being silently excluded from the shrinkage anchor/K
+estimate too; nobody had noticed because Wimbledon 2026 MS/WS, the only draws
+ever on v3, were both complete and had already been through their v2 window
+before v3 shipped, so the exclusion never visibly changed anything).
+
+### Migration (2026-08-30)
+
+`chalk_dy`, `chalk_my`, `sigma_my` columns dropped from `draws`. `dy_sim_matrix`
+(text, base64) added. `slam_index_version` column default bumped to `4`;
+backfilled to `4` unconditionally on all six existing draws — same
+unconditional-backfill precedent v2/v3 both set, relying on `chalk.valid` (now via
+`chalkBaselinesV4`) to gate the safe v1 fallback at read time rather than gating
+the version bump itself. The two Wimbledon 2026 draws keep their already-correct
+`sigma_dy` (61.85 MS / 56.85 WS, unchanged numeric values — a completed draw's
+decided set can never grow further, so there's nothing for a mask-only recompute
+to change) despite having no `dy_sim_matrix` of their own (the column didn't exist
+when their v3 simulation ran) — if either ever needed an undo, `sigmaDYFromMatrix`
+would no-op on the missing matrix (a defensive `if (!data?.dy_sim_matrix) return`)
+rather than crash; the commissioner's "Force resimulate σ_DY" button
+(`renderSlamIndexSimSection`) exists specifically to regenerate a matrix from
+scratch in that situation. French Open 2026 and US Open 2026 draws have no
+`sigma_dy`/`sim_computed_at` yet (no winners confirmed as of this migration, or —
+French Open — no odds/ELO data at all) and correctly fall through
+`chalkBaselinesV4` → v1 pool-relative, same as always.

@@ -7,7 +7,7 @@ import { supabase } from './supabase.js'
 import { buildDrawView } from './draw-view.js'
 import { HEALTH_BANDS_LIVE_MODE, updateBandAtN, revertBandAtN } from './health-bands.js'
 import { loadAllProfiles } from './leaderboard.js'
-import { onBandsUpdating, onBandsUpdated } from './commissioner-results.js'
+import { onBandsUpdating, onBandsUpdated, updateSlamIndexSigmaDY } from './commissioner-results.js'
 import { displayName } from './player-names.js'
 
 // Fire-and-forget health-band recompute after a result change. `fn` is updateBandAtN
@@ -263,6 +263,13 @@ export async function applyWinner(d, ri, mi, winnerName, { renderStats, renderBr
 
     // Recompute the health band at this confirmation count (fire-and-forget).
     refreshHealthBands(updateBandAtN, d, renderStats, 'commissioner-confirm')
+
+    // Keep Slam Index v4's σ_DY in sync with the newly-decided match — fire and
+    // forget, never awaited (the commissioner must not wait on this). Runs the
+    // one-time 40k simulation on this draw's first-ever confirmation, or just
+    // masks the already-persisted matrix on every one after that — never
+    // re-simulates. See .claude/rules/slam-index.md "v4".
+    updateSlamIndexSigmaDY(d, 'commissioner-confirm')
   }
 }
 
@@ -285,6 +292,10 @@ export async function undoWinner(d, ri, mi, { renderStats, renderBracket }) {
 
     // Revert the health band at this confirmation count (fire-and-forget).
     refreshHealthBands(revertBandAtN, d, renderStats, 'commissioner-undo')
+
+    // Re-mask σ_DY down to the now-smaller decided set (fire-and-forget, never
+    // re-simulates — see applyWinner above).
+    updateSlamIndexSigmaDY(d, 'commissioner-undo')
   }
 
   renderStats()

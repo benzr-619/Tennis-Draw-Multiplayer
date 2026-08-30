@@ -84,7 +84,7 @@ export async function fetchPoolSlamIndex(draw, userId) {
   if (!draw || !userId) return
 
   const siVersion = draw.slam_index_version ?? 1
-  if (siVersion === 2 || siVersion === 3) {
+  if (siVersion === 2 || siVersion === 4) {
     if (!isPoolEligible(draw)) return
     const chalk = chalkBaselinesForVersion(draw, siVersion)
     if (chalk?.valid) {

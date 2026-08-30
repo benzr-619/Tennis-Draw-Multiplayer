@@ -151,6 +151,11 @@ Slams tab is a separate module. `renderSlamsTab(container, profs)` is the export
 
 **Module state:** `slamSort = { col: 'slamIndex', dir: -1 }`, `_expandedKeys` (Set of past-slam keys), `_picksCache` (Map of drawDbId → pick rows for baseline).
 
+**Slams tab podium (`_buildSlamPodium`, 2026-08-30 decision, not yet implemented):** currently renders whenever `eligible.length >= 3`, which shows a meaningless podium right after lock (everyone at baseline Index 100 / Health 0). Decided fix:
+- Gate on real results, not just player count: also require at least one confirmed match in the draw (`confirmedCount` pattern already used in `stats.js` — `d.rounds.reduce((a, r) => a + r.matches.filter(m => m.winner).length, 0)`). No confirmed matches → no podium.
+- Tie handling: podium stays fixed at 3 slots (left/center/right = 2nd/1st/3rd), but players tied on both Index *and* Health share a rank label (e.g. two players tied for 1st both show "1ST", and the next distinct player is "3RD", not "2ND" — standard competition ranking). Tied blocks must render at equal height — the tall `.rec-pod-top` styling applies to every block sharing the top rank, not just the center slot, so a 2- or 3-way tie for 1st shows 2 or 3 equally-tall blocks. Ties elsewhere (e.g. 2nd/3rd tied) just share the label; height stays as-is since only rank 1 gets the tall treatment.
+- Not addressed by this decision: which 3 players appear at all when more than 3 are tied going into the cutoff (currently falls back to alphabetical order via `profs`' `display_name` sort — an accident of query order, not a designed tiebreaker).
+
 ### Slam Header
 
 `.lb-slam-section` → `.lb-slam-header` row: slam name (Playfair 22px 600), year (DM Mono 11px muted), `.lb-status-pill` (DM Mono 9px, `--lb-slam-color` text + border). Pill text: "FINAL" for past slams, "LIVE" when R<0 (no results yet), "LIVE · ROUND_NAME" when R≥0. Round name from `STATUS_NAMES[R]` (R = deepest round_index with any winner from `_deepestR(draws)`).

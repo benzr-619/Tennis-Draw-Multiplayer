@@ -256,7 +256,7 @@ export async function loadDrawStatsForAllUsers(baseDraw) {
   const eligibleProfs = profs.filter(p => result[p.id]?.hasAnyPicks && result[p.id]?.poolEligible)
   if (eligibleProfs.length > 0) {
     const siVersion = baseDraw.slam_index_version ?? 1
-    const chalk = (siVersion === 2 || siVersion === 3)
+    const chalk = (siVersion === 2 || siVersion === 4)
       ? chalkBaselinesForVersion(buildDrawView(structuredClone(baseDraw)), siVersion)
       : null
     // The ACTUAL formula used, not just the draw's own flag — a v2/v3 draw without
@@ -264,7 +264,7 @@ export async function loadDrawStatsForAllUsers(baseDraw) {
     // back to v1 internally (calcSlamIndex), and downstream consumers that need to
     // know which scale a slamIndex sits on (computeShrinkageK) must read this, not
     // baseDraw.slam_index_version.
-    const usedVersion = (siVersion === 2 || siVersion === 3) && chalk?.valid ? siVersion : 1
+    const usedVersion = (siVersion === 2 || siVersion === 4) && chalk?.valid ? siVersion : 1
     const entries = eligibleProfs.map(p => ({
       score: result[p.id].score ?? 0,
       matchYield: result[p.id].matchYield ?? 0,
