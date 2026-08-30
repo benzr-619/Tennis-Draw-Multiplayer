@@ -59,12 +59,26 @@ from `calcHealthPts` (do not restructure scoring.js).
 ```js
 const band = healthBands?.get(Math.round(n * 127))
 const floor = band?.lo ?? 25,  ceil = band?.hi ?? 90
-return 4 + clamp((pct - floor) * 100 / max(1, ceil - floor), 0, 100) * 1.4
+const span = ceil - floor
+return 4 + clamp(span < 1e-9 ? (pct >= ceil ? 100 : 0) : (pct - floor) * 100 / span, 0, 100) * 1.4
 ```
 
 `n` is the stage fraction `confirmedCount / 127`; `Math.round(n*127)` recovers the
 integer band index. Falls back to the old static 25/90 ramp when `healthBands` is empty
 or the band is missing — so calling `healthHue(pct)` (no extra args) still works.
+
+**Gotcha: don't floor the denominator at 1 (fixed 2026-08-30).** Early-stage bands are
+often genuinely narrow — real DB values at n=1 this slam: `lo≈99.78, hi=100`, a ~0.22-point
+spread. The original code used `Math.max(1, ceil - floor)` to avoid a divide-by-zero,
+but that silently over-widened any real spread under 1 point, muting a 100%-health
+bracket at n=1 down to hue ≈35 (orange) instead of full green (hue 144). The fix only
+special-cases the true zero-width case (`ceil === floor`, e.g. everyone historically
+finished at exactly 100% at this stage) with an epsilon guard — a genuinely narrow but
+nonzero band (0.22, 0.5, whatever) is left alone and correctly produces a steep but real
+gradient. Verified against live `health_bands` rows for n=1-10 (spans ranging ~0.22 to
+~3.6): narrow early bands now render 100% as full green; wider higher-n bands are
+byte-identical to before (their span was already ≥1, so `Math.max(1, span)` was a no-op
+for them regardless).
 
 **Call sites** (both derive `confirmedCount` by counting `m.winner` across `d.rounds`):
 - `stats.js` `_updateHealthUnderline(strip, s, hasResult, d)` — d threaded in for n.

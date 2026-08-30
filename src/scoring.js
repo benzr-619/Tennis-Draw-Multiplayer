@@ -367,8 +367,9 @@ export function healthHue(pct, n, healthBands) {
   const band = healthBands?.get(Math.round(n * 127))
   const floor = band?.lo ?? 25
   const ceil  = band?.hi ?? 90
+  const span = ceil - floor
   return 4 + Math.max(0, Math.min(100,
-    (pct - floor) * 100 / Math.max(1, ceil - floor)
+    span < 1e-9 ? (pct >= ceil ? 100 : 0) : (pct - floor) * 100 / span
   )) * 1.4
 }
 
