@@ -85,6 +85,11 @@ export async function fetchPoolSlamIndex(draw, userId) {
 
   const siVersion = draw.slam_index_version ?? 1
   if (siVersion === 2 || siVersion === 4) {
+    // v2/v4 copy is decided by slam_index_version alone, never by chalk.valid — see
+    // .claude/rules/slam-index.md "Fallback policy reversal". chalk.valid only gates
+    // whether a NUMBER can be shown yet; an invalid/not-yet-decided chalk baseline
+    // shows "—" with v2/v4 copy, never a silent v1 substitution.
+    _poolSlamIndexIsV2 = true
     if (!isPoolEligible(draw)) return
     const chalk = chalkBaselinesForVersion(draw, siVersion)
     if (chalk?.valid) {
@@ -93,10 +98,8 @@ export async function fetchPoolSlamIndex(draw, userId) {
       const matchYield = s.matchYieldResolved > 0 ? s.matchYield : 0
       _poolSlamIndex = calcSlamIndex([{ score, matchYield }], { version: siVersion, chalk })[0]
       _poolFlatROI = _computeFlatROI(draw)
-      _poolSlamIndexIsV2 = true
-      return
     }
-    // No trustworthy chalk baseline — fall through to the v1 pool-relative fetch below.
+    return
   }
 
   try {

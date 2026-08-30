@@ -100,6 +100,8 @@ async function _realtimeRebuild() {
     const hasNewWinner = d.rounds.some(r => r.matches.some(m => m.winner && m.db_id && !before.has(m.db_id)))
     if (hasNewWinner) refreshHealthBands(updateBandAtN, d, renderStats, 'auto-confirm')
   }
+  showRosterAlerts(d)
+  showQualifiersPlacedModal(d)
 }
 
 function _startRealtimeForActiveDraw() {
@@ -453,6 +455,8 @@ function switchTab(i) {
   renderBracketDisplay()
   fetchPoolSlamIndex(d, state.currentUser?.id).then(() => renderStats())
   _startRealtimeForActiveDraw() // re-scope the subscription to the newly selected M/W draw
+  showRosterAlerts(d)
+  showQualifiersPlacedModal(d)
 }
 
 // ── FIND UNPICKED CARD HELPER ──
@@ -1057,16 +1061,20 @@ function showRosterAlerts(d) {
 }
 
 // ── QUALIFIERS PLACED ALERT ──
-// One draw-level modal. Ack'd via profiles.qualifiers_ack_key (persisted), NOT an
-// in-memory Set like _rosterAlertsAcked above — a qualifiers-placed event has no
-// real per-user completion signal the way a roster-alert repick does (advancing
-// picks.updated_at), so session-only acking re-showed this on every single login.
-// Keyed by draw id + timestamp (not just draw id) so a later re-upload that places
+// One draw-level modal per draw. Ack'd via profiles.qualifiers_ack_keys (persisted
+// JSON map of draw_id → "draw_id@timestamp"), NOT an in-memory Set like
+// _rosterAlertsAcked above — a qualifiers-placed event has no real per-user
+// completion signal the way a roster-alert repick does (advancing picks.updated_at),
+// so session-only acking re-showed this on every single login. Keyed per-draw (not a
+// single flat value) because MS and WS each get their own independent
+// qualifier-placement event — a single shared key would get clobbered by whichever
+// draw's popup was acked last, permanently reshowing the other draw's popup. Value is
+// keyed by draw id + timestamp (not just draw id) so a later re-upload that places
 // MORE qualifiers shows the modal again. See .claude/rules/qualifiers.md.
 function showQualifiersPlacedModal(d) {
   if (!d?.qualifiers_placed_at) return
   const key = d.db_id + '@' + d.qualifiers_placed_at
-  if (state.currentUser?.qualifiers_ack_key === key) return
+  if (state.currentUser?.qualifiers_ack_keys?.[d.db_id] === key) return
 
   const modal = $('qualifiers-placed-modal')
   const dismissBtn = $('qpm-dismiss')
@@ -1075,10 +1083,10 @@ function showQualifiersPlacedModal(d) {
     modal.style.display = 'none'
     if (state.currentUser) {
       const userId = state.currentUser.id
-      state.currentUser.qualifiers_ack_key = key
+      state.currentUser.qualifiers_ack_keys = { ...state.currentUser.qualifiers_ack_keys, [d.db_id]: key }
       // supabase-js query builders are lazy — the request only fires once awaited/
       // .then()'d. A bare, un-awaited call here would silently never hit the DB.
-      const { error } = await supabase.from('profiles').update({ qualifiers_ack_key: key }).eq('id', userId)
+      const { error } = await supabase.from('profiles').update({ qualifiers_ack_keys: state.currentUser.qualifiers_ack_keys }).eq('id', userId)
       if (error) console.error('Failed to persist qualifiers ack:', error)
     }
   }

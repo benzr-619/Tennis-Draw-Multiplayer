@@ -4,6 +4,33 @@ Historical record of build steps, refactors, and fixed bugs. **Not loaded into c
 
 ---
 
+## 2026-08-30 — Two-draws-at-once fixes: qualifier ack keying + missed live alerts
+
+Both roster-withdrawal and qualifiers-placed player notifications were written
+assuming one draw checked once at bracket-screen entry — broke down now that MS and
+WS run as two simultaneous active draws with independent realtime channels. Two
+bugs, fixed together:
+
+1. `profiles.qualifiers_ack_key` stored a single `draw_id@timestamp` value across
+   ALL draws — acking one draw's qualifiers-placed popup silently clobbered the ack
+   for the other, so a player checking both draws got stuck re-seeing whichever
+   popup's ack lost the race, indefinitely. Replaced with `qualifiers_ack_keys`
+   (jsonb, one key per draw id), backfilled from the old column via migration
+   `qualifiers_ack_keys_per_draw` before dropping it.
+2. `showRosterAlerts`/`showQualifiersPlacedModal` were only ever called from
+   `showBracketScreen()` — neither re-ran on flipping the M/W segmented control
+   (`switchTab`) nor on a realtime rebuild landing while the bracket screen was
+   already open (`_realtimeRebuild`). This is almost certainly what ate a live
+   lucky-loser withdrawal notification: the bracket silently repainted with the new
+   player, no popup fired. Both functions are now also called from `switchTab()`
+   and `_realtimeRebuild()`, reusing their existing ack mechanisms (safe to call
+   more often — no duplicate-suppression needed beyond what already existed).
+   Deliberately NOT wired into the realtime patch tier (`patchMatchScore`), which
+   fires far more often (score ticks) than actual roster/qualifier events — see
+   `.claude/rules/qualifiers.md` "Two-draws-at-once alert bugs" for the full
+   writeup, including the known accepted gap (no live push for the *other*,
+   non-selected draw until the player actually switches to it).
+
 ## 2026-08-28 — Slam Index v3: Monte Carlo σ replaces the closed-form estimate
 
 v2's `calcChalkBaselines` computed σ_DY/σ_MY with a closed-form independent-Bernoulli

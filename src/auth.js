@@ -4,7 +4,7 @@ import { state } from './state.js'
 export async function fetchProfile(userId) {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, display_name, is_commissioner, qualifiers_ack_key')
+    .select('id, display_name, is_commissioner, qualifiers_ack_keys')
     .eq('id', userId)
     .single()
   if (error) throw error

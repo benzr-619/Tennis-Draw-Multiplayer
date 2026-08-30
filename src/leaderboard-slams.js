@@ -242,8 +242,8 @@ function _buildCard(draw, profs, statsMap, color, baseline, isActive) {
   card.appendChild(cardHdr)
 
   if (isActive && statsMap) {
-    const eligible = profs.filter(p => statsMap[p.id]?.hasAnyPicks && statsMap[p.id]?.poolEligible && statsMap[p.id]?.slamIndex !== null)
-    if (eligible.length >= 3) card.appendChild(_buildSlamPodium(draw, statsMap, profs))
+    const podium = _buildSlamPodium(draw, statsMap, profs)
+    if (podium) card.appendChild(podium)
   }
 
   const sortedProfs = [...profs].filter(p => statsMap[p.id]?.hasAnyPicks && statsMap[p.id]?.poolEligible)
@@ -325,12 +325,30 @@ function _buildCard(draw, profs, statsMap, color, baseline, isActive) {
 // ── SLAM PODIUM ──
 
 function _buildSlamPodium(draw, statsMap, profs) {
+  const confirmedCount = draw.rounds.reduce((a, r) => a + r.matches.filter(m => m.winner).length, 0)
+  if (confirmedCount === 0) return null
+
   const eligible = profs
     .filter(p => statsMap[p.id]?.hasAnyPicks && statsMap[p.id]?.poolEligible && statsMap[p.id]?.slamIndex !== null)
-    .sort((a, b) => (statsMap[b.id]?.slamIndex ?? -Infinity) - (statsMap[a.id]?.slamIndex ?? -Infinity))
+    .sort((a, b) => {
+      const sa = statsMap[a.id], sb = statsMap[b.id]
+      if (sb.slamIndex !== sa.slamIndex) return sb.slamIndex - sa.slamIndex
+      return (sb.drawHealth ?? -1) - (sa.drawHealth ?? -1)
+    })
+  if (eligible.length < 3) return null
+
+  // Standard competition ranking: ties (same slamIndex AND drawHealth) share a rank, next rank skips.
+  const ranks = []
+  eligible.forEach((prof, i) => {
+    if (i === 0) { ranks.push(1); return }
+    const s = statsMap[prof.id], prevS = statsMap[eligible[i - 1].id]
+    ranks.push((s.slamIndex === prevS.slamIndex && s.drawHealth === prevS.drawHealth) ? ranks[i - 1] : i + 1)
+  })
+
   const top3 = eligible.slice(0, 3)
+  const top3Ranks = ranks.slice(0, 3)
   const wrap = document.createElement('div'); wrap.className = 'rec-podium'
-  ;[[top3[1], 2], [top3[0], 1], [top3[2], 3]].forEach(([prof, rank]) => {
+  ;[[top3[1], top3Ranks[1]], [top3[0], top3Ranks[0]], [top3[2], top3Ranks[2]]].forEach(([prof, rank]) => {
     if (!prof) return
     const s = statsMap[prof.id]
     const block = document.createElement('div')

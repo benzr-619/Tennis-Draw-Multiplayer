@@ -266,6 +266,75 @@ exempt from the per-match `rosterAlerts` mechanism, full stop. The draw-level
 `showQualifiersPlacedModal` (see above) remains the only alert a player sees for a
 qualifier placement.
 
+## Two-draws-at-once alert bugs — fixed 2026-08-30
+
+Both notification checks (`showRosterAlerts`, `showQualifiersPlacedModal`) were
+written when the app only ever had one draw open in a session's mental model, then
+never revisited once MS/WS became two simultaneous active draws with independent
+realtime channels. Two related bugs, found together:
+
+**Bug 1 — single ack column couldn't remember two draws at once.**
+`profiles.qualifiers_ack_key` stored exactly one `draw_id@timestamp` value across
+ALL draws. With MS and WS each producing their own independent qualifier-placement
+event, acking one draw's popup silently overwrote the ack for the other — confirmed
+live in the `profiles` table, every player who'd dismissed the popup had only one of
+the two draws' keys saved, never both. A player who checked both draws got stuck
+re-seeing whichever popup's ack got clobbered, indefinitely.
+
+Fix: `profiles.qualifiers_ack_key` (text, one value) replaced with
+`profiles.qualifiers_ack_keys` (jsonb, default `'{}'`, shape
+`{ "<draw_id>": "<draw_id>@<timestamp>" }` — the draw_id is redundant inside the
+value but keeps the value format identical to before, minimizing the diff).
+Migration `qualifiers_ack_keys_per_draw` backfilled the new column from the old one
+(`split_part(qualifiers_ack_key, '@', 1)` → key) before dropping the old column —
+no data loss for existing acks. `fetchProfile()` (`auth.js`) selects
+`qualifiers_ack_keys`; `showQualifiersPlacedModal(d)` (`main.js`) checks
+`state.currentUser?.qualifiers_ack_keys?.[d.db_id] === key` and, on dismiss, patches
+`state.currentUser.qualifiers_ack_keys = { ...prev, [d.db_id]: key }` before
+persisting the whole map back via `supabase.from('profiles').update({
+qualifiers_ack_keys: ... })`. No lock-gating added — showing this once per draw
+regardless of lock state was already fine and stays that way.
+
+**Bug 2 — neither check ever re-ran on tab switch or live update.**
+Both functions were only ever called from `showBracketScreen()`, against whatever
+`activeDraw()` was at that exact moment — i.e. only at bracket-screen entry. Neither
+re-ran when:
+- the player flipped the M/W segmented control (`switchTab(i)`) — switching onto a
+  draw with a pending alert showed nothing until leaving and re-entering the
+  bracket screen entirely.
+- a realtime rebuild happened while the player was already sitting on the bracket
+  screen (`_realtimeRebuild()`, the debounced rebuild-tier callback from
+  `.claude/rules/realtime.md`) — this reloads the draw and repaints the bracket (a
+  swapped-in player's name does appear) but never re-ran either alert check. This is
+  what most likely ate a live lucky-loser withdrawal notification: the swap landed
+  while the draw was already open, the bracket silently updated, and no popup fired.
+
+Fix: `switchTab(i)` and `_realtimeRebuild()` (both in `main.js`) now both call
+`showRosterAlerts(d)` and `showQualifiersPlacedModal(d)` for whichever draw is now
+active, at the end of their existing render sequence. No new ack mechanism needed —
+`_rosterAlertsAcked` (in-memory Set) and `qualifiers_ack_keys` (Bug 1's persisted
+per-draw map) already guard against re-showing something already acknowledged, so
+calling these functions more often is safe by construction; nothing was added to
+suppress duplicates because nothing new could occur.
+
+**Deliberately NOT wired into the patch tier.** `patchMatchScore`
+(`bracket.js`, the realtime patch-tier callback for a bare score/`espn_state` tick)
+fires far more often than a rebuild — up to once a minute per live match — and never
+calls either alert check, on purpose. Only `_realtimeRebuild()` (the debounced
+rebuild-tier callback, which fires on an actual `winner`/lock/draw-state change, not
+a score tick) triggers them. Wiring alert checks into the patch tier would run the
+popup-suppression logic dozens of times a minute during live scoring for zero
+benefit — a roster swap or qualifier placement is a rebuild-tier event, never a
+patch-tier one.
+
+**Known, accepted gap — not fixed here.** Realtime is scoped to only the currently
+active draw's channel (`_startRealtimeForActiveDraw`), so a live change on the
+*other* (non-selected) draw still won't push anything until the player actually
+switches tabs. `switchTab`'s new call covers that moment — the player will see the
+alert the instant they flip to the other draw — but there's no live push while
+they're sitting on the wrong tab. Widening realtime to subscribe to both draws
+simultaneously was explicitly out of scope for this fix.
+
 ## Files touched
 
 - `src/player-names.js` — new. `isPlaceholderName`, `displayName`.
@@ -281,8 +350,11 @@ qualifier placement.
   `replaced_name` is a placeholder (see "Pre-lock-only assumption" above).
 - `src/main.js` — `showQualifiersPlacedModal`, wired into `showBracketScreen`'s
   active-draw branch alongside `showRosterAlerts`; ack persisted via
-  `profiles.qualifiers_ack_key`, not an in-memory Set.
-- `src/auth.js` — `fetchProfile()` selects `qualifiers_ack_key`.
+  `profiles.qualifiers_ack_keys` (per-draw map, not a single flat value — see
+  "Two-draws-at-once alert bugs" above), not an in-memory Set. Both alert checks
+  also now re-run from `switchTab()` and `_realtimeRebuild()`, not just
+  bracket-screen entry.
+- `src/auth.js` — `fetchProfile()` selects `qualifiers_ack_keys`.
 - `index.html` — `#qualifiers-placed-modal`, `#comm-reupload-wrap`.
 - `src/bracket.js`, `src/viewer-bracket.js`, `src/print.js`, `src/picks.js`,
   `src/leaderboard-slams.js` — `displayName()` wired into every player-facing name

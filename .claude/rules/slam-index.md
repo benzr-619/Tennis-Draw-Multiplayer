@@ -114,18 +114,19 @@ what makes the result comparable across draws). Anything else (`version !== 2`, 
 before this feature. v1's code path is kept fully intact as a one-row rollback lever,
 same discipline as `scoring_version`'s v1.
 
-## Fallback
+## Fallback (REVISED 2026-08-30 — see "Fallback policy reversal" under v4 below)
 
-A draw whose matches lack ELO or locked odds (`calcChalkBaselines(...).valid ===
-false`) — currently French Open 2026 MS/WS, which predate the betting layer having
-any odds data — silently falls back to the v1 field-relative index for that draw
-only. This is intentional per the brief ("never silently emit a wrong number" means
-never emit a chalk-based number computed from insufficient data — falling back to a
-well-understood v1 number is the safe choice, not a bug). Every call site that
-branches on `slam_index_version === 2` checks `chalk.valid` before trusting it:
-`loadDrawStatsForAllUsers` (leaderboard.js), `_loadBaseline` (leaderboard-slams.js,
-movement-arrow baseline), `buildCombinedCard` (leaderboard-slams-combined.js, via
-`combineChalkBaselines`), `fetchPoolSlamIndex` (stats.js).
+**Superseded.** This section originally said an invalid chalk baseline should
+silently fall back to the v1 field-relative index for that draw, and called it
+intentional. Ben overturned that 2026-08-30 after it produced a real, confusing
+symptom: US Open 2026 (assigned `slam_index_version = 4`) showed old v1 stats-drawer
+copy on day one simply because zero matches had been decided yet — indistinguishable,
+from a player's perspective, from an actual scoring problem. See "Fallback policy
+reversal" under the v4 section for the current rule. The short version: `chalk.valid`
+no longer decides which copy/number displays. `draws.slam_index_version` alone
+decides the copy. The v1 numeric path only ever runs for a draw explicitly flagged
+`slam_index_version = 1` (currently French Open 2026 MS/WS only, set deliberately —
+see below — not inferred at read time).
 
 ## Call sites
 
@@ -614,6 +615,56 @@ pass (v3 entries were being silently excluded from the shrinkage anchor/K
 estimate too; nobody had noticed because Wimbledon 2026 MS/WS, the only draws
 ever on v3, were both complete and had already been through their v2 window
 before v3 shipped, so the exclusion never visibly changed anything).
+
+### Fallback policy reversal (2026-08-30)
+
+**The problem:** every v2/v3/v4 call site branched on `chalk.valid` to decide
+*both* (a) which formula/copy to present and (b) whether to fall back to computing
+an actual v1 pool-relative number. That conflated two very different situations
+under one boolean:
+
+1. **Not enough decided matches yet** — completely normal at the start of any
+   tournament (chalk baselines are scoped to decided matches only — see "The two
+   chalk baselines" above). Not an error, not a data gap, resolves itself as the
+   draw plays out.
+2. **A draw that structurally lacks ELO/odds data and always will** — currently
+   exactly one draw ever: French Open 2026 MS/WS, which predate the betting layer
+   existing at all. A real, permanent, already-understood exception.
+
+Because both cases returned `chalk.valid === false`, case 1 was silently getting
+case 2's treatment: US Open 2026 (`slam_index_version = 4`, zero matches decided
+on day one) showed the old v1 pool-relative stats-drawer copy — visually
+indistinguishable from an actual scoring malfunction. Ben's call: don't build a
+smarter two-tier fallback to distinguish these automatically. Instead, stop
+inferring the exception from data at read time altogether.
+
+**Current rule:**
+
+- **The copy/description shown (stats.js drawer, and any other Slam-Index-facing
+  copy) is driven directly by `draws.slam_index_version`, never by `chalk.valid`.**
+  A `slam_index_version = 4` draw always presents itself as v4 — including on day
+  one, before any match is decided.
+- **The v1 pool-relative *number* is only ever computed for a draw whose
+  `slam_index_version` column is literally `1`.** It is no longer a runtime
+  fallback triggered by `chalk.valid` for v2/v4 draws. French Open 2026 MS/WS were
+  given `slam_index_version = 1` explicitly in the database (2026-08-30) — a
+  visible, deliberate per-draw choice, not something the app infers from missing
+  odds/ELO at read time. This is expected to remain the only draw ever on v1 for
+  this reason.
+- **A v2/v4 draw with zero decided matches (or otherwise no valid chalk baseline
+  yet) shows "—" (no index available yet) with v2/v4 copy.** No number is
+  fabricated from the wrong methodology just to have something to show.
+- **A v2/v4 draw whose chalk baseline stays invalid once matches ARE being
+  decided is not expected to happen going forward**, and is not something this
+  fallback machinery should paper over. If it happens (e.g. ELO sync silently
+  failed, odds never populated for a live draw), the drawer showing "—"
+  indefinitely is the correct, visible symptom — it should get investigated and
+  fixed at the source (the ELO/odds pipeline), not masked by a quiet v1
+  substitution.
+- Applies uniformly to every call site that used to branch on `chalk.valid` for
+  this purpose: `fetchPoolSlamIndex` (stats.js), `loadDrawStatsForAllUsers`
+  (leaderboard.js), `_loadBaseline` (leaderboard-slams.js), `buildCombinedCard`
+  (leaderboard-slams-combined.js).
 
 ### Migration (2026-08-30)
 
